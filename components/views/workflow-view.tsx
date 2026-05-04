@@ -46,12 +46,12 @@ export function WorkflowView() {
     <div className="flex h-full gap-6">
       <div className={`flex-1 space-y-6 ${selectedWorkflow ? 'max-w-xl' : ''}`}>
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-5">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">工作流管理</h1>
-            <p className="text-muted-foreground">可视化编排 AI 业务流程</p>
+            <h1 className="text-xl font-semibold text-foreground">工作流管理</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">可视化编排 AI 业务流程</p>
           </div>
-          <Button className="gap-2">
+          <Button className="gap-2 shadow-sm">
             <Plus className="h-4 w-4" />
             创建工作流
           </Button>

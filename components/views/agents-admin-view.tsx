@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { mockAgents, Agent } from '@/lib/mock-data';
 import {
   Bot,
@@ -15,12 +16,19 @@ import {
   Pause,
   Trash2,
   MoreHorizontal,
-  Filter,
   Zap,
   Database,
   GitBranch,
   MessageSquare,
-  Copy
+  Copy,
+  Phone,
+  MessagesSquare,
+  Globe,
+  ExternalLink,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  TrendingUp
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -31,99 +39,209 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 const statusConfig = {
-  draft: { label: '草稿', className: 'bg-muted text-muted-foreground' },
-  pending: { label: '待审核', className: 'bg-yellow-500/10 text-yellow-500' },
-  published: { label: '已发布', className: 'bg-green-500/10 text-green-500' },
-  offline: { label: '已下线', className: 'bg-destructive/10 text-destructive' }
+  draft: { label: '草稿', className: 'bg-muted text-muted-foreground', dot: 'bg-muted-foreground' },
+  pending: { label: '待审核', className: 'bg-warning/10 text-warning', dot: 'bg-warning' },
+  published: { label: '已发布', className: 'bg-success/10 text-success', dot: 'bg-success' },
+  offline: { label: '已下线', className: 'bg-destructive/10 text-destructive', dot: 'bg-destructive' }
 };
+
+// Usage scenarios configuration
+const usageScenarios = [
+  { 
+    id: 'local-cc', 
+    name: '本地CC', 
+    icon: Phone, 
+    description: '本地呼叫中心集成',
+    color: 'text-blue-500',
+    bgColor: 'bg-blue-500/10'
+  },
+  { 
+    id: 'wecom', 
+    name: '企微对话', 
+    icon: MessagesSquare, 
+    description: '企业微信对话接入',
+    color: 'text-green-500',
+    bgColor: 'bg-green-500/10'
+  },
+  { 
+    id: 'web', 
+    name: 'Web 接入', 
+    icon: Globe, 
+    description: '网页端嵌入式对话',
+    color: 'text-purple-500',
+    bgColor: 'bg-purple-500/10'
+  },
+  { 
+    id: 'api', 
+    name: 'API 调用', 
+    icon: Zap, 
+    description: '通过 API 直接调用',
+    color: 'text-orange-500',
+    bgColor: 'bg-orange-500/10'
+  },
+];
 
 export function AgentsAdminView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [activeTab, setActiveTab] = useState('all');
 
-  const filteredAgents = mockAgents.filter(agent =>
-    agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    agent.department.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredAgents = mockAgents.filter(agent => {
+    const matchesSearch = agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      agent.department.toLowerCase().includes(searchTerm.toLowerCase());
+    if (activeTab === 'all') return matchesSearch;
+    return matchesSearch && agent.status === activeTab;
+  });
+
+  const stats = {
+    total: mockAgents.length,
+    published: mockAgents.filter(a => a.status === 'published').length,
+    pending: mockAgents.filter(a => a.status === 'pending').length,
+    draft: mockAgents.filter(a => a.status === 'draft').length,
+  };
 
   return (
     <div className="flex h-full gap-6">
       {/* Agent List */}
-      <div className={`flex-1 space-y-4 ${selectedAgent ? 'max-w-xl' : ''}`}>
+      <div className={`flex-1 flex flex-col min-w-0 ${selectedAgent ? 'max-w-2xl' : ''}`}>
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">Agent 管理</h1>
-            <p className="text-muted-foreground">创建、配置和管理 AI Agent</p>
+            <h1 className="text-xl font-semibold text-foreground">Agent 管理</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">创建、配置和管理 AI Agent</p>
           </div>
-          <Button className="gap-2">
+          <Button className="gap-2 shadow-sm">
             <Plus className="h-4 w-4" />
             创建 Agent
           </Button>
         </div>
 
-        {/* Search and Filter */}
-        <div className="flex gap-3">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-4 gap-3 mb-5">
+          <Card className="bg-card border-border shadow-sm">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Bot className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-foreground">{stats.total}</p>
+                  <p className="text-xs text-muted-foreground">全部</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border shadow-sm">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-success/10 flex items-center justify-center">
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-foreground">{stats.published}</p>
+                  <p className="text-xs text-muted-foreground">已发布</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border shadow-sm">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-warning/10 flex items-center justify-center">
+                  <Clock className="h-4 w-4 text-warning" />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-foreground">{stats.pending}</p>
+                  <p className="text-xs text-muted-foreground">待审核</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card border-border shadow-sm">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
+                  <XCircle className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-foreground">{stats.draft}</p>
+                  <p className="text-xs text-muted-foreground">草稿</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Search and Tabs */}
+        <div className="flex items-center gap-3 mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="搜索 Agent 名称或部门..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 bg-card border-border"
+              className="pl-9 bg-card border-border h-9"
             />
           </div>
-          <Button variant="outline" className="gap-2">
-            <Filter className="h-4 w-4" />
-            筛选
-          </Button>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="bg-muted/50 h-9">
+              <TabsTrigger value="all" className="text-xs px-3">全部</TabsTrigger>
+              <TabsTrigger value="published" className="text-xs px-3">已发布</TabsTrigger>
+              <TabsTrigger value="pending" className="text-xs px-3">待审核</TabsTrigger>
+              <TabsTrigger value="draft" className="text-xs px-3">草稿</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
-        {/* Agent Grid */}
-        <div className="grid grid-cols-1 gap-4">
+        {/* Agent List */}
+        <div className="flex-1 overflow-y-auto space-y-2">
           {filteredAgents.map((agent) => (
             <Card
               key={agent.id}
-              className={`bg-card border-border cursor-pointer transition-all hover:border-primary/50 ${
-                selectedAgent?.id === agent.id ? 'border-primary ring-1 ring-primary' : ''
+              className={`bg-card border-border cursor-pointer transition-all hover:shadow-md ${
+                selectedAgent?.id === agent.id ? 'ring-2 ring-primary shadow-md' : 'shadow-sm'
               }`}
               onClick={() => setSelectedAgent(agent)}
             >
               <CardContent className="p-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-2xl">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-xl shrink-0">
                     {agent.avatar}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-medium text-foreground truncate">{agent.name}</h3>
-                      <Badge className={statusConfig[agent.status].className}>
-                        {statusConfig[agent.status].label}
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                        {agent.department}
                       </Badge>
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <span className={`w-1.5 h-1.5 rounded-full ${statusConfig[agent.status].dot}`} />
+                        <span className="text-xs text-muted-foreground">{statusConfig[agent.status].label}</span>
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground line-clamp-1">{agent.description}</p>
-                    <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                    <p className="text-sm text-muted-foreground line-clamp-1 mb-2">{agent.description}</p>
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Bot className="h-3 w-3" />
                         {agent.model}
                       </span>
                       <span className="flex items-center gap-1">
                         <MessageSquare className="h-3 w-3" />
-                        {agent.calls.toLocaleString()} 次调用
+                        {agent.calls.toLocaleString()}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Zap className="h-3 w-3" />
-                        {(agent.tokenUsage / 1000000).toFixed(2)}M tokens
+                        <TrendingUp className="h-3 w-3" />
+                        {agent.successRate}%
                       </span>
                     </div>
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-popover border-border">
+                    <DropdownMenuContent align="end" className="w-40">
                       <DropdownMenuItem>
                         <Settings className="h-4 w-4 mr-2" />
                         配置
@@ -163,17 +281,18 @@ export function AgentsAdminView() {
 
       {/* Agent Detail Panel */}
       {selectedAgent && (
-        <div className="w-[480px] space-y-4">
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <div className="flex items-center justify-between">
+        <div className="w-[420px] flex flex-col gap-4 overflow-y-auto">
+          {/* Basic Info */}
+          <Card className="bg-card border-border shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-xl">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-2xl">
                     {selectedAgent.avatar}
                   </div>
                   <div>
-                    <CardTitle className="text-foreground">{selectedAgent.name}</CardTitle>
-                    <CardDescription>{selectedAgent.department}</CardDescription>
+                    <CardTitle className="text-base text-foreground">{selectedAgent.name}</CardTitle>
+                    <CardDescription className="text-xs">{selectedAgent.department}</CardDescription>
                   </div>
                 </div>
                 <Badge className={statusConfig[selectedAgent.status].className}>
@@ -181,97 +300,134 @@ export function AgentsAdminView() {
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div>
-                <p className="text-sm text-muted-foreground">{selectedAgent.description}</p>
-              </div>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">{selectedAgent.description}</p>
 
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">总调用量</p>
-                  <p className="text-lg font-semibold text-foreground">{selectedAgent.calls.toLocaleString()}</p>
+              {/* Quick Stats */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2.5 rounded-lg bg-muted/50">
+                  <p className="text-xs text-muted-foreground mb-0.5">总调用量</p>
+                  <p className="text-base font-semibold text-foreground">{selectedAgent.calls.toLocaleString()}</p>
                 </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">成功率</p>
-                  <p className="text-lg font-semibold text-foreground">{selectedAgent.successRate}%</p>
+                <div className="p-2.5 rounded-lg bg-muted/50">
+                  <p className="text-xs text-muted-foreground mb-0.5">成功率</p>
+                  <p className="text-base font-semibold text-foreground">{selectedAgent.successRate}%</p>
                 </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Token 消耗</p>
-                  <p className="text-lg font-semibold text-foreground">{(selectedAgent.tokenUsage / 1000000).toFixed(2)}M</p>
+                <div className="p-2.5 rounded-lg bg-muted/50">
+                  <p className="text-xs text-muted-foreground mb-0.5">Token 消耗</p>
+                  <p className="text-base font-semibold text-foreground">{(selectedAgent.tokenUsage / 1000000).toFixed(2)}M</p>
                 </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">创建日期</p>
-                  <p className="text-lg font-semibold text-foreground">{selectedAgent.createdAt}</p>
+                <div className="p-2.5 rounded-lg bg-muted/50">
+                  <p className="text-xs text-muted-foreground mb-0.5">创建日期</p>
+                  <p className="text-base font-semibold text-foreground">{selectedAgent.createdAt}</p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
 
-              {/* Configuration */}
-              <div className="space-y-3">
-                <h4 className="text-sm font-medium text-foreground">配置信息</h4>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                    <div className="flex items-center gap-2">
-                      <Bot className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-foreground">模型</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">{selectedAgent.model}</span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                    <div className="flex items-center gap-2">
-                      <Database className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-foreground">知识库</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">2 个已绑定</span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                    <div className="flex items-center gap-2">
-                      <Zap className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-foreground">Skill</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">5 个已绑定</span>
-                  </div>
-                  <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                    <div className="flex items-center gap-2">
-                      <GitBranch className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm text-foreground">工作流</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">1 个已绑定</span>
-                  </div>
-                </div>
+          {/* Usage Scenarios - 使用场景 */}
+          <Card className="bg-card border-border shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-foreground">使用场景</CardTitle>
+              <CardDescription className="text-xs">配置 Agent 的接入渠道</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-2">
+                {usageScenarios.map((scenario) => {
+                  const Icon = scenario.icon;
+                  const isEnabled = scenario.id === 'local-cc' || scenario.id === 'wecom';
+                  return (
+                    <button
+                      key={scenario.id}
+                      className={`p-3 rounded-lg border transition-all text-left ${
+                        isEnabled 
+                          ? 'border-primary/30 bg-primary/5 hover:bg-primary/10' 
+                          : 'border-border bg-muted/30 hover:bg-muted/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div className={`w-7 h-7 rounded-md ${scenario.bgColor} flex items-center justify-center`}>
+                          <Icon className={`h-3.5 w-3.5 ${scenario.color}`} />
+                        </div>
+                        <span className="text-sm font-medium text-foreground">{scenario.name}</span>
+                        {isEnabled && (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-primary ml-auto" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{scenario.description}</p>
+                    </button>
+                  );
+                })}
               </div>
+            </CardContent>
+          </Card>
 
-              {/* Actions */}
-              <div className="flex gap-2">
-                <Button className="flex-1">
-                  <Settings className="h-4 w-4 mr-2" />
-                  编辑配置
-                </Button>
-                <Button variant="outline" className="flex-1">
-                  <Play className="h-4 w-4 mr-2" />
-                  调试测试
-                </Button>
+          {/* Configuration */}
+          <Card className="bg-card border-border shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-foreground">配置信息</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-foreground">模型</span>
+                </div>
+                <span className="text-sm text-muted-foreground">{selectedAgent.model}</span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <Database className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-foreground">知识库</span>
+                </div>
+                <span className="text-sm text-muted-foreground">2 个已绑定</span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-foreground">Skill</span>
+                </div>
+                <span className="text-sm text-muted-foreground">5 个已绑定</span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <GitBranch className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-foreground">工作流</span>
+                </div>
+                <span className="text-sm text-muted-foreground">1 个已绑定</span>
               </div>
             </CardContent>
           </Card>
 
           {/* API Token */}
-          <Card className="bg-card border-border">
-            <CardHeader>
+          <Card className="bg-card border-border shadow-sm">
+            <CardHeader className="pb-2">
               <CardTitle className="text-sm text-foreground">API Token</CardTitle>
-              <CardDescription>用于外部系统调用此 Agent</CardDescription>
+              <CardDescription className="text-xs">用于外部系统调用此 Agent</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
                 <code className="flex-1 p-2 rounded bg-muted text-xs text-muted-foreground font-mono truncate">
                   ap_sk_live_xxxxxxxxxxxxxxxxxxxxx
                 </code>
-                <Button variant="outline" size="sm">
-                  <Copy className="h-4 w-4" />
+                <Button variant="outline" size="sm" className="h-8 px-2">
+                  <Copy className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </CardContent>
           </Card>
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            <Button className="flex-1 shadow-sm">
+              <Settings className="h-4 w-4 mr-2" />
+              编辑配置
+            </Button>
+            <Button variant="outline" className="flex-1">
+              <Play className="h-4 w-4 mr-2" />
+              调试测试
+            </Button>
+          </div>
         </div>
       )}
     </div>

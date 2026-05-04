@@ -51,17 +51,17 @@ export function SecurityView() {
       <div className={`flex-1 space-y-6 ${selectedReview ? 'max-w-2xl' : ''}`}>
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">安全管理</h1>
-          <p className="text-muted-foreground">审核 Skill、Agent 和工作流的安全风险</p>
+          <h1 className="text-xl font-semibold text-foreground">安全管理</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">审核 Skill、Agent 和工作流的安全风险</p>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-4">
-          <Card className="bg-card border-border">
-            <CardContent className="p-4">
+        <div className="grid grid-cols-4 gap-3 mb-5">
+          <Card className="bg-card border-border shadow-sm">
+            <CardContent className="p-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
-                  <Clock className="h-5 w-5 text-yellow-500" />
+                <div className="w-9 h-9 rounded-lg bg-warning/10 flex items-center justify-center">
+                  <Clock className="h-4 w-4 text-warning" />
                 </div>
                 <div>
                   <p className="text-lg font-semibold text-foreground">{pendingReviews.length}</p>
@@ -70,11 +70,11 @@ export function SecurityView() {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-card border-border">
-            <CardContent className="p-4">
+          <Card className="bg-card border-border shadow-sm">
+            <CardContent className="p-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center">
-                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                <div className="w-9 h-9 rounded-lg bg-destructive/10 flex items-center justify-center">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
                 </div>
                 <div>
                   <p className="text-lg font-semibold text-foreground">{mockSecurityReviews.filter(r => r.riskLevel === 'high').length}</p>
@@ -83,11 +83,11 @@ export function SecurityView() {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-card border-border">
-            <CardContent className="p-4">
+          <Card className="bg-card border-border shadow-sm">
+            <CardContent className="p-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <div className="w-9 h-9 rounded-lg bg-green-500/10 flex items-center justify-center">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
                 </div>
                 <div>
                   <p className="text-lg font-semibold text-foreground">{completedReviews.filter(r => r.status === 'approved').length}</p>
@@ -96,11 +96,11 @@ export function SecurityView() {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-card border-border">
-            <CardContent className="p-4">
+          <Card className="bg-card border-border shadow-sm">
+            <CardContent className="p-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Shield className="h-5 w-5 text-primary" />
+                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Shield className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <p className="text-lg font-semibold text-foreground">23</p>
@@ -113,7 +113,7 @@ export function SecurityView() {
 
         {/* Tabs */}
         <Tabs defaultValue="pending" className="space-y-4">
-          <TabsList className="bg-muted">
+          <TabsList className="bg-muted/50 h-9">
             <TabsTrigger value="pending" className="gap-2">
               待审核
               {pendingReviews.length > 0 && (

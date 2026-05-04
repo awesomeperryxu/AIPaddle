@@ -57,17 +57,17 @@ export function MembersView() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">成员管理</h1>
-          <p className="text-muted-foreground">管理组织成员和权限</p>
+          <h1 className="text-xl font-semibold text-foreground">成员管理</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">管理组织成员和权限</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" className="gap-2">
             <Upload className="h-4 w-4" />
             批量导入
           </Button>
-          <Button className="gap-2">
+          <Button className="gap-2 shadow-sm">
             <Plus className="h-4 w-4" />
             添加成员
           </Button>
@@ -75,12 +75,12 @@ export function MembersView() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
+      <div className="grid grid-cols-4 gap-3 mb-5">
+        <Card className="bg-card border-border shadow-sm">
+          <CardContent className="p-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Users className="h-5 w-5 text-primary" />
+              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Users className="h-4 w-4 text-primary" />
               </div>
               <div>
                 <p className="text-lg font-semibold text-foreground">{mockMembers.length}</p>
@@ -89,11 +89,11 @@ export function MembersView() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
+        <Card className="bg-card border-border shadow-sm">
+          <CardContent className="p-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                <UserCheck className="h-5 w-5 text-green-500" />
+              <div className="w-9 h-9 rounded-lg bg-green-500/10 flex items-center justify-center">
+                <UserCheck className="h-4 w-4 text-green-500" />
               </div>
               <div>
                 <p className="text-lg font-semibold text-foreground">{mockMembers.filter(m => m.status === 'active').length}</p>
@@ -102,11 +102,11 @@ export function MembersView() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
+        <Card className="bg-card border-border shadow-sm">
+          <CardContent className="p-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <Zap className="h-5 w-5 text-blue-500" />
+              <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <Zap className="h-4 w-4 text-blue-500" />
               </div>
               <div>
                 <p className="text-lg font-semibold text-foreground">{mockMembers.filter(m => m.role === 'ai_engineer').length}</p>
@@ -115,11 +115,11 @@ export function MembersView() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
+        <Card className="bg-card border-border shadow-sm">
+          <CardContent className="p-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
-                <Shield className="h-5 w-5 text-orange-500" />
+              <div className="w-9 h-9 rounded-lg bg-orange-500/10 flex items-center justify-center">
+                <Shield className="h-4 w-4 text-orange-500" />
               </div>
               <div>
                 <p className="text-lg font-semibold text-foreground">{mockMembers.filter(m => m.role === 'admin' || m.role === 'security').length}</p>
