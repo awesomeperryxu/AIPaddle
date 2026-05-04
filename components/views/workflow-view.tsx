@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -18,12 +18,7 @@ import {
   GitBranch,
   Play,
   Settings,
-  Zap,
-  Users,
   CheckCircle,
-  Clock,
-  ArrowRight,
-  ArrowDown,
   MessageSquare,
   Database,
   Bot,
@@ -47,27 +42,26 @@ import {
   Variable,
   Braces,
   Type,
-  Hash,
-  ToggleLeft,
   List,
-  File,
   X,
-  GripVertical,
   CircleDot,
   Square,
   Diamond,
-  Workflow,
   PanelLeftClose,
   PanelLeft,
   ZoomIn,
   ZoomOut,
   Maximize2,
   MousePointer2,
-  Hand
+  Hand,
+  GripVertical,
+  Trash,
+  LucideIcon
 } from 'lucide-react';
 
 // App types following Dify's structure
 type AppType = 'all' | 'workflow' | 'chatflow' | 'agent' | 'text-generation';
+type NodeType = 'start' | 'end' | 'llm' | 'knowledge' | 'code' | 'condition' | 'variable' | 'http' | 'template' | 'iteration' | 'parameter-extractor' | 'question-classifier';
 
 interface WorkflowApp {
   id: string;
@@ -85,11 +79,20 @@ interface WorkflowApp {
 // Node types for workflow editor
 interface WorkflowNode {
   id: string;
-  type: 'start' | 'end' | 'llm' | 'knowledge' | 'code' | 'condition' | 'variable' | 'http' | 'template' | 'iteration' | 'parameter-extractor' | 'question-classifier';
+  type: NodeType;
   label: string;
   description?: string;
   position: { x: number; y: number };
   config?: Record<string, unknown>;
+}
+
+// Connection between nodes
+interface NodeConnection {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  sourceHandle?: string;
+  targetHandle?: string;
 }
 
 const mockApps: WorkflowApp[] = [
@@ -169,30 +172,40 @@ const statusConfig = {
 };
 
 // Node type configurations for the editor
-const nodeTypeConfig = {
-  start: { label: '开始', icon: CircleDot, color: 'bg-green-500', borderColor: 'border-green-500' },
-  end: { label: '结束', icon: Square, color: 'bg-orange-500', borderColor: 'border-orange-500' },
-  llm: { label: 'LLM', icon: Sparkles, color: 'bg-blue-500', borderColor: 'border-blue-500' },
-  knowledge: { label: '知识检索', icon: Database, color: 'bg-purple-500', borderColor: 'border-purple-500' },
-  code: { label: '代码执行', icon: Code, color: 'bg-gray-500', borderColor: 'border-gray-500' },
-  condition: { label: 'IF/ELSE', icon: Diamond, color: 'bg-yellow-500', borderColor: 'border-yellow-500' },
-  variable: { label: '变量赋值', icon: Variable, color: 'bg-cyan-500', borderColor: 'border-cyan-500' },
-  http: { label: 'HTTP 请求', icon: Globe, color: 'bg-pink-500', borderColor: 'border-pink-500' },
-  template: { label: '模板转换', icon: FileCode, color: 'bg-indigo-500', borderColor: 'border-indigo-500' },
-  iteration: { label: '迭代', icon: List, color: 'bg-teal-500', borderColor: 'border-teal-500' },
-  'parameter-extractor': { label: '参数提取器', icon: Braces, color: 'bg-rose-500', borderColor: 'border-rose-500' },
-  'question-classifier': { label: '问题分类器', icon: Tag, color: 'bg-amber-500', borderColor: 'border-amber-500' }
+const nodeTypeConfig: Record<NodeType, { label: string; icon: LucideIcon; color: string; borderColor: string; category: string }> = {
+  start: { label: '开始', icon: CircleDot, color: 'bg-green-500', borderColor: 'border-green-500', category: 'basic' },
+  end: { label: '结束', icon: Square, color: 'bg-orange-500', borderColor: 'border-orange-500', category: 'basic' },
+  llm: { label: 'LLM', icon: Sparkles, color: 'bg-blue-500', borderColor: 'border-blue-500', category: 'ai' },
+  knowledge: { label: '知识检索', icon: Database, color: 'bg-purple-500', borderColor: 'border-purple-500', category: 'ai' },
+  code: { label: '代码执行', icon: Code, color: 'bg-gray-500', borderColor: 'border-gray-500', category: 'integration' },
+  condition: { label: 'IF/ELSE', icon: Diamond, color: 'bg-yellow-500', borderColor: 'border-yellow-500', category: 'logic' },
+  variable: { label: '变量赋值', icon: Variable, color: 'bg-cyan-500', borderColor: 'border-cyan-500', category: 'logic' },
+  http: { label: 'HTTP 请求', icon: Globe, color: 'bg-pink-500', borderColor: 'border-pink-500', category: 'integration' },
+  template: { label: '模板转换', icon: FileCode, color: 'bg-indigo-500', borderColor: 'border-indigo-500', category: 'integration' },
+  iteration: { label: '迭代', icon: List, color: 'bg-teal-500', borderColor: 'border-teal-500', category: 'logic' },
+  'parameter-extractor': { label: '参数提取器', icon: Braces, color: 'bg-rose-500', borderColor: 'border-rose-500', category: 'ai' },
+  'question-classifier': { label: '问题分类器', icon: Tag, color: 'bg-amber-500', borderColor: 'border-amber-500', category: 'ai' }
 };
 
-// Sample workflow nodes for the editor
-const sampleWorkflowNodes: WorkflowNode[] = [
-  { id: 'start', type: 'start', label: '开始', position: { x: 100, y: 50 } },
-  { id: 'llm-1', type: 'llm', label: 'LLM', description: '调用大语言模型处理用户输入', position: { x: 100, y: 150 } },
-  { id: 'condition-1', type: 'condition', label: 'IF/ELSE', description: '条件判断分支', position: { x: 100, y: 270 } },
-  { id: 'knowledge-1', type: 'knowledge', label: '知识检索', description: '从知识库检索相关内容', position: { x: 0, y: 390 } },
-  { id: 'code-1', type: 'code', label: '代码执行', description: '执行自定义代码逻辑', position: { x: 200, y: 390 } },
-  { id: 'llm-2', type: 'llm', label: 'LLM', description: '生成最终回复', position: { x: 100, y: 510 } },
-  { id: 'end', type: 'end', label: '结束', position: { x: 100, y: 620 } }
+// Node categories for sidebar
+const nodeCategories = [
+  { id: 'basic', label: '基础节点', types: ['start', 'end'] as NodeType[] },
+  { id: 'ai', label: 'AI 节点', types: ['llm', 'knowledge', 'question-classifier', 'parameter-extractor'] as NodeType[] },
+  { id: 'logic', label: '逻辑节点', types: ['condition', 'iteration', 'variable'] as NodeType[] },
+  { id: 'integration', label: '集成节点', types: ['code', 'http', 'template'] as NodeType[] }
+];
+
+// Initial workflow nodes
+const initialWorkflowNodes: WorkflowNode[] = [
+  { id: 'start-1', type: 'start', label: '开始', position: { x: 250, y: 50 } },
+  { id: 'llm-1', type: 'llm', label: 'LLM', description: '调用大语言模型处理用户输入', position: { x: 250, y: 180 } },
+  { id: 'end-1', type: 'end', label: '结束', position: { x: 250, y: 340 } }
+];
+
+// Initial connections
+const initialConnections: NodeConnection[] = [
+  { id: 'conn-1', sourceId: 'start-1', targetId: 'llm-1' },
+  { id: 'conn-2', sourceId: 'llm-1', targetId: 'end-1' }
 ];
 
 export function WorkflowView() {
@@ -204,6 +217,24 @@ export function WorkflowView() {
   const [selectedNode, setSelectedNode] = useState<WorkflowNode | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [canvasTool, setCanvasTool] = useState<'select' | 'pan'>('select');
+  
+  // Workflow state
+  const [workflowNodes, setWorkflowNodes] = useState<WorkflowNode[]>(initialWorkflowNodes);
+  const [connections, setConnections] = useState<NodeConnection[]>(initialConnections);
+  
+  // Drag state
+  const [draggingNode, setDraggingNode] = useState<WorkflowNode | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingFromSidebar, setIsDraggingFromSidebar] = useState(false);
+  const [draggingNodeType, setDraggingNodeType] = useState<NodeType | null>(null);
+  const [isOverCanvas, setIsOverCanvas] = useState(false);
+  
+  // Canvas state
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
   const filteredApps = mockApps.filter(app => {
     const matchesSearch = app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -215,7 +246,158 @@ export function WorkflowView() {
   const handleEditWorkflow = (app: WorkflowApp) => {
     setSelectedApp(app);
     setIsEditorOpen(true);
+    // Reset workflow state for new editor session
+    setWorkflowNodes(initialWorkflowNodes);
+    setConnections(initialConnections);
+    setSelectedNode(null);
   };
+
+  // Generate unique node ID
+  const generateNodeId = useCallback((type: NodeType) => {
+    return `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }, []);
+
+  // Handle drag start from sidebar
+  const handleSidebarDragStart = useCallback((e: React.DragEvent, nodeType: NodeType) => {
+    setIsDraggingFromSidebar(true);
+    setDraggingNodeType(nodeType);
+    e.dataTransfer.setData('nodeType', nodeType);
+    e.dataTransfer.effectAllowed = 'copy';
+  }, []);
+
+  // Handle drag end from sidebar
+  const handleSidebarDragEnd = useCallback(() => {
+    setIsDraggingFromSidebar(false);
+    setDraggingNodeType(null);
+    setIsOverCanvas(false);
+  }, []);
+
+  // Handle canvas drag over
+  const handleCanvasDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsOverCanvas(true);
+  }, []);
+
+  // Handle canvas drag leave
+  const handleCanvasDragLeave = useCallback(() => {
+    setIsOverCanvas(false);
+  }, []);
+
+  // Handle drop on canvas
+  const handleCanvasDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const nodeType = e.dataTransfer.getData('nodeType') as NodeType;
+    
+    if (nodeType && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const scale = zoomLevel / 100;
+      const x = (e.clientX - rect.left - canvasOffset.x) / scale;
+      const y = (e.clientY - rect.top - canvasOffset.y) / scale;
+      
+      const newNode: WorkflowNode = {
+        id: generateNodeId(nodeType),
+        type: nodeType,
+        label: nodeTypeConfig[nodeType].label,
+        position: { x: x - 100, y: y - 30 }, // Center the node on drop position
+      };
+      
+      setWorkflowNodes(prev => [...prev, newNode]);
+      setSelectedNode(newNode);
+    }
+    
+    setIsDraggingFromSidebar(false);
+    setDraggingNodeType(null);
+    setIsOverCanvas(false);
+  }, [canvasOffset, zoomLevel, generateNodeId]);
+
+  // Handle node drag start on canvas
+  const handleNodeDragStart = useCallback((e: React.MouseEvent, node: WorkflowNode) => {
+    if (canvasTool !== 'select') return;
+    
+    e.stopPropagation();
+    const scale = zoomLevel / 100;
+    setDraggingNode(node);
+    setDragOffset({
+      x: e.clientX - node.position.x * scale - canvasOffset.x,
+      y: e.clientY - node.position.y * scale - canvasOffset.y
+    });
+    setSelectedNode(node);
+  }, [canvasTool, zoomLevel, canvasOffset]);
+
+  // Handle mouse move for node dragging
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (draggingNode && canvasRef.current) {
+      const scale = zoomLevel / 100;
+      const newX = (e.clientX - dragOffset.x - canvasOffset.x) / scale;
+      const newY = (e.clientY - dragOffset.y - canvasOffset.y) / scale;
+      
+      setWorkflowNodes(prev => prev.map(n => 
+        n.id === draggingNode.id 
+          ? { ...n, position: { x: Math.max(0, newX), y: Math.max(0, newY) } }
+          : n
+      ));
+    }
+    
+    if (isPanning) {
+      const dx = e.clientX - panStart.x;
+      const dy = e.clientY - panStart.y;
+      setCanvasOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      setPanStart({ x: e.clientX, y: e.clientY });
+    }
+  }, [draggingNode, dragOffset, canvasOffset, zoomLevel, isPanning, panStart]);
+
+  // Handle mouse up
+  const handleMouseUp = useCallback(() => {
+    setDraggingNode(null);
+    setIsPanning(false);
+  }, []);
+
+  // Handle canvas mouse down for panning
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    if (canvasTool === 'pan' || e.button === 1) { // Middle mouse button or pan tool
+      setIsPanning(true);
+      setPanStart({ x: e.clientX, y: e.clientY });
+    }
+  }, [canvasTool]);
+
+  // Delete selected node
+  const handleDeleteNode = useCallback(() => {
+    if (selectedNode) {
+      setWorkflowNodes(prev => prev.filter(n => n.id !== selectedNode.id));
+      setConnections(prev => prev.filter(c => c.sourceId !== selectedNode.id && c.targetId !== selectedNode.id));
+      setSelectedNode(null);
+    }
+  }, [selectedNode]);
+
+  // Handle keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNode && selectedNode.type !== 'start') {
+          handleDeleteNode();
+        }
+      }
+      if (e.key === 'Escape') {
+        setSelectedNode(null);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNode, handleDeleteNode]);
+
+  // Calculate SVG path for connections
+  const getConnectionPath = useCallback((source: WorkflowNode, target: WorkflowNode) => {
+    const sourceX = source.position.x + 100; // Center of node (assuming 200px width)
+    const sourceY = source.position.y + (source.type === 'start' || source.type === 'end' ? 18 : 50); // Bottom of node
+    const targetX = target.position.x + 100;
+    const targetY = target.position.y; // Top of node
+    
+    const midY = (sourceY + targetY) / 2;
+    
+    return `M ${sourceX} ${sourceY} C ${sourceX} ${midY}, ${targetX} ${midY}, ${targetX} ${targetY}`;
+  }, []);
 
   // Workflow Editor View
   if (isEditorOpen && selectedApp) {
@@ -280,92 +462,37 @@ export function WorkflowView() {
             {!isSidebarCollapsed && (
               <ScrollArea className="h-[calc(100%-40px)]">
                 <div className="p-3 space-y-4">
-                  {/* Basic Nodes */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2">基础节点</p>
-                    <div className="space-y-1">
-                      {(['start', 'end'] as const).map((type) => {
-                        const config = nodeTypeConfig[type];
-                        return (
-                          <div
-                            key={type}
-                            className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-grab transition-colors"
-                            draggable
-                          >
-                            <div className={`w-5 h-5 rounded ${config.color}/20 flex items-center justify-center`}>
-                              <config.icon className={`h-3 w-3 ${config.color.replace('bg-', 'text-')}`} />
+                  {nodeCategories.map((category) => (
+                    <div key={category.id}>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">{category.label}</p>
+                      <div className="space-y-1">
+                        {category.types.map((type) => {
+                          const config = nodeTypeConfig[type];
+                          return (
+                            <div
+                              key={type}
+                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-grab active:cursor-grabbing transition-colors select-none"
+                              draggable
+                              onDragStart={(e) => handleSidebarDragStart(e, type)}
+                              onDragEnd={handleSidebarDragEnd}
+                            >
+                              <GripVertical className="h-3 w-3 text-muted-foreground" />
+                              <div className={`w-5 h-5 rounded ${config.color}/20 flex items-center justify-center`}>
+                                <config.icon className={`h-3 w-3 ${config.color.replace('bg-', 'text-')}`} />
+                              </div>
+                              <span className="text-sm text-foreground">{config.label}</span>
                             </div>
-                            <span className="text-sm text-foreground">{config.label}</span>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-
-                  {/* AI Nodes */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2">AI 节点</p>
-                    <div className="space-y-1">
-                      {(['llm', 'knowledge', 'question-classifier', 'parameter-extractor'] as const).map((type) => {
-                        const config = nodeTypeConfig[type];
-                        return (
-                          <div
-                            key={type}
-                            className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-grab transition-colors"
-                            draggable
-                          >
-                            <div className={`w-5 h-5 rounded ${config.color}/20 flex items-center justify-center`}>
-                              <config.icon className={`h-3 w-3 ${config.color.replace('bg-', 'text-')}`} />
-                            </div>
-                            <span className="text-sm text-foreground">{config.label}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Logic Nodes */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2">逻辑节点</p>
-                    <div className="space-y-1">
-                      {(['condition', 'iteration', 'variable'] as const).map((type) => {
-                        const config = nodeTypeConfig[type];
-                        return (
-                          <div
-                            key={type}
-                            className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-grab transition-colors"
-                            draggable
-                          >
-                            <div className={`w-5 h-5 rounded ${config.color}/20 flex items-center justify-center`}>
-                              <config.icon className={`h-3 w-3 ${config.color.replace('bg-', 'text-')}`} />
-                            </div>
-                            <span className="text-sm text-foreground">{config.label}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Integration Nodes */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2">集成节点</p>
-                    <div className="space-y-1">
-                      {(['code', 'http', 'template'] as const).map((type) => {
-                        const config = nodeTypeConfig[type];
-                        return (
-                          <div
-                            key={type}
-                            className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-grab transition-colors"
-                            draggable
-                          >
-                            <div className={`w-5 h-5 rounded ${config.color}/20 flex items-center justify-center`}>
-                              <config.icon className={`h-3 w-3 ${config.color.replace('bg-', 'text-')}`} />
-                            </div>
-                            <span className="text-sm text-foreground">{config.label}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  ))}
+                  
+                  {/* Drag hint */}
+                  <div className="pt-4 border-t border-border">
+                    <p className="text-xs text-muted-foreground text-center">
+                      拖拽节点到画布中添加
+                    </p>
                   </div>
                 </div>
               </ScrollArea>
@@ -373,13 +500,26 @@ export function WorkflowView() {
           </div>
 
           {/* Canvas Area */}
-          <div className="flex-1 relative bg-muted/30 overflow-hidden">
+          <div 
+            className={`flex-1 relative overflow-hidden ${isOverCanvas && isDraggingFromSidebar ? 'bg-primary/5' : 'bg-muted/30'}`}
+            style={{ cursor: canvasTool === 'pan' ? 'grab' : 'default' }}
+          >
             {/* Canvas Toolbar */}
             <div className="absolute top-3 left-3 flex items-center gap-1 bg-card border border-border rounded-lg p-1 shadow-sm z-10">
-              <Button variant="ghost" size="icon" className="h-7 w-7">
+              <Button 
+                variant={canvasTool === 'select' ? 'secondary' : 'ghost'} 
+                size="icon" 
+                className="h-7 w-7"
+                onClick={() => setCanvasTool('select')}
+              >
                 <MousePointer2 className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7">
+              <Button 
+                variant={canvasTool === 'pan' ? 'secondary' : 'ghost'} 
+                size="icon" 
+                className="h-7 w-7"
+                onClick={() => setCanvasTool('pan')}
+              >
                 <Hand className="h-4 w-4" />
               </Button>
             </div>
@@ -399,61 +539,128 @@ export function WorkflowView() {
               </Button>
             </div>
 
+            {/* Node count indicator */}
+            <div className="absolute top-3 right-3 bg-card border border-border rounded-lg px-3 py-1.5 shadow-sm z-10">
+              <span className="text-xs text-muted-foreground">{workflowNodes.length} 个节点</span>
+            </div>
+
+            {/* Drop zone hint when dragging */}
+            {isDraggingFromSidebar && (
+              <div className="absolute inset-4 border-2 border-dashed border-primary/50 rounded-lg flex items-center justify-center pointer-events-none z-10">
+                <div className="bg-card px-4 py-2 rounded-lg shadow-lg">
+                  <p className="text-sm text-primary font-medium">释放以添加 {draggingNodeType && nodeTypeConfig[draggingNodeType].label} 节点</p>
+                </div>
+              </div>
+            )}
+
             {/* Workflow Canvas */}
             <div 
-              className="absolute inset-0 overflow-auto p-8"
-              style={{ 
-                backgroundImage: 'radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)',
-                backgroundSize: '20px 20px',
-                transform: `scale(${zoomLevel / 100})`,
-                transformOrigin: 'top left'
-              }}
+              ref={canvasRef}
+              className="absolute inset-0 overflow-hidden"
+              onDragOver={handleCanvasDragOver}
+              onDragLeave={handleCanvasDragLeave}
+              onDrop={handleCanvasDrop}
+              onMouseDown={handleCanvasMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
             >
-              <div className="relative min-h-[800px] min-w-[600px]">
-                {/* Render workflow nodes */}
-                {sampleWorkflowNodes.map((node, index) => {
-                  const config = nodeTypeConfig[node.type];
-                  const isSelected = selectedNode?.id === node.id;
-                  
-                  return (
-                    <div
-                      key={node.id}
-                      className={`absolute cursor-pointer transition-all ${isSelected ? 'ring-2 ring-primary ring-offset-2' : ''}`}
-                      style={{ left: node.position.x, top: node.position.y }}
-                      onClick={() => setSelectedNode(node)}
-                    >
-                      {/* Start/End nodes are smaller */}
-                      {(node.type === 'start' || node.type === 'end') ? (
-                        <div className={`w-20 h-9 rounded-full ${config.color}/20 border-2 ${config.borderColor}/40 flex items-center justify-center gap-1.5 bg-card shadow-sm`}>
-                          <config.icon className={`h-3.5 w-3.5 ${config.color.replace('bg-', 'text-')}`} />
-                          <span className="text-xs font-medium text-foreground">{config.label}</span>
-                        </div>
-                      ) : (
-                        <div className={`w-52 bg-card rounded-lg border-2 ${config.borderColor}/40 shadow-sm overflow-hidden`}>
-                          <div className={`h-1 ${config.color}`} />
-                          <div className="p-3">
-                            <div className="flex items-center gap-2 mb-1">
-                              <div className={`w-5 h-5 rounded ${config.color}/20 flex items-center justify-center`}>
-                                <config.icon className={`h-3 w-3 ${config.color.replace('bg-', 'text-')}`} />
-                              </div>
-                              <span className="text-sm font-medium text-foreground">{config.label}</span>
-                            </div>
-                            {node.description && (
-                              <p className="text-xs text-muted-foreground line-clamp-2">{node.description}</p>
-                            )}
-                          </div>
-                        </div>
-                      )}
+              <div 
+                className="absolute inset-0"
+                style={{ 
+                  backgroundImage: 'radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)',
+                  backgroundSize: `${20 * zoomLevel / 100}px ${20 * zoomLevel / 100}px`,
+                  backgroundPosition: `${canvasOffset.x}px ${canvasOffset.y}px`
+                }}
+              >
+                <div 
+                  className="relative"
+                  style={{ 
+                    transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${zoomLevel / 100})`,
+                    transformOrigin: '0 0',
+                    width: '3000px',
+                    height: '2000px'
+                  }}
+                >
+                  {/* SVG for connections */}
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ overflow: 'visible' }}>
+                    {connections.map((conn) => {
+                      const sourceNode = workflowNodes.find(n => n.id === conn.sourceId);
+                      const targetNode = workflowNodes.find(n => n.id === conn.targetId);
+                      if (!sourceNode || !targetNode) return null;
+                      
+                      return (
+                        <g key={conn.id}>
+                          <path
+                            d={getConnectionPath(sourceNode, targetNode)}
+                            fill="none"
+                            stroke="hsl(var(--border))"
+                            strokeWidth="2"
+                            className="transition-colors"
+                          />
+                          {/* Arrow marker */}
+                          <circle
+                            cx={targetNode.position.x + 100}
+                            cy={targetNode.position.y - 4}
+                            r="3"
+                            fill="hsl(var(--border))"
+                          />
+                        </g>
+                      );
+                    })}
+                  </svg>
 
-                      {/* Connection line to next node */}
-                      {index < sampleWorkflowNodes.length - 1 && node.type !== 'condition' && (
-                        <div className="absolute left-1/2 -translate-x-1/2 top-full w-px h-10 bg-border">
-                          <ArrowDown className="absolute -bottom-1 left-1/2 -translate-x-1/2 h-3 w-3 text-muted-foreground" />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                  {/* Render workflow nodes */}
+                  {workflowNodes.map((node) => {
+                    const config = nodeTypeConfig[node.type];
+                    const isSelected = selectedNode?.id === node.id;
+                    const isDragging = draggingNode?.id === node.id;
+                    
+                    return (
+                      <div
+                        key={node.id}
+                        className={`absolute transition-shadow ${isDragging ? 'z-50' : 'z-10'} ${isSelected ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}
+                        style={{ 
+                          left: node.position.x, 
+                          top: node.position.y,
+                          cursor: canvasTool === 'select' ? (isDragging ? 'grabbing' : 'grab') : 'default'
+                        }}
+                        onMouseDown={(e) => handleNodeDragStart(e, node)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedNode(node);
+                        }}
+                      >
+                        {/* Start/End nodes are smaller and rounded */}
+                        {(node.type === 'start' || node.type === 'end') ? (
+                          <div className={`w-24 h-9 rounded-full ${config.color}/20 border-2 ${config.borderColor}/40 flex items-center justify-center gap-1.5 bg-card shadow-sm hover:shadow-md transition-shadow`}>
+                            <config.icon className={`h-3.5 w-3.5 ${config.color.replace('bg-', 'text-')}`} />
+                            <span className="text-xs font-medium text-foreground">{config.label}</span>
+                          </div>
+                        ) : (
+                          <div className={`w-52 bg-card rounded-lg border-2 ${config.borderColor}/40 shadow-sm hover:shadow-md transition-shadow overflow-hidden`}>
+                            <div className={`h-1.5 ${config.color}`} />
+                            <div className="p-3">
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className={`w-6 h-6 rounded ${config.color}/20 flex items-center justify-center`}>
+                                  <config.icon className={`h-3.5 w-3.5 ${config.color.replace('bg-', 'text-')}`} />
+                                </div>
+                                <span className="text-sm font-medium text-foreground">{config.label}</span>
+                              </div>
+                              {node.description && (
+                                <p className="text-xs text-muted-foreground line-clamp-2 ml-8">{node.description}</p>
+                              )}
+                            </div>
+                            
+                            {/* Connection handles */}
+                            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-card border-2 border-border hover:border-primary transition-colors" />
+                            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-card border-2 border-border hover:border-primary transition-colors" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -463,9 +670,16 @@ export function WorkflowView() {
             <div className="w-80 border-l border-border bg-card">
               <div className="h-10 border-b border-border flex items-center justify-between px-3">
                 <span className="text-xs font-medium text-muted-foreground">节点配置</span>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedNode(null)}>
-                  <X className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  {selectedNode.type !== 'start' && (
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={handleDeleteNode}>
+                      <Trash className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedNode(null)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               <ScrollArea className="h-[calc(100%-40px)]">
                 <div className="p-4 space-y-4">
@@ -479,7 +693,39 @@ export function WorkflowView() {
                     </div>
                     <div>
                       <h3 className="text-sm font-medium text-foreground">{nodeTypeConfig[selectedNode.type].label}</h3>
-                      <p className="text-xs text-muted-foreground">节点 ID: {selectedNode.id}</p>
+                      <p className="text-xs text-muted-foreground">节点 ID: {selectedNode.id.slice(0, 12)}...</p>
+                    </div>
+                  </div>
+
+                  {/* Position info */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">X 坐标</Label>
+                      <Input 
+                        type="number" 
+                        value={Math.round(selectedNode.position.x)} 
+                        onChange={(e) => {
+                          const x = parseInt(e.target.value) || 0;
+                          setWorkflowNodes(prev => prev.map(n => 
+                            n.id === selectedNode.id ? { ...n, position: { ...n.position, x } } : n
+                          ));
+                        }}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Y 坐标</Label>
+                      <Input 
+                        type="number" 
+                        value={Math.round(selectedNode.position.y)} 
+                        onChange={(e) => {
+                          const y = parseInt(e.target.value) || 0;
+                          setWorkflowNodes(prev => prev.map(n => 
+                            n.id === selectedNode.id ? { ...n, position: { ...n.position, y } } : n
+                          ));
+                        }}
+                        className="h-8 text-xs"
+                      />
                     </div>
                   </div>
 
@@ -607,22 +853,57 @@ export function WorkflowView() {
                     </>
                   )}
 
-                  {/* Output Variables */}
-                  <div className="space-y-2 pt-4 border-t border-border">
-                    <Label className="text-xs">输出变量</Label>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md border border-border">
-                        <Type className="h-4 w-4 text-blue-500" />
-                        <span className="text-xs text-foreground">text</span>
-                        <span className="text-xs text-muted-foreground ml-auto">String</span>
+                  {selectedNode.type === 'http' && (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-xs">请求方法</Label>
+                        <Select defaultValue="GET">
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="GET">GET</SelectItem>
+                            <SelectItem value="POST">POST</SelectItem>
+                            <SelectItem value="PUT">PUT</SelectItem>
+                            <SelectItem value="DELETE">DELETE</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
-                      <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md border border-border">
-                        <Braces className="h-4 w-4 text-purple-500" />
-                        <span className="text-xs text-foreground">metadata</span>
-                        <span className="text-xs text-muted-foreground ml-auto">Object</span>
+                      <div className="space-y-2">
+                        <Label className="text-xs">请求地址</Label>
+                        <Input 
+                          className="h-8 text-xs font-mono" 
+                          placeholder="https://api.example.com/endpoint"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">请求头</Label>
+                        <Textarea 
+                          className="min-h-[60px] text-xs font-mono" 
+                          placeholder='{"Content-Type": "application/json"}'
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Output Variables (for applicable nodes) */}
+                  {selectedNode.type !== 'start' && selectedNode.type !== 'end' && (
+                    <div className="space-y-2 pt-4 border-t border-border">
+                      <Label className="text-xs">输出变量</Label>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md border border-border">
+                          <Type className="h-4 w-4 text-blue-500" />
+                          <span className="text-xs text-foreground">text</span>
+                          <span className="text-xs text-muted-foreground ml-auto">String</span>
+                        </div>
+                        <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md border border-border">
+                          <Braces className="h-4 w-4 text-purple-500" />
+                          <span className="text-xs text-foreground">metadata</span>
+                          <span className="text-xs text-muted-foreground ml-auto">Object</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </ScrollArea>
             </div>
@@ -670,6 +951,10 @@ export function WorkflowView() {
                     executions: 0,
                     successRate: 0
                   });
+                  setWorkflowNodes([
+                    { id: 'start-1', type: 'start', label: '开始', position: { x: 250, y: 50 } }
+                  ]);
+                  setConnections([]);
                   setIsEditorOpen(true);
                 }}
               >
