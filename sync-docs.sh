@@ -1,11 +1,9 @@
 #!/bin/bash
 
-# Dify 文档自动同步脚本
-# 将 dify-analysis 的文档同步到 GitHub 仓库
+# v0-ai-llmops-prototype 文档自动同步脚本
+# 同步本地 docs 文件夹到 GitHub
 
 REPO_DIR="$HOME/github/v0-ai-llmops-prototype"
-SOURCE_DIR="$HOME/hermes-wechat/dify-analysis"
-TARGET_DIR="$REPO_DIR/docs"
 LOG_FILE="$REPO_DIR/sync-docs.log"
 
 echo "========================================" >> "$LOG_FILE"
@@ -17,32 +15,16 @@ cd "$REPO_DIR" || exit 1
 echo "拉取最新代码..." >> "$LOG_FILE"
 git pull origin main >> "$LOG_FILE" 2>&1
 
-# 同步文档
-echo "同步文档..." >> "$LOG_FILE"
-
-# 创建目标目录
-mkdir -p "$TARGET_DIR/dify-analysis"
-
-# 复制核心文档
-cp "$SOURCE_DIR/Dify-PRD-Complete.md" "$TARGET_DIR/dify-analysis/" 2>> "$LOG_FILE"
-cp "$SOURCE_DIR/Dify-v0dev-Prompts-Updated.md" "$TARGET_DIR/dify-analysis/" 2>> "$LOG_FILE"
-cp "$SOURCE_DIR/FINAL_COMPLETE_REPORT.md" "$TARGET_DIR/dify-analysis/" 2>> "$LOG_FILE"
-cp "$SOURCE_DIR/SCREENSHOTS_INVENTORY.md" "$TARGET_DIR/dify-analysis/" 2>> "$LOG_FILE"
-cp "$SOURCE_DIR/QUICK_START.md" "$TARGET_DIR/dify-analysis/" 2>> "$LOG_FILE"
-
-# 复制截图（选择性复制，避免文件过大）
-mkdir -p "$TARGET_DIR/dify-analysis/screenshots"
-cp "$SOURCE_DIR/screenshots-complete/"*.png "$TARGET_DIR/dify-analysis/screenshots/" 2>> "$LOG_FILE" || echo "截图复制失败或不存在" >> "$LOG_FILE"
+# 添加 docs 文件夹的所有变更
+echo "检查 docs 文件夹变更..." >> "$LOG_FILE"
+git add docs/
 
 # 检查是否有变更
-if [[ -n $(git status -s) ]]; then
+if [[ -n $(git status -s docs/) ]]; then
     echo "发现变更，提交到 Git..." >> "$LOG_FILE"
     
-    # 添加所有变更
-    git add docs/
-    
     # 提交
-    git commit -m "docs: 自动同步 Dify 分析文档 - $(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG_FILE" 2>&1
+    git commit -m "docs: 自动同步文档 - $(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG_FILE" 2>&1
     
     # 推送到远程
     git push origin main >> "$LOG_FILE" 2>&1
