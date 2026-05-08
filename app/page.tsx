@@ -15,6 +15,12 @@ import { TenantsView } from '@/components/views/tenants-view';
 import { BillingView } from '@/components/views/billing-view';
 import { ApiKeysView } from '@/components/views/api-keys-view';
 import { SettingsView } from '@/components/views/settings-view';
+import { OrgStructureView } from '@/components/views/org-structure-view';
+import { UsersManagementView } from '@/components/views/users-management-view';
+import { RolesPermissionsView } from '@/components/views/roles-permissions-view';
+import { AccessControlView } from '@/components/views/access-control-view';
+import { QuotaManagementView } from '@/components/views/quota-management-view';
+import { AuditLogView } from '@/components/views/audit-log-view';
 import { Bell, Search, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,6 +63,18 @@ export default function AIPaddlePlatform() {
         return <BillingView />;
       case 'settings':
         return <SettingsView />;
+      case 'org-structure':
+        return <OrgStructureView />;
+      case 'users-management':
+        return <UsersManagementView />;
+      case 'roles-permissions':
+        return <RolesPermissionsView />;
+      case 'access-control':
+        return <AccessControlView />;
+      case 'quota-management':
+        return <QuotaManagementView />;
+      case 'audit-log':
+        return <AuditLogView />;
       default:
         return <DashboardView />;
     }
@@ -79,7 +97,13 @@ export default function AIPaddlePlatform() {
       'saas-dashboard': '运营看板',
       keys: 'Key 管理',
       billing: '账单管理',
-      settings: '系统设置'
+      settings: '系统设置',
+      'org-structure': '组织架构',
+      'users-management': '人员管理',
+      'roles-permissions': '角色权限',
+      'access-control': '访问控制',
+      'quota-management': '资源配额',
+      'audit-log': '审计日志'
     };
     return titles[activeView] || '监控看板';
   };

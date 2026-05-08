@@ -17,7 +17,13 @@ import {
   Building2,
   Key,
   CreditCard,
-  BarChart3
+  BarChart3,
+  Network,
+  UserCog,
+  ShieldCheck,
+  Lock,
+  Gauge,
+  ScrollText,
 } from 'lucide-react';
 
 interface NavItem {
@@ -44,6 +50,15 @@ const adminNav: NavItem[] = [
   { title: '安全管理', icon: <Shield className="h-4 w-4" />, href: 'security', badge: 3 },
   { title: '成员管理', icon: <Users className="h-4 w-4" />, href: 'members' },
   { title: '系统设置', icon: <Settings className="h-4 w-4" />, href: 'settings' },
+];
+
+const tenantInternalNav: NavItem[] = [
+  { title: '组织架构', icon: <Network className="h-4 w-4" />, href: 'org-structure' },
+  { title: '人员管理', icon: <UserCog className="h-4 w-4" />, href: 'users-management' },
+  { title: '角色权限', icon: <ShieldCheck className="h-4 w-4" />, href: 'roles-permissions' },
+  { title: '访问控制', icon: <Lock className="h-4 w-4" />, href: 'access-control' },
+  { title: '资源配额', icon: <Gauge className="h-4 w-4" />, href: 'quota-management' },
+  { title: '审计日志', icon: <ScrollText className="h-4 w-4" />, href: 'audit-log' },
 ];
 
 const saasNav: NavItem[] = [
@@ -147,9 +162,34 @@ export function AppSidebar({ activeView, onViewChange }: AppSidebarProps) {
           </ul>
         </div>
 
+        {/* Tenant Internal Management Section */}
+        <div>
+          <p className="px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">租户管理</p>
+          <ul className="space-y-1">
+            {tenantInternalNav.map((item) => (
+              <li key={item.href}>
+                <button
+                  onClick={() => onViewChange(item.href)}
+                  className={cn(
+                    'w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors',
+                    activeView === item.href
+                      ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                      : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    {item.icon}
+                    <span>{item.title}</span>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
         {/* SaaS Admin Section */}
         <div>
-          <p className="px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">平台管理</p>
+          <p className="px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">平台运营</p>
           <ul className="space-y-1">
             {saasNav.map((item) => (
               <li key={item.href}>
