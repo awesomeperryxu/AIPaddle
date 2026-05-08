@@ -1,0 +1,28 @@
+请根据以下 iteration 文件更新 PRD 和 UI Design 文档：
+
+## Iteration 文件路径
+- /Users/perryxu/github/v0-ai-llmops-prototype/docs/requirements/iteration/PRD_saas-tenant-management_20260508.md
+
+## 当前文档
+- PRD: /Users/perryxu/github/v0-ai-llmops-prototype/docs/requirements/PRD_Core_v1.0.md (v1.0)
+- UI Design: /Users/perryxu/github/v0-ai-llmops-prototype/docs/requirements/UI_Design_Spec_v1.0.md (v1.0)
+
+## 目标
+1. 分析 iteration 文件中的新增内容
+2. 将相关内容合并到 PRD_Core 文档中
+3. 更新 UI_Design_Spec 文档（如有 UI 相关变更）
+4. 创建新版本文档：
+   - PRD_Core_v1.01.md
+   - UI_Design_Spec_v1.01.md
+5. 更新变更日志：
+   - /Users/perryxu/github/v0-ai-llmops-prototype/docs/changelogs/CHANGELOG_20260508.md
+   - /Users/perryxu/github/v0-ai-llmops-prototype/docs/changelogs/RELEASE_v1.01_20260508.md
+
+## 要求
+- 保持文档结构一致
+- 新增内容需要标注版本号
+- 更新目录索引
+- 补充变更日志中的"待分析"部分
+- 确保 v0.dev 提示词的可用性
+
+请开始执行。
