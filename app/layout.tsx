@@ -7,8 +7,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'AIPaddle - AI 业务赋能平台',
-  description: '企业级 AI Agent 与 Skill 管理平台，支持本地CC、企微对话等多场景接入',
+  title: 'AIPaddle - AI Business Enablement Platform',
+  description: 'Enterprise-grade AI Agent and Skill Management Platform',
   generator: 'v0.app',
   icons: {
     icon: [
