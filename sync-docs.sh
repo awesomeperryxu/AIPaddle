@@ -9,6 +9,23 @@ LOG_FILE="$REPO_DIR/sync-docs.log"
 echo "========================================" >> "$LOG_FILE"
 echo "同步开始: $(date)" >> "$LOG_FILE"
 
+# 等待网络就绪（最多等 60 秒）
+echo "检查网络连接..." >> "$LOG_FILE"
+for i in $(seq 1 12); do
+    if ping -c 1 -W 3 github.com &>/dev/null 2>&1; then
+        echo "✅ 网络就绪" >> "$LOG_FILE"
+        break
+    fi
+    if [ $i -eq 12 ]; then
+        echo "❌ 网络不可用，跳过本次同步" >> "$LOG_FILE"
+        echo "同步完成: $(date)" >> "$LOG_FILE"
+        echo "" >> "$LOG_FILE"
+        exit 0
+    fi
+    echo "等待网络... ($((i*5))s)" >> "$LOG_FILE"
+    sleep 5
+done
+
 cd "$REPO_DIR" || exit 1
 
 # 拉取最新代码
