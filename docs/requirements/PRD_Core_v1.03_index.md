@@ -12,6 +12,7 @@
 - v1.02 (2026-05-08): 新增租户内部管理模块（2.10）
 - v1.03 (2026-05-08): 增强租户管理模块（2.9），完善开通企业流程、多级页面结构、配额管理、账单管理等功能
 - v1.04 (2026-05-08): 新增 Workflow & Chatflow 模块（2.5），基于 Dify 开源代码分析，包含 PRD 和 UI 设计文档
+- v1.04 (2026-05-12): 全面重写 2.5 模块（Dify 源码深度核查，补充 24 个缺失功能），新建 PRD_Core_v1.04.md 和 UI_Design_Spec_v1.04.md
 
 ---
 
@@ -113,7 +114,9 @@ git diff docs/requirements/modules/
 
 ## 🔗 相关文档
 
-- [UI 设计规范](./UI_Design_Spec_v1.03.md)
+- [UI 设计规范 v1.04](./UI_Design_Spec_v1.04.md) 🆕
+- [UI 设计规范 v1.03](./UI_Design_Spec_v1.03.md)
+- [PRD 主文件 v1.04](./PRD_Core_v1.04.md) 🆕
 - [Workflow & Chatflow UI 设计](./ui-pages/workflow_chatflow.md) 🆕
 - [变更日志](../changelogs/CHANGELOG_20260508.md)
 - [发布日志](../changelogs/RELEASE_v1.03_20260508.md)
