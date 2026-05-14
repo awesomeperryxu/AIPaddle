@@ -227,7 +227,7 @@ export function VariableSelector({
             placeholder="搜索变量..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-8"
+            className="h-7 text-xs"
           />
         </div>
         <ScrollArea className="h-64">

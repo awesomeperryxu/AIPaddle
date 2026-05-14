@@ -256,17 +256,17 @@ export function NodeConfigPanel({
   return (
     <div
       className={cn(
-        'flex flex-col h-full bg-background border-l',
+        'flex flex-col h-full bg-white border-l border-gray-200 shadow-xl',
         className
       )}
-      style={{ width: 400 }}
+      style={{ width: 380 }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
         <div className="flex items-center gap-3">
           {Icon && (
             <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              className="w-8 h-8 rounded-xl flex items-center justify-center"
               style={{ backgroundColor: nodeConfig?.bgColor }}
             >
               <Icon className="h-4 w-4" style={{ color: nodeConfig?.color }} />
@@ -277,36 +277,45 @@ export function NodeConfigPanel({
               type="text"
               value={node.title}
               onChange={(e) => onTitleChange(node.id, e.target.value)}
-              className="font-medium text-sm bg-transparent border-none outline-none focus:ring-1 focus:ring-primary rounded px-1 -ml-1"
+              className="font-medium text-xs bg-transparent border-none outline-none focus:ring-1 focus:ring-primary rounded px-1 -ml-1"
             />
             <Badge variant="secondary" className="text-[10px] mt-0.5">
               {nodeConfig?.label}
             </Badge>
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs - 下划线激活样式 */}
       <Tabs defaultValue="params" className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="w-full justify-start rounded-none border-b px-4 h-10 bg-transparent">
-          <TabsTrigger value="params" className="text-sm">
+        <TabsList className="w-full justify-start rounded-none border-b border-gray-200 px-4 h-9 bg-transparent gap-4">
+          <TabsTrigger 
+            value="params" 
+            className="text-xs px-0 pb-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+          >
             参数配置
           </TabsTrigger>
-          <TabsTrigger value="inputs" className="text-sm">
+          <TabsTrigger 
+            value="inputs" 
+            className="text-xs px-0 pb-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+          >
             输入变量
             {inputVariables.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1">
+              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 h-4">
                 {inputVariables.length}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="outputs" className="text-sm">
+          <TabsTrigger 
+            value="outputs" 
+            className="text-xs px-0 pb-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+          >
             输出变量
             {outputVariables.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1">
+              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 h-4">
                 {outputVariables.length}
               </Badge>
             )}
@@ -426,13 +435,13 @@ export function NodeConfigPanel({
         </TabsContent>
       </Tabs>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/30">
-        <Button variant="outline" size="sm">
+      {/* Footer - 左重置右保存，h-8 flex-1 */}
+      <div className="flex items-center gap-3 px-4 py-3 border-t border-gray-200">
+        <Button variant="outline" className="h-8 flex-1 text-xs">
           <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
           重置
         </Button>
-        <Button size="sm">
+        <Button className="h-8 flex-1 text-xs">
           <Save className="h-3.5 w-3.5 mr-1.5" />
           保存
         </Button>

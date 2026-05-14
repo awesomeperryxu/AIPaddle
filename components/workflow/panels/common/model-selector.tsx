@@ -154,11 +154,11 @@ export function ModelSelector({
             role="combobox"
             aria-expanded={open}
             disabled={disabled}
-            className="w-full justify-between"
+            className="w-full h-7 justify-between text-xs"
           >
             {selectedModel ? (
               <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-xs">
+                <Badge variant="secondary" className="text-[10px] px-1 h-4">
                   {selectedModel.provider.providerName}
                 </Badge>
                 <span>{selectedModel.model.displayName}</span>
@@ -166,7 +166,7 @@ export function ModelSelector({
             ) : (
               <span className="text-muted-foreground">选择模型</span>
             )}
-            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            <ChevronDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-80 p-0" align="start">
@@ -229,7 +229,7 @@ export function ModelSelector({
             {/* Temperature */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm">Temperature</Label>
+                <Label className="text-xs">Temperature</Label>
                 <Input
                   type="number"
                   min={0}
@@ -237,7 +237,7 @@ export function ModelSelector({
                   step={0.1}
                   value={params.temperature ?? 0.7}
                   onChange={(e) => handleParamChange('temperature', parseFloat(e.target.value))}
-                  className="w-16 h-7 text-sm"
+                  className="w-16 h-7 text-xs"
                 />
               </div>
               <Slider
@@ -256,14 +256,14 @@ export function ModelSelector({
             {/* Max Tokens */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm">Max Tokens</Label>
+                <Label className="text-xs">Max Tokens</Label>
                 <Input
                   type="number"
                   min={1}
                   max={32768}
                   value={params.max_tokens ?? 4096}
                   onChange={(e) => handleParamChange('max_tokens', parseInt(e.target.value))}
-                  className="w-20 h-7 text-sm"
+                  className="w-20 h-7 text-xs"
                 />
               </div>
               <Slider
@@ -282,7 +282,7 @@ export function ModelSelector({
             {/* Top P */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm">Top P</Label>
+                <Label className="text-xs">Top P</Label>
                 <Input
                   type="number"
                   min={0}
@@ -290,7 +290,7 @@ export function ModelSelector({
                   step={0.05}
                   value={params.top_p ?? 1}
                   onChange={(e) => handleParamChange('top_p', parseFloat(e.target.value))}
-                  className="w-16 h-7 text-sm"
+                  className="w-16 h-7 text-xs"
                 />
               </div>
               <Slider

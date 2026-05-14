@@ -124,7 +124,7 @@ function PromptEditor({
                 onChange({ ...prompt, role })
               }
             >
-              <SelectTrigger className="h-8 w-32">
+              <SelectTrigger className="h-7 w-32 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -154,7 +154,7 @@ function PromptEditor({
                   ? '{{query}}'
                   : '回复示例...'
               }
-              className="min-h-[120px] text-sm font-mono resize-none"
+              className="min-h-[120px] text-xs font-mono resize-none"
             />
             <p className="text-xs text-muted-foreground">
               使用 {'{{变量名}}'} 插入上游节点的变量
