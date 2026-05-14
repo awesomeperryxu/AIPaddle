@@ -17,11 +17,25 @@ import type { WorkflowNode } from '../../types';
 import { nodeRegistry } from '../../nodes';
 import { BlockEnum } from '../../types';
 
-interface VariableSelectorProps {
-  value: ValueSelector;
-  onChange: (value: ValueSelector) => void;
-  availableNodes: WorkflowNode[];
-  currentNodeId: string;
+// Simple variable definition for config panels
+interface SimpleVariable {
+  name: string;
+  type: VarType | string;
+  description?: string;
+  sourceNodeId?: string;
+  sourceNodeTitle?: string;
+}
+
+export interface VariableSelectorProps {
+  // Full mode - with nodes
+  value?: ValueSelector;
+  onChange?: (value: ValueSelector) => void;
+  availableNodes?: WorkflowNode[];
+  currentNodeId?: string;
+  // Simple mode - with pre-processed variables
+  variables?: SimpleVariable[];
+  onSelect?: (variable: SimpleVariable) => void;
+  // Common props
   filterTypes?: VarType[];
   placeholder?: string;
   disabled?: boolean;
@@ -90,8 +104,10 @@ function getNodeOutputVariables(node: WorkflowNode): NodeVariable[] {
 export function VariableSelector({
   value,
   onChange,
-  availableNodes,
-  currentNodeId,
+  availableNodes = [],
+  currentNodeId = '',
+  variables,
+  onSelect,
   filterTypes,
   placeholder = '选择变量',
   disabled = false,
@@ -101,11 +117,15 @@ export function VariableSelector({
   const [search, setSearch] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
+  // Simple mode - using pre-processed variables
+  const isSimpleMode = !!variables && !!onSelect;
+
   // Filter nodes that come before the current node (upstream)
   const upstreamNodes = useMemo(() => {
+    if (isSimpleMode) return [];
     // In a real implementation, we'd topologically sort and filter
     return availableNodes.filter(node => node.id !== currentNodeId);
-  }, [availableNodes, currentNodeId]);
+  }, [availableNodes, currentNodeId, isSimpleMode]);
 
   // Get the selected variable display
   const selectedDisplay = useMemo(() => {
@@ -133,13 +153,17 @@ export function VariableSelector({
   };
 
   const handleSelect = (nodeId: string, varPath: string[]) => {
-    onChange([nodeId, ...varPath]);
+    if (onChange) {
+      onChange([nodeId, ...varPath]);
+    }
     setOpen(false);
   };
 
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onChange([]);
+    if (onChange) {
+      onChange([]);
+    }
   };
 
   const renderVariables = (
@@ -232,48 +256,82 @@ export function VariableSelector({
         </div>
         <ScrollArea className="h-64">
           <div className="p-2 space-y-1">
-            {upstreamNodes.length === 0 ? (
-              <div className="text-sm text-muted-foreground text-center py-4">
-                没有可用的上游节点
-              </div>
-            ) : (
-              upstreamNodes.map((node) => {
-                const nodeConfig = nodeRegistry[node.type];
-                const Icon = nodeConfig?.icon;
-                const isExpanded = expandedNodes.has(node.id);
-                const variables = getNodeOutputVariables(node);
-
-                return (
-                  <div key={node.id} className="space-y-0.5">
-                    <button
-                      type="button"
-                      onClick={() => toggleNodeExpand(node.id)}
-                      className="w-full flex items-center gap-2 px-2 py-1.5 text-sm font-medium hover:bg-muted rounded-md transition-colors"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      ) : (
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      )}
-                      {Icon && (
-                        <Icon 
-                          className="h-4 w-4" 
-                          style={{ color: nodeConfig.color }} 
-                        />
-                      )}
-                      <span className="truncate">{node.title}</span>
-                      <Badge variant="outline" className="ml-auto text-[10px]">
-                        {variables.length}
-                      </Badge>
-                    </button>
-                    {isExpanded && variables.length > 0 && (
-                      <div className="ml-4 pl-2 border-l">
-                        {renderVariables(node.id, variables)}
-                      </div>
-                    )}
+            {isSimpleMode ? (
+              // Simple mode - flat list of variables
+              <>
+                {(!variables || variables.length === 0) ? (
+                  <div className="text-sm text-muted-foreground text-center py-4">
+                    没有可用的变量
                   </div>
-                );
-              })
+                ) : (
+                  variables
+                    .filter(v => !search || v.name.toLowerCase().includes(search.toLowerCase()))
+                    .map((variable) => (
+                      <button
+                        key={variable.name}
+                        type="button"
+                        onClick={() => {
+                          onSelect?.(variable);
+                          setOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent rounded-md transition-colors"
+                      >
+                        <Variable className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="flex-1 text-left truncate">{variable.name}</span>
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                          {variable.type}
+                        </Badge>
+                      </button>
+                    ))
+                )}
+              </>
+            ) : (
+              // Full mode - node-based tree
+              <>
+                {upstreamNodes.length === 0 ? (
+                  <div className="text-sm text-muted-foreground text-center py-4">
+                    没有可用的上游节点
+                  </div>
+                ) : (
+                  upstreamNodes.map((node) => {
+                    const nodeConfig = nodeRegistry[node.type];
+                    const Icon = nodeConfig?.icon;
+                    const isExpanded = expandedNodes.has(node.id);
+                    const nodeVariables = getNodeOutputVariables(node);
+
+                    return (
+                      <div key={node.id} className="space-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleNodeExpand(node.id)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 text-sm font-medium hover:bg-muted rounded-md transition-colors"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          )}
+                          {Icon && (
+                            <Icon 
+                              className="h-4 w-4" 
+                              style={{ color: nodeConfig.color }} 
+                            />
+                          )}
+                          <span className="truncate">{node.title}</span>
+                          <Badge variant="outline" className="ml-auto text-[10px]">
+                            {nodeVariables.length}
+                          </Badge>
+                        </button>
+                        {isExpanded && nodeVariables.length > 0 && (
+                          <div className="ml-4 pl-2 border-l">
+                            {renderVariables(node.id, nodeVariables)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </>
             )}
           </div>
         </ScrollArea>

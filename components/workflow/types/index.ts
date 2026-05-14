@@ -69,3 +69,10 @@ export type {
   NodeRegistryEntry,
   NodeCategoryGroup,
 } from './workflow-types';
+
+// Common config panel props type
+export interface NodeConfigProps {
+  node: WorkflowNode;
+  onUpdate: (updatedNode: WorkflowNode) => void;
+  availableVariables: VariableDefinition[];
+}

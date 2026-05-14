@@ -23,10 +23,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { ModelConfig, ModelProvider } from '../../types';
 
 interface ModelSelectorProps {
-  value: ModelConfig;
+  value?: ModelConfig | string;
   onChange: (value: ModelConfig) => void;
   disabled?: boolean;
   showParameters?: boolean;
+  placeholder?: string;
   className?: string;
 }
 
@@ -108,24 +109,43 @@ export function ModelSelector({
   onChange,
   disabled = false,
   showParameters = true,
+  placeholder = '选择模型',
   className,
 }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
 
+  // Normalize value to ModelConfig
+  const normalizedValue: ModelConfig = useMemo(() => {
+    if (!value) {
+      return { provider: 'openai', name: '', completion_params: {} };
+    }
+    if (typeof value === 'string') {
+      // Try to find the model by name
+      for (const provider of modelOptions) {
+        const model = provider.models.find(m => m.name === value);
+        if (model) {
+          return { provider: provider.provider, name: value, completion_params: {} };
+        }
+      }
+      return { provider: 'openai', name: value, completion_params: {} };
+    }
+    return value;
+  }, [value]);
+
   const selectedModel = useMemo(() => {
     for (const provider of modelOptions) {
-      const model = provider.models.find(m => m.name === value.name);
+      const model = provider.models.find(m => m.name === normalizedValue.name);
       if (model) {
         return { provider, model };
       }
     }
     return null;
-  }, [value.name]);
+  }, [normalizedValue.name]);
 
   const handleSelectModel = (provider: ModelProvider, modelName: string) => {
     onChange({
-      ...value,
+      ...normalizedValue,
       provider,
       name: modelName,
     });
@@ -134,15 +154,15 @@ export function ModelSelector({
 
   const handleParamChange = (key: string, val: number) => {
     onChange({
-      ...value,
+      ...normalizedValue,
       completion_params: {
-        ...value.completion_params,
+        ...normalizedValue.completion_params,
         [key]: val,
       },
     });
   };
 
-  const params = value.completion_params || {};
+  const params = normalizedValue.completion_params || {};
 
   return (
     <div className={cn('space-y-3', className)}>
@@ -164,7 +184,7 @@ export function ModelSelector({
                 <span>{selectedModel.model.displayName}</span>
               </div>
             ) : (
-              <span className="text-muted-foreground">选择模型</span>
+              <span className="text-muted-foreground">{placeholder}</span>
             )}
             <ChevronDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
           </Button>
@@ -179,7 +199,7 @@ export function ModelSelector({
                   </div>
                   <div className="space-y-0.5">
                     {provider.models.map((model) => {
-                      const isSelected = value.name === model.name;
+                      const isSelected = normalizedValue.name === model.name;
                       return (
                         <button
                           key={model.name}
