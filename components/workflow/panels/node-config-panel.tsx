@@ -16,23 +16,29 @@ import {
 } from '@/components/ui/tooltip';
 
 import { nodeRegistry } from '../nodes';
-import type { WorkflowNode, NodeConfig, BlockEnum, VarType } from '../types';
+import type { WorkflowNode, NodeConfig, BlockEnum, VarType, VariableDefinition } from '../types';
 
 // Import config components
-import { StartNodeConfigPanel } from './configs/start-config';
-import { EndNodeConfigPanel } from './configs/end-config';
-import { LLMNodeConfigPanel } from './configs/llm-config';
-import { CodeNodeConfigPanel } from './configs/code-config';
-import { IfElseNodeConfigPanel } from './configs/if-else-config';
-import { HttpNodeConfigPanel } from './configs/http-config';
-import { IterationNodeConfigPanel } from './configs/iteration-config';
-import { KnowledgeRetrievalConfigPanel } from './configs/knowledge-retrieval-config';
-import { AgentNodeConfigPanel } from './configs/agent-config';
-import { QuestionClassifierConfigPanel } from './configs/question-classifier-config';
-import { ParameterExtractorConfigPanel } from './configs/parameter-extractor-config';
-import { TemplateTransformConfigPanel } from './configs/template-transform-config';
-import { VariableAssignerConfigPanel } from './configs/variable-assigner-config';
-import { AnswerNodeConfigPanel } from './configs/answer-config';
+import { StartConfig } from './configs/start-config';
+import { EndConfig } from './configs/end-config';
+import { LLMConfig } from './configs/llm-config';
+import { CodeConfig } from './configs/code-config';
+import { IfElseConfig } from './configs/if-else-config';
+import { HTTPConfig } from './configs/http-config';
+import { IterationConfig } from './configs/iteration-config';
+import { KnowledgeRetrievalConfig } from './configs/knowledge-retrieval-config';
+import { AgentConfig } from './configs/agent-config';
+import { QuestionClassifierConfig } from './configs/question-classifier-config';
+import { ParameterExtractorConfig } from './configs/parameter-extractor-config';
+import { TemplateTransformConfig } from './configs/template-transform-config';
+import { VariableAssignerConfig } from './configs/variable-assigner-config';
+import { AnswerConfig } from './configs/answer-config';
+import { DocumentExtractorConfig } from './configs/document-extractor-config';
+import { VariableAggregatorConfig } from './configs/variable-aggregator-config';
+import { ListOperationConfig } from './configs/list-operation-config';
+import { ToolConfig } from './configs/tool-config';
+import { SubWorkflowConfig } from './configs/sub-workflow-config';
+import { ConversationVariableConfig } from './configs/conversation-variable-config';
 
 interface NodeConfigPanelProps {
   node: WorkflowNode;
@@ -166,44 +172,76 @@ export function NodeConfigPanel({
   const outputVariables = useMemo(() => getNodeOutputVariables(node), [node]);
   const inputVariables = useMemo(() => getNodeInputVariables(node), [node]);
 
+  // Get available variables from upstream nodes
+  const availableVariables = useMemo((): VariableDefinition[] => {
+    const variables: VariableDefinition[] = [];
+    
+    allNodes.forEach((n) => {
+      if (n.id === node.id) return;
+      const outputs = getNodeOutputVariables(n);
+      outputs.forEach((output) => {
+        variables.push({
+          name: `${n.title || n.id}.${output.key}`,
+          type: output.type as VariableDefinition['type'],
+          description: output.description,
+          sourceNodeId: n.id,
+          sourceNodeTitle: n.title,
+        });
+      });
+    });
+    
+    return variables;
+  }, [allNodes, node.id]);
+
   // Render the appropriate config component based on node type
   const renderConfigContent = () => {
     const commonProps = {
       node,
-      allNodes,
-      onUpdate: (data: Partial<NodeConfig>) => onUpdate(node.id, data),
-      appType,
+      onUpdate: (updatedNode: WorkflowNode) => onUpdate(node.id, updatedNode.data as Partial<NodeConfig>),
+      availableVariables,
     };
 
     switch (node.type) {
       case 'start':
-        return <StartNodeConfigPanel {...commonProps} />;
+        return <StartConfig {...commonProps} />;
       case 'end':
-        return <EndNodeConfigPanel {...commonProps} />;
+        return <EndConfig {...commonProps} />;
       case 'llm':
-        return <LLMNodeConfigPanel {...commonProps} />;
+        return <LLMConfig {...commonProps} />;
       case 'code':
-        return <CodeNodeConfigPanel {...commonProps} />;
+        return <CodeConfig {...commonProps} />;
       case 'if-else':
-        return <IfElseNodeConfigPanel {...commonProps} />;
+        return <IfElseConfig {...commonProps} />;
       case 'http-request':
-        return <HttpNodeConfigPanel {...commonProps} />;
+        return <HTTPConfig {...commonProps} />;
       case 'iteration':
-        return <IterationNodeConfigPanel {...commonProps} />;
+        return <IterationConfig {...commonProps} />;
       case 'knowledge-retrieval':
-        return <KnowledgeRetrievalConfigPanel {...commonProps} />;
+        return <KnowledgeRetrievalConfig {...commonProps} />;
       case 'agent':
-        return <AgentNodeConfigPanel {...commonProps} />;
+        return <AgentConfig {...commonProps} />;
       case 'question-classifier':
-        return <QuestionClassifierConfigPanel {...commonProps} />;
+        return <QuestionClassifierConfig {...commonProps} />;
       case 'parameter-extractor':
-        return <ParameterExtractorConfigPanel {...commonProps} />;
+        return <ParameterExtractorConfig {...commonProps} />;
       case 'template-transform':
-        return <TemplateTransformConfigPanel {...commonProps} />;
+        return <TemplateTransformConfig {...commonProps} />;
       case 'variable-assigner':
-        return <VariableAssignerConfigPanel {...commonProps} />;
+        return <VariableAssignerConfig {...commonProps} />;
       case 'answer':
-        return <AnswerNodeConfigPanel {...commonProps} />;
+        return <AnswerConfig {...commonProps} />;
+      case 'document-extractor':
+        return <DocumentExtractorConfig {...commonProps} />;
+      case 'variable-aggregator':
+        return <VariableAggregatorConfig {...commonProps} />;
+      case 'list-operation':
+        return <ListOperationConfig {...commonProps} />;
+      case 'tool':
+        return <ToolConfig {...commonProps} />;
+      case 'sub-workflow':
+        return <SubWorkflowConfig {...commonProps} />;
+      case 'conversation-variable':
+        return <ConversationVariableConfig {...commonProps} />;
       default:
         return (
           <div className="p-4 text-center text-muted-foreground">
