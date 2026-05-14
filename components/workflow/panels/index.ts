@@ -16,4 +16,9 @@ export { WorkflowRunPanel, WorkflowRunPanelDemo } from "./workflow-run-panel"
 // Chatflow preview panel
 export { ChatflowPreviewPanel, ChatflowPreviewPanelDemo } from "./chatflow-preview-panel"
 
+// Utility panels
+export { VersionHistoryPanel, VersionHistoryPanelDemo } from "./version-history-panel"
+export { EnvironmentVariablesPanel, EnvironmentVariablesPanelDemo } from "./environment-variables-panel"
+export { BlockSelectorPanel, BlockSelectorPanelDemo } from "./block-selector-panel"
+
 // Note: original configs are imported directly by node-config-panel, not re-exported to avoid name conflicts with types
