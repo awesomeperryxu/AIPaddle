@@ -91,8 +91,8 @@ export function ListOperationConfig({
         <Label className="text-sm font-medium">Operation</Label>
         <Select
           value={data.operation}
-          onValueChange={(operation: ListOperationData["operation"]) =>
-            updateData({ operation })
+          onValueChange={(value: string) =>
+            updateData({ operation: value as ListOperationData["operation"] })
           }
         >
           <SelectTrigger>
@@ -163,8 +163,8 @@ export function ListOperationConfig({
             <Label className="text-sm font-medium">Order</Label>
             <Select
               value={data.sortOrder || "asc"}
-              onValueChange={(sortOrder: "asc" | "desc") =>
-                updateData({ sortOrder })
+              onValueChange={(value: string) =>
+                updateData({ sortOrder: value as "asc" | "desc" })
               }
             >
               <SelectTrigger>

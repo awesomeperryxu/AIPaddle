@@ -15,12 +15,13 @@ import {
 } from "@/components/ui/select"
 import { Plus, Trash2, ArrowRight, GripVertical } from "lucide-react"
 import { VariableSelector } from "../common/variable-selector"
-import type { NodeConfigProps, VariableType } from "../../types"
+import type { NodeConfigProps } from "../../types"
+import { VarType } from "../../types"
 
 interface VariableAssignment {
   id: string
   targetVariable: string
-  targetType: VariableType
+  targetType: VarType
   sourceExpression: string
   operation: "set" | "append" | "increment" | "decrement" | "toggle"
 }
@@ -39,12 +40,12 @@ const OPERATIONS = [
   { value: "toggle", label: "Toggle", description: "Flip boolean" },
 ]
 
-const VARIABLE_TYPES: { value: VariableType; label: string }[] = [
-  { value: "string", label: "String" },
-  { value: "number", label: "Number" },
-  { value: "boolean", label: "Boolean" },
-  { value: "array", label: "Array" },
-  { value: "object", label: "Object" },
+const VARIABLE_TYPES: { value: VarType; label: string }[] = [
+  { value: VarType.String, label: "String" },
+  { value: VarType.Number, label: "Number" },
+  { value: VarType.Boolean, label: "Boolean" },
+  { value: VarType.Array, label: "Array" },
+  { value: VarType.Object, label: "Object" },
 ]
 
 export function VariableAssignerConfig({
@@ -93,8 +94,8 @@ export function VariableAssignerConfig({
         <Label className="text-sm font-medium">Variable Scope</Label>
         <Select
           value={data.scope || "local"}
-          onValueChange={(scope: VariableAssignerData["scope"]) =>
-            updateData({ scope })
+          onValueChange={(value: string) =>
+            updateData({ scope: value as VariableAssignerData["scope"] })
           }
         >
           <SelectTrigger>
@@ -195,8 +196,8 @@ export function VariableAssignerConfig({
                       <Label className="text-xs">Type</Label>
                       <Select
                         value={assignment.targetType}
-                        onValueChange={(targetType: VariableType) =>
-                          updateAssignment(assignment.id, { targetType })
+                        onValueChange={(value: string) =>
+                          updateAssignment(assignment.id, { targetType: value as VarType })
                         }
                       >
                         <SelectTrigger>
@@ -218,8 +219,8 @@ export function VariableAssignerConfig({
                     <Label className="text-xs">Operation</Label>
                     <Select
                       value={assignment.operation}
-                      onValueChange={(operation: VariableAssignment["operation"]) =>
-                        updateAssignment(assignment.id, { operation })
+                      onValueChange={(value: string) =>
+                        updateAssignment(assignment.id, { operation: value as VariableAssignment["operation"] })
                       }
                     >
                       <SelectTrigger>
