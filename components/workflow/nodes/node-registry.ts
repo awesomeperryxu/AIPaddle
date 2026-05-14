@@ -792,6 +792,6 @@ export function createNode(
     type,
     title: config.label,
     position,
-    data: { ...config.defaultConfig },
+    data: { ...config.defaultConfig } as import('../types/workflow-types').NodeConfig,
   };
 }

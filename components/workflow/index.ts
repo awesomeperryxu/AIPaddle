@@ -4,8 +4,9 @@ export * from "./types"
 // Node Registry
 export * from "./nodes"
 
-// Panels
-export * from "./panels"
+// Panels - export only the main component to avoid naming conflicts with types
+export { NodeConfigPanel } from "./panels"
+export type { NodeConfigPanelProps } from "./panels"
 
 // Header
 export * from "./header"

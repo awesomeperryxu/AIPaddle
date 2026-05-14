@@ -21,12 +21,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import type { NodeConfigProps, VariableType } from "../../types"
+import type { NodeConfigProps } from "../../types"
+import { VarType } from "../../types"
 
 interface ConversationVariable {
   id: string
   name: string
-  type: VariableType
+  type: VarType
   defaultValue?: string
   persistent: boolean
   description?: string
@@ -38,12 +39,12 @@ interface ConversationVariableData {
   maxHistorySize?: number
 }
 
-const VARIABLE_TYPES: { value: VariableType; label: string; defaultVal: string }[] = [
-  { value: "string", label: "String", defaultVal: "" },
-  { value: "number", label: "Number", defaultVal: "0" },
-  { value: "boolean", label: "Boolean", defaultVal: "false" },
-  { value: "array", label: "Array", defaultVal: "[]" },
-  { value: "object", label: "Object", defaultVal: "{}" },
+const VARIABLE_TYPES: { value: VarType; label: string; defaultVal: string }[] = [
+  { value: VarType.String, label: "String", defaultVal: "" },
+  { value: VarType.Number, label: "Number", defaultVal: "0" },
+  { value: VarType.Boolean, label: "Boolean", defaultVal: "false" },
+  { value: VarType.Array, label: "Array", defaultVal: "[]" },
+  { value: VarType.Object, label: "Object", defaultVal: "{}" },
 ]
 
 export function ConversationVariableConfig({

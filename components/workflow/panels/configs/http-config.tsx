@@ -158,7 +158,7 @@ export function HttpNodeConfigPanel({
     onUpdate({ body: { ...body, data } });
   };
 
-  const updateAuthType = (type: string) => {
+  const updateAuthType = (type: 'none' | 'api-key' | 'basic' | 'bearer' | 'custom') => {
     onUpdate({ authorization: { type, config: {} } });
   };
 

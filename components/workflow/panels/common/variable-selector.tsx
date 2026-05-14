@@ -174,7 +174,7 @@ export function VariableSelector({
   ) => {
     return variables.map((variable) => {
       const currentPath = [...path, variable.key];
-      const isSelected = 
+      const isSelected = value && 
         value[0] === nodeId && 
         currentPath.join('.') === value.slice(1).join('.');
       

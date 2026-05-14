@@ -40,7 +40,7 @@ import { ToolConfig } from './configs/tool-config';
 import { SubWorkflowConfig } from './configs/sub-workflow-config';
 import { ConversationVariableConfig } from './configs/conversation-variable-config';
 
-interface NodeConfigPanelProps {
+export interface NodeConfigPanelProps {
   node: WorkflowNode;
   allNodes: WorkflowNode[];
   onClose: () => void;

@@ -107,7 +107,7 @@ export function AgentConfig({ node, onUpdate, availableVariables }: NodeConfigPr
         <Label className="text-sm font-medium">Model</Label>
         <ModelSelector
           value={data.model || ""}
-          onChange={(model) => updateData({ model })}
+          onChange={(modelConfig) => updateData({ model: modelConfig.name })}
           placeholder="Select agent model..."
         />
       </div>

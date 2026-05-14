@@ -131,8 +131,8 @@ export function DocumentExtractorConfig({
         <Label className="text-sm font-medium">Extraction Type</Label>
         <Select
           value={data.extractionType || "all"}
-          onValueChange={(extractionType: DocumentExtractorData["extractionType"]) =>
-            updateData({ extractionType })
+          onValueChange={(value: string) =>
+            updateData({ extractionType: value as DocumentExtractorData["extractionType"] })
           }
         >
           <SelectTrigger>
@@ -206,8 +206,8 @@ export function DocumentExtractorConfig({
         <Label className="text-sm font-medium">Output Format</Label>
         <Select
           value={data.outputFormat || "plain"}
-          onValueChange={(outputFormat: DocumentExtractorData["outputFormat"]) =>
-            updateData({ outputFormat })
+          onValueChange={(value: string) =>
+            updateData({ outputFormat: value as DocumentExtractorData["outputFormat"] })
           }
         >
           <SelectTrigger>

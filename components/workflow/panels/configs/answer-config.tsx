@@ -180,8 +180,8 @@ export function AnswerConfig({
             <Label className="text-sm font-medium">Response Format</Label>
             <Select
               value={data.responseFormat || "markdown"}
-              onValueChange={(responseFormat: AnswerNodeData["responseFormat"]) =>
-                updateData({ responseFormat })
+              onValueChange={(value: string) =>
+                updateData({ responseFormat: value as AnswerNodeData["responseFormat"] })
               }
             >
               <SelectTrigger>

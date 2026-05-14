@@ -20,7 +20,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { VariableSelector } from "../common/variable-selector"
-import type { NodeConfigProps, VariableType } from "../../types"
+import type { NodeConfigProps } from "../../types"
+import { VarType } from "../../types"
 
 interface AggregationSource {
   id: string
@@ -31,7 +32,7 @@ interface AggregationSource {
 interface VariableAggregatorData {
   sources: AggregationSource[]
   outputVariable: string
-  outputType: VariableType
+  outputType: VarType
   aggregationMethod: "collect" | "merge" | "concat" | "union" | "intersect"
   deduplication?: boolean
   sortBy?: string

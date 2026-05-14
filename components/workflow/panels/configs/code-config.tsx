@@ -38,14 +38,14 @@ function generateId(): string {
 
 // Available variable types for outputs
 const outputTypes: { value: VarType; label: string }[] = [
-  { value: 'string', label: 'String' },
-  { value: 'number', label: 'Number' },
-  { value: 'boolean', label: 'Boolean' },
-  { value: 'object', label: 'Object' },
-  { value: 'array', label: 'Array' },
-  { value: 'array[string]', label: 'Array[String]' },
-  { value: 'array[number]', label: 'Array[Number]' },
-  { value: 'array[object]', label: 'Array[Object]' },
+  { value: VarType.String, label: 'String' },
+  { value: VarType.Number, label: 'Number' },
+  { value: VarType.Boolean, label: 'Boolean' },
+  { value: VarType.Object, label: 'Object' },
+  { value: VarType.Array, label: 'Array' },
+  { value: VarType.ArrayString, label: 'Array[String]' },
+  { value: VarType.ArrayNumber, label: 'Array[Number]' },
+  { value: VarType.ArrayObject, label: 'Array[Object]' },
 ];
 
 const defaultPythonCode = `def main(arg1: str) -> dict:
