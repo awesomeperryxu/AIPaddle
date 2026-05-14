@@ -21,4 +21,7 @@ export { VersionHistoryPanel, VersionHistoryPanelDemo } from "./version-history-
 export { EnvironmentVariablesPanel, EnvironmentVariablesPanelDemo } from "./environment-variables-panel"
 export { BlockSelectorPanel, BlockSelectorPanelDemo } from "./block-selector-panel"
 
+// Comments panel
+export { CommentsPanel, CommentsPanelDemo } from "./comments-panel"
+
 // Note: original configs are imported directly by node-config-panel, not re-exported to avoid name conflicts with types

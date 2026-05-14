@@ -11,3 +11,6 @@ export {
 
 // Node card components
 export * from './cards';
+
+// NoteNode editor
+export { NoteNodeEditor, NoteNodeEditorDemo } from './note-node-editor';
