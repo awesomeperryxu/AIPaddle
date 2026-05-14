@@ -22,7 +22,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Separator } from '@/components/ui/separator';
-import type { WorkflowNode, StartNodeConfig, VariableDefinition, VarType } from '../../types';
+import type { WorkflowNode, StartNodeConfig, VariableDefinition } from '../../types';
+import { VarType } from '../../types';
 
 interface StartNodeConfigPanelProps {
   node: WorkflowNode;

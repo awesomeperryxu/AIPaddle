@@ -68,7 +68,7 @@ export function VariableAssignerConfig({
     const newAssignment: VariableAssignment = {
       id: `assign_${Date.now()}`,
       targetVariable: "",
-      targetType: "string",
+      targetType: VarType.String,
       sourceExpression: "",
       operation: "set",
     }

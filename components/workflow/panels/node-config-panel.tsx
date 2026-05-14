@@ -19,14 +19,14 @@ import { nodeRegistry } from '../nodes';
 import type { WorkflowNode, NodeConfig, BlockEnum, VarType, VariableDefinition } from '../types';
 
 // Import config components
-import { StartConfig } from './configs/start-config';
-import { EndConfig } from './configs/end-config';
-import { LLMConfig } from './configs/llm-config';
-import { CodeConfig } from './configs/code-config';
-import { IfElseConfig } from './configs/if-else-config';
-import { HTTPConfig } from './configs/http-config';
-import { IterationConfig } from './configs/iteration-config';
-import { KnowledgeRetrievalConfig } from './configs/knowledge-retrieval-config';
+import { StartNodeConfigPanel } from './configs/start-config';
+import { EndNodeConfigPanel } from './configs/end-config';
+import { LLMNodeConfigPanel } from './configs/llm-config';
+import { CodeNodeConfigPanel } from './configs/code-config';
+import { IfElseNodeConfigPanel } from './configs/if-else-config';
+import { HttpNodeConfigPanel } from './configs/http-config';
+import { IterationNodeConfigPanel } from './configs/iteration-config';
+import { KnowledgeRetrievalConfigPanel } from './configs/knowledge-retrieval-config';
 import { AgentConfig } from './configs/agent-config';
 import { QuestionClassifierConfig } from './configs/question-classifier-config';
 import { ParameterExtractorConfig } from './configs/parameter-extractor-config';
@@ -203,21 +203,21 @@ export function NodeConfigPanel({
 
     switch (node.type) {
       case 'start':
-        return <StartConfig {...commonProps} />;
+        return <StartNodeConfigPanel {...commonProps} />;
       case 'end':
-        return <EndConfig {...commonProps} />;
+        return <EndNodeConfigPanel {...commonProps} />;
       case 'llm':
-        return <LLMConfig {...commonProps} />;
+        return <LLMNodeConfigPanel {...commonProps} />;
       case 'code':
-        return <CodeConfig {...commonProps} />;
+        return <CodeNodeConfigPanel {...commonProps} />;
       case 'if-else':
-        return <IfElseConfig {...commonProps} />;
+        return <IfElseNodeConfigPanel {...commonProps} />;
       case 'http-request':
-        return <HTTPConfig {...commonProps} />;
+        return <HttpNodeConfigPanel {...commonProps} />;
       case 'iteration':
-        return <IterationConfig {...commonProps} />;
+        return <IterationNodeConfigPanel {...commonProps} />;
       case 'knowledge-retrieval':
-        return <KnowledgeRetrievalConfig {...commonProps} />;
+        return <KnowledgeRetrievalConfigPanel {...commonProps} />;
       case 'agent':
         return <AgentConfig {...commonProps} />;
       case 'question-classifier':
