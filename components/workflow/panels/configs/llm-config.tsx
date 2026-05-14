@@ -399,11 +399,14 @@ export function LLMNodeConfigPanel({
             />
             <Select
               value={config.vision?.configs?.detail || 'auto'}
-              onValueChange={(detail: 'low' | 'high' | 'auto') =>
+              onValueChange={(value: string) =>
                 onUpdate({
                   vision: {
                     enabled: true,
-                    configs: { ...config.vision?.configs, detail },
+                    configs: { 
+                      variable_selector: config.vision?.configs?.variable_selector || [],
+                      detail: value as 'low' | 'high' | 'auto',
+                    },
                   },
                 })
               }

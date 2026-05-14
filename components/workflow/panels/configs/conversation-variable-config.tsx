@@ -67,7 +67,7 @@ export function ConversationVariableConfig({
     const newVar: ConversationVariable = {
       id: `conv_var_${Date.now()}`,
       name: "",
-      type: "string",
+      type: VarType.String,
       defaultValue: "",
       persistent: true,
     }
@@ -203,8 +203,8 @@ export function ConversationVariableConfig({
                           <Label className="text-xs">Type</Label>
                           <Select
                             value={variable.type}
-                            onValueChange={(type: VariableType) =>
-                              updateVariable(variable.id, { type })
+                            onValueChange={(value: string) =>
+                              updateVariable(variable.id, { type: value as VarType })
                             }
                           >
                             <SelectTrigger>
@@ -224,7 +224,7 @@ export function ConversationVariableConfig({
                       {/* Default Value */}
                       <div className="space-y-2">
                         <Label className="text-xs">Default Value</Label>
-                        {variable.type === "object" || variable.type === "array" ? (
+                        {variable.type === VarType.Object || variable.type === VarType.Array ? (
                           <Textarea
                             value={variable.defaultValue || ""}
                             onChange={(e) =>

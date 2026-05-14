@@ -109,8 +109,8 @@ export function TemplateTransformConfig({
         <Label className="text-sm font-medium">Template Engine</Label>
         <Select
           value={data.engine || "jinja2"}
-          onValueChange={(engine: TemplateTransformData["engine"]) =>
-            updateData({ engine })
+          onValueChange={(value: string) =>
+            updateData({ engine: value as TemplateTransformData["engine"] })
           }
         >
           <SelectTrigger>
@@ -228,8 +228,8 @@ export function TemplateTransformConfig({
           <Label className="text-sm font-medium">Output Type</Label>
           <Select
             value={data.outputType || "string"}
-            onValueChange={(outputType: TemplateTransformData["outputType"]) =>
-              updateData({ outputType })
+            onValueChange={(value: string) =>
+              updateData({ outputType: value as TemplateTransformData["outputType"] })
             }
           >
             <SelectTrigger>

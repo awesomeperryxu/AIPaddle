@@ -111,7 +111,7 @@ export function ParameterExtractorConfig({
         <Label className="text-sm font-medium">Extraction Model</Label>
         <ModelSelector
           value={data.model || ""}
-          onChange={(model) => updateData({ model })}
+          onChange={(modelConfig) => updateData({ model: modelConfig.name })}
           placeholder="Select model for extraction..."
         />
       </div>
@@ -357,8 +357,8 @@ export function ParameterExtractorConfig({
           <Label className="text-sm font-medium">Output Format</Label>
           <Select
             value={data.outputFormat || "json"}
-            onValueChange={(outputFormat: ParameterExtractorData["outputFormat"]) =>
-              updateData({ outputFormat })
+            onValueChange={(value: string) =>
+              updateData({ outputFormat: value as ParameterExtractorData["outputFormat"] })
             }
           >
             <SelectTrigger>

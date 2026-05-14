@@ -92,7 +92,7 @@ export function QuestionClassifierConfig({
         <Label className="text-sm font-medium">Classification Model</Label>
         <ModelSelector
           value={data.model || ""}
-          onChange={(model) => updateData({ model })}
+          onChange={(modelConfig) => updateData({ model: modelConfig.name })}
           placeholder="Select model for classification..."
         />
       </div>

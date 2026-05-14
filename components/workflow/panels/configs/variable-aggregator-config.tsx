@@ -209,8 +209,8 @@ export function VariableAggregatorConfig({
           <Label className="text-sm font-medium">Output Type</Label>
           <Select
             value={data.outputType || "array"}
-            onValueChange={(outputType: VariableType) =>
-              updateData({ outputType })
+            onValueChange={(value: string) =>
+              updateData({ outputType: value as VarType })
             }
           >
             <SelectTrigger>

@@ -33,23 +33,23 @@ interface StartNodeConfigPanelProps {
 
 // Available variable types
 const varTypes: { value: VarType; label: string }[] = [
-  { value: 'string', label: '字符串' },
-  { value: 'number', label: '数字' },
-  { value: 'boolean', label: '布尔值' },
-  { value: 'object', label: '对象' },
-  { value: 'array[string]', label: '字符串数组' },
-  { value: 'array[number]', label: '数字数组' },
-  { value: 'array[object]', label: '对象数组' },
-  { value: 'file', label: '单文件' },
-  { value: 'files', label: '多文件' },
+  { value: VarType.String, label: '字符串' },
+  { value: VarType.Number, label: '数字' },
+  { value: VarType.Boolean, label: '布尔值' },
+  { value: VarType.Object, label: '对象' },
+  { value: VarType.ArrayString, label: '字符串数组' },
+  { value: VarType.ArrayNumber, label: '数字数组' },
+  { value: VarType.ArrayObject, label: '对象数组' },
+  { value: VarType.File, label: '单文件' },
+  { value: VarType.Files, label: '多文件' },
 ];
 
 // System variables (read-only)
 const systemVariables: VariableDefinition[] = [
-  { key: 'sys.user_id', type: 'string' as VarType, description: '当前用户ID' },
-  { key: 'sys.conversation_id', type: 'string' as VarType, description: '会话ID (Chatflow)' },
-  { key: 'sys.app_id', type: 'string' as VarType, description: '应用ID' },
-  { key: 'sys.workflow_run_id', type: 'string' as VarType, description: '运行ID' },
+  { key: 'sys.user_id', type: VarType.String, description: '当前用户ID' },
+  { key: 'sys.conversation_id', type: VarType.String, description: '会话ID (Chatflow)' },
+  { key: 'sys.app_id', type: VarType.String, description: '应用ID' },
+  { key: 'sys.workflow_run_id', type: VarType.String, description: '运行ID' },
 ];
 
 function generateId(): string {

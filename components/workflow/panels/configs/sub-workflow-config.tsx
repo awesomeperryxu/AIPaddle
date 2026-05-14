@@ -376,8 +376,8 @@ export function SubWorkflowConfig({
                 <Label className="text-sm">On Error</Label>
                 <Select
                   value={data.onError || "fail"}
-                  onValueChange={(onError: SubWorkflowData["onError"]) =>
-                    updateData({ onError })
+                  onValueChange={(value: string) =>
+                    updateData({ onError: value as SubWorkflowData["onError"] })
                   }
                 >
                   <SelectTrigger>
