@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, DragEvent } from 'react';
 import ReactFlow, {
   Background,
   BackgroundVariant,
   MiniMap,
-  Controls,
   Node,
   Edge,
   Connection,
@@ -15,16 +14,18 @@ import ReactFlow, {
   useReactFlow,
   ReactFlowProvider,
   NodeTypes,
-  Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
 import { WorkflowHeader, OnlineUser } from './header';
 import { WorkflowOperator } from './canvas';
 import { NodeConfigPanel } from './panels/node-config-panel';
+import { BlockSelectorPanel } from './panels/block-selector-panel';
 import { nodeRegistry } from './nodes/node-registry';
 import { BlockEnum } from './types';
 import { cn } from '@/lib/utils';
+import { Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 // Custom node component
 function WorkflowNode({ data, selected }: { data: any; selected: boolean }) {
@@ -120,8 +121,11 @@ function WorkflowPageInner({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [interactionMode, setInteractionMode] = useState<'select' | 'pan'>('select');
   const [showRunPanel, setShowRunPanel] = useState(false);
+  const [showBlockSelector, setShowBlockSelector] = useState(false);
+  const [recentBlocks, setRecentBlocks] = useState<string[]>(['llm', 'code', 'if-else']);
 
-  const { zoomIn, zoomOut, fitView, getZoom } = useReactFlow();
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const { zoomIn, zoomOut, fitView, getZoom, screenToFlowPosition } = useReactFlow();
   const [zoom, setZoom] = useState(1);
 
   const onConnect = useCallback(
@@ -187,6 +191,84 @@ function WorkflowPageInner({
     setSelectedNode(null);
   }, []);
 
+  // Handle drag over for node dropping
+  const onDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  // Handle drop to add new node
+  const onDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+
+      const blockType = event.dataTransfer.getData('application/workflow-block');
+      if (!blockType) return;
+
+      // Get drop position
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      // Get block config
+      const config = nodeRegistry[blockType as BlockEnum];
+      if (!config) return;
+
+      // Create new node
+      const newNode: Node = {
+        id: `${blockType}-${Date.now()}`,
+        type: 'workflowNode',
+        position,
+        data: {
+          blockType,
+          label: config.label,
+          description: config.description || '',
+        },
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+      setHasUnsavedChanges(true);
+
+      // Update recent blocks
+      setRecentBlocks((prev) => {
+        const filtered = prev.filter((t) => t !== blockType);
+        return [blockType, ...filtered].slice(0, 5);
+      });
+    },
+    [screenToFlowPosition, setNodes]
+  );
+
+  // Handle block selection from panel
+  const handleBlockSelect = useCallback(
+    (blockType: string) => {
+      const config = nodeRegistry[blockType as BlockEnum];
+      if (!config) return;
+
+      // Add node at center of view
+      const newNode: Node = {
+        id: `${blockType}-${Date.now()}`,
+        type: 'workflowNode',
+        position: { x: 300, y: 200 },
+        data: {
+          blockType,
+          label: config.label,
+          description: config.description || '',
+        },
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+      setHasUnsavedChanges(true);
+
+      // Update recent blocks
+      setRecentBlocks((prev) => {
+        const filtered = prev.filter((t) => t !== blockType);
+        return [blockType, ...filtered].slice(0, 5);
+      });
+    },
+    [setNodes]
+  );
+
   // Convert ReactFlow node to WorkflowNode format for config panel
   const selectedWorkflowNode = useMemo(() => {
     if (!selectedNode) return null;
@@ -238,7 +320,12 @@ function WorkflowPageInner({
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* ReactFlow Canvas */}
-        <div className="flex-1 relative">
+        <div 
+          className="flex-1 relative" 
+          ref={reactFlowWrapper}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -271,6 +358,16 @@ function WorkflowPageInner({
             />
           </ReactFlow>
 
+          {/* Floating Add Node Button */}
+          <Button
+            onClick={() => setShowBlockSelector(true)}
+            className="absolute top-4 left-4 z-10 shadow-md"
+            size="sm"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            添加节点
+          </Button>
+
           {/* Bottom Operator Bar */}
           <WorkflowOperator
             zoom={Math.round(zoom * 100)}
@@ -284,6 +381,15 @@ function WorkflowPageInner({
             onModeChange={(mode) => setInteractionMode(mode === 'hand' ? 'pan' : 'select')}
           />
         </div>
+
+        {/* Block Selector Panel */}
+        <BlockSelectorPanel
+          appType={appType}
+          isOpen={showBlockSelector}
+          onClose={() => setShowBlockSelector(false)}
+          onSelect={handleBlockSelect}
+          recentBlocks={recentBlocks}
+        />
 
         {/* Right Config Panel */}
         {selectedWorkflowNode && (
