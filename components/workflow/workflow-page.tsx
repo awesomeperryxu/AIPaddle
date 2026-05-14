@@ -273,14 +273,15 @@ function WorkflowPageInner({
 
           {/* Bottom Operator Bar */}
           <WorkflowOperator
-            zoom={zoom}
-            interactionMode={interactionMode}
+            zoom={Math.round(zoom * 100)}
+            mode={interactionMode === 'pan' ? 'hand' : 'pointer'}
             canUndo={false}
             canRedo={false}
             onZoomIn={handleZoomIn}
             onZoomOut={handleZoomOut}
+            onZoomReset={() => setZoom(1)}
             onFitView={handleFitView}
-            onInteractionModeChange={setInteractionMode}
+            onModeChange={(mode) => setInteractionMode(mode === 'hand' ? 'pan' : 'select')}
           />
         </div>
 
