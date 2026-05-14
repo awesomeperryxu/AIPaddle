@@ -10,4 +10,7 @@ export * from "./config-panel-wrapper"
 // V2 config panels (380px right drawer design)
 export * from "./configs/v2"
 
+// Workflow run/debug panel
+export { WorkflowRunPanel, WorkflowRunPanelDemo } from "./workflow-run-panel"
+
 // Note: original configs are imported directly by node-config-panel, not re-exported to avoid name conflicts with types
