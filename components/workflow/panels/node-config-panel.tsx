@@ -195,7 +195,16 @@ export function NodeConfigPanel({
 
   // Render the appropriate config component based on node type
   const renderConfigContent = () => {
-    const commonProps = {
+    // Props for core nodes that use (data: Partial<Config>) => void signature
+    const coreProps = {
+      node,
+      allNodes,
+      onUpdate: (data: Partial<NodeConfig>) => onUpdate(node.id, data),
+      appType: 'workflow' as const,
+    };
+
+    // Props for extended nodes that use NodeConfigProps
+    const extendedProps = {
       node,
       onUpdate: (updatedNode: WorkflowNode) => onUpdate(node.id, updatedNode.data as Partial<NodeConfig>),
       availableVariables,
@@ -204,45 +213,45 @@ export function NodeConfigPanel({
 
     switch (node.type) {
       case BlockEnum.Start:
-        return <StartNodeConfigPanel {...commonProps} />;
+        return <StartNodeConfigPanel {...coreProps} />;
       case BlockEnum.End:
-        return <EndNodeConfigPanel {...commonProps} />;
+        return <EndNodeConfigPanel {...coreProps} />;
       case BlockEnum.LLM:
-        return <LLMNodeConfigPanel {...commonProps} />;
+        return <LLMNodeConfigPanel {...coreProps} />;
       case BlockEnum.Code:
-        return <CodeNodeConfigPanel {...commonProps} />;
+        return <CodeNodeConfigPanel {...coreProps} />;
       case BlockEnum.IfElse:
-        return <IfElseNodeConfigPanel {...commonProps} />;
+        return <IfElseNodeConfigPanel {...coreProps} />;
       case BlockEnum.HttpRequest:
-        return <HttpNodeConfigPanel {...commonProps} />;
+        return <HttpNodeConfigPanel {...coreProps} />;
       case BlockEnum.Iteration:
-        return <IterationNodeConfigPanel {...commonProps} />;
+        return <IterationNodeConfigPanel {...coreProps} />;
       case BlockEnum.KnowledgeRetrieval:
-        return <KnowledgeRetrievalConfigPanel {...commonProps} />;
+        return <KnowledgeRetrievalConfigPanel {...coreProps} />;
       case BlockEnum.Agent:
-        return <AgentConfig {...commonProps} />;
+        return <AgentConfig {...extendedProps} />;
       case BlockEnum.QuestionClassifier:
-        return <QuestionClassifierConfig {...commonProps} />;
+        return <QuestionClassifierConfig {...extendedProps} />;
       case BlockEnum.ParameterExtractor:
-        return <ParameterExtractorConfig {...commonProps} />;
+        return <ParameterExtractorConfig {...extendedProps} />;
       case BlockEnum.TemplateTransform:
-        return <TemplateTransformConfig {...commonProps} />;
+        return <TemplateTransformConfig {...extendedProps} />;
       case BlockEnum.AssignerWriteTo:
-        return <VariableAssignerConfig {...commonProps} />;
+        return <VariableAssignerConfig {...extendedProps} />;
       case BlockEnum.Answer:
-        return <AnswerConfig {...commonProps} />;
+        return <AnswerConfig {...extendedProps} />;
       case BlockEnum.DocumentExtractor:
-        return <DocumentExtractorConfig {...commonProps} />;
+        return <DocumentExtractorConfig {...extendedProps} />;
       case BlockEnum.VariableAggregator:
-        return <VariableAggregatorConfig {...commonProps} />;
+        return <VariableAggregatorConfig {...extendedProps} />;
       case BlockEnum.ListOperator:
-        return <ListOperationConfig {...commonProps} />;
+        return <ListOperationConfig {...extendedProps} />;
       case BlockEnum.Tool:
-        return <ToolConfig {...commonProps} />;
+        return <ToolConfig {...extendedProps} />;
       case BlockEnum.SubWorkflow:
-        return <SubWorkflowConfig {...commonProps} />;
+        return <SubWorkflowConfig {...extendedProps} />;
       case BlockEnum.ConversationVariable:
-        return <ConversationVariableConfig {...commonProps} />;
+        return <ConversationVariableConfig {...extendedProps} />;
       default:
         return (
           <div className="p-4 text-center text-muted-foreground">

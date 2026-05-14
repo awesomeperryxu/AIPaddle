@@ -17,13 +17,18 @@ import type { WorkflowNode } from '../../types';
 import { nodeRegistry } from '../../nodes';
 import { BlockEnum } from '../../types';
 
-// Simple variable definition for config panels
+// Simple variable definition for config panels - compatible with VariableDefinition
 interface SimpleVariable {
-  name: string;
+  key?: string;  // VariableDefinition uses key
+  name?: string; // Alternative name field
   type: VarType | string;
   description?: string;
-  sourceNodeId?: string;
-  sourceNodeTitle?: string;
+  label?: string;
+}
+
+// Get display name from variable
+function getVariableName(v: SimpleVariable): string {
+  return v.name || v.key || v.label || '';
 }
 
 export interface VariableSelectorProps {
@@ -32,7 +37,7 @@ export interface VariableSelectorProps {
   onChange?: (value: ValueSelector) => void;
   availableNodes?: WorkflowNode[];
   currentNodeId?: string;
-  // Simple mode - with pre-processed variables
+  // Simple mode - with pre-processed variables (supports VariableDefinition)
   variables?: SimpleVariable[];
   onSelect?: (variable: SimpleVariable) => void;
   // Common props
@@ -265,10 +270,10 @@ export function VariableSelector({
                   </div>
                 ) : (
                   variables
-                    .filter(v => !search || v.name.toLowerCase().includes(search.toLowerCase()))
+                    .filter(v => !search || getVariableName(v).toLowerCase().includes(search.toLowerCase()))
                     .map((variable) => (
                       <button
-                        key={variable.name}
+                        key={getVariableName(variable)}
                         type="button"
                         onClick={() => {
                           onSelect?.(variable);
@@ -277,7 +282,7 @@ export function VariableSelector({
                         className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent rounded-md transition-colors"
                       >
                         <Variable className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="flex-1 text-left truncate">{variable.name}</span>
+                        <span className="flex-1 text-left truncate">{getVariableName(variable)}</span>
                         <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
                           {variable.type}
                         </Badge>

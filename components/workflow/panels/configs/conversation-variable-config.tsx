@@ -51,13 +51,13 @@ export function ConversationVariableConfig({
   node,
   onUpdate,
 }: NodeConfigProps) {
-  const data = (node.data || { variables: [] }) as ConversationVariableData
+  const data = (node.data as unknown as ConversationVariableData) || { variables: [] }
   const [expandedVars, setExpandedVars] = useState<Set<string>>(new Set())
 
   const updateData = (updates: Partial<ConversationVariableData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 

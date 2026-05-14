@@ -61,7 +61,7 @@ export function ListOperationConfig({
   const updateData = (updates: Partial<ListOperationData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 

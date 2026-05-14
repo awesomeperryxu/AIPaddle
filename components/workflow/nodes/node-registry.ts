@@ -45,6 +45,7 @@ import type {
   AppType,
   NodeRegistryEntry,
   NodeCategoryGroup,
+  NodeConfig,
 } from '../types/workflow-types';
 
 /**
@@ -659,6 +660,38 @@ export const nodeRegistry: Record<BlockEnum, NodeRegistryEntry> = {
       variables: [],
     },
   },
+
+  [BlockEnum.SubWorkflow]: {
+    type: BlockEnum.SubWorkflow,
+    label: '子工作流',
+    labelEn: 'Sub Workflow',
+    icon: GitBranch,
+    color: '#8B5CF6', // Integration color
+    borderColor: '#8B5CF6',
+    bgColor: '#F5F3FF',
+    category: NodeCategory.Integration,
+    description: '调用另一个工作流作为子流程',
+    hasInputPort: true,
+    hasOutputPort: true,
+    availableIn: ['workflow', 'chatflow'],
+    defaultConfig: {} as Partial<NodeConfig>,
+  },
+
+  [BlockEnum.ConversationVariable]: {
+    type: BlockEnum.ConversationVariable,
+    label: '会话变量',
+    labelEn: 'Conversation Variable',
+    icon: MessageSquare,
+    color: '#F59E0B', // Special color
+    borderColor: '#F59E0B',
+    bgColor: '#FFFBEB',
+    category: NodeCategory.Data,
+    description: '管理会话级别的持久变量',
+    hasInputPort: true,
+    hasOutputPort: true,
+    availableIn: ['chatflow'],
+    defaultConfig: {} as Partial<NodeConfig>,
+  },
 };
 
 /**
@@ -711,6 +744,7 @@ export const nodeCategoryGroups: NodeCategoryGroup[] = [
       BlockEnum.DocumentExtractor,
       BlockEnum.JSONParse,
       BlockEnum.AssignerWriteTo,
+      BlockEnum.ConversationVariable,
     ],
   },
   {
@@ -723,6 +757,7 @@ export const nodeCategoryGroups: NodeCategoryGroup[] = [
       BlockEnum.KnowledgeRetrieval,
       BlockEnum.DataSource,
       BlockEnum.KnowledgeBase,
+      BlockEnum.SubWorkflow,
     ],
   },
   {

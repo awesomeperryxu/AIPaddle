@@ -58,13 +58,13 @@ export function ParameterExtractorConfig({
   onUpdate,
   availableVariables,
 }: NodeConfigProps) {
-  const data = (node.data || { parameters: [] }) as ParameterExtractorData
+  const data = (node.data as unknown as ParameterExtractorData) || { parameters: [] }
   const [expandedParams, setExpandedParams] = useState<Set<string>>(new Set())
 
   const updateData = (updates: Partial<ParameterExtractorData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 

@@ -39,13 +39,13 @@ export function QuestionClassifierConfig({
   onUpdate,
   availableVariables,
 }: NodeConfigProps) {
-  const data = (node.data || { categories: [] }) as QuestionClassifierData
+  const data = (node.data as unknown as QuestionClassifierData) || { categories: [] }
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
 
   const updateData = (updates: Partial<QuestionClassifierData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 

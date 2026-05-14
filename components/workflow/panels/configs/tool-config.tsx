@@ -104,14 +104,14 @@ export function ToolConfig({
   onUpdate,
   availableVariables,
 }: NodeConfigProps) {
-  const data = (node.data || { parameters: [] }) as ToolNodeData
+  const data = (node.data as unknown as ToolNodeData) || { parameters: [] }
   const [searchQuery, setSearchQuery] = useState("")
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const updateData = (updates: Partial<ToolNodeData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 

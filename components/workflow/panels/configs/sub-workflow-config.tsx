@@ -86,17 +86,17 @@ export function SubWorkflowConfig({
   onUpdate,
   availableVariables,
 }: NodeConfigProps) {
-  const data = (node.data || {
+  const data = (node.data as unknown as SubWorkflowData) || {
     inputMappings: [],
     outputMappings: [],
-  }) as SubWorkflowData
+  }
   const [searchQuery, setSearchQuery] = useState("")
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const updateData = (updates: Partial<SubWorkflowData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 

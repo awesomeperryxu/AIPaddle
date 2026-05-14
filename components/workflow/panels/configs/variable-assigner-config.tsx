@@ -53,12 +53,12 @@ export function VariableAssignerConfig({
   onUpdate,
   availableVariables,
 }: NodeConfigProps) {
-  const data = (node.data || { assignments: [] }) as VariableAssignerData
+  const data = (node.data as unknown as VariableAssignerData) || { assignments: [] }
 
   const updateData = (updates: Partial<VariableAssignerData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 
@@ -312,8 +312,8 @@ export function VariableAssignerConfig({
               </p>
             ) : (
               availableVariables.map((v) => (
-                <Badge key={v.name} variant="outline" className="font-mono">
-                  {v.name}
+                <Badge key={v.key} variant="outline" className="font-mono">
+                  {v.label || v.key}
                 </Badge>
               ))
             )}

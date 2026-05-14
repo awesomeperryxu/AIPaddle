@@ -52,13 +52,13 @@ export function VariableAggregatorConfig({
   onUpdate,
   availableVariables,
 }: NodeConfigProps) {
-  const data = (node.data || { sources: [] }) as VariableAggregatorData
+  const data = (node.data as unknown as VariableAggregatorData) || { sources: [] }
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const updateData = (updates: Partial<VariableAggregatorData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 

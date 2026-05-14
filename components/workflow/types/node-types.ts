@@ -38,6 +38,7 @@ export enum BlockEnum {
   KnowledgeRetrieval = 'knowledge-retrieval',
   DataSource = 'data-source',
   KnowledgeBase = 'knowledge-base',
+  SubWorkflow = 'sub-workflow',
 
   // ===== Output Nodes =====
   End = 'end',
@@ -46,6 +47,7 @@ export enum BlockEnum {
   // ===== Special Nodes =====
   Note = 'note',
   AssignerWriteTo = 'assigner-write-to',
+  ConversationVariable = 'conversation-variable', // Chatflow only
 }
 
 /**

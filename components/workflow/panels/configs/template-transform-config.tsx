@@ -71,14 +71,14 @@ export function TemplateTransformConfig({
   onUpdate,
   availableVariables,
 }: NodeConfigProps) {
-  const data = (node.data || {}) as TemplateTransformData
+  const data = (node.data as unknown as TemplateTransformData) || {}
   const [previewResult, setPreviewResult] = useState<string>("")
   const [activeTab, setActiveTab] = useState<"editor" | "preview" | "helpers">("editor")
 
   const updateData = (updates: Partial<TemplateTransformData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 
@@ -155,7 +155,7 @@ export function TemplateTransformConfig({
           <div className="flex gap-2">
             <VariableSelector
               variables={availableVariables}
-              onSelect={(variable) => insertVariable(variable.name)}
+              onSelect={(variable) => insertVariable(variable.key || variable.name || '')}
             />
             <Button variant="outline" size="sm" onClick={handlePreview}>
               <Play className="mr-1 h-3 w-3" />
@@ -258,12 +258,12 @@ export function TemplateTransformConfig({
             ) : (
               availableVariables.map((variable) => (
                 <Badge
-                  key={variable.name}
+                  key={variable.key}
                   variant="outline"
                   className="cursor-pointer font-mono"
-                  onClick={() => insertVariable(variable.name)}
+                  onClick={() => insertVariable(variable.key)}
                 >
-                  {variable.name}
+                  {variable.label || variable.key}
                   <span className="ml-1 text-muted-foreground">
                     ({variable.type})
                   </span>

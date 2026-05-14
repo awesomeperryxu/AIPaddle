@@ -69,7 +69,7 @@ export function AgentConfig({ node, onUpdate, availableVariables }: NodeConfigPr
   const updateData = (updates: Partial<AgentNodeData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 

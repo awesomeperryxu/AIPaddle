@@ -71,7 +71,7 @@ export function DocumentExtractorConfig({
   const updateData = (updates: Partial<DocumentExtractorData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 

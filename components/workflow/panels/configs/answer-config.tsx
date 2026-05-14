@@ -57,7 +57,7 @@ export function AnswerConfig({
   const updateData = (updates: Partial<AnswerNodeData>) => {
     onUpdate({
       ...node,
-      data: { ...data, ...updates },
+      data: { ...data, ...updates } as unknown as import('../../types').NodeConfig,
     })
   }
 
@@ -123,7 +123,7 @@ export function AnswerConfig({
           </TabsList>
           <VariableSelector
             variables={availableVariables}
-            onSelect={(v) => insertVariable(v.name)}
+            onSelect={(v) => insertVariable(v.key || v.name || '')}
           />
         </div>
 
@@ -140,12 +140,12 @@ export function AnswerConfig({
             <div className="flex flex-wrap gap-2">
               {availableVariables.slice(0, 5).map((v) => (
                 <Badge
-                  key={v.name}
+                  key={v.key}
                   variant="outline"
                   className="cursor-pointer font-mono"
-                  onClick={() => insertVariable(v.name)}
+                  onClick={() => insertVariable(v.key)}
                 >
-                  {v.name}
+                  {v.label || v.key}
                 </Badge>
               ))}
               {availableVariables.length > 5 && (

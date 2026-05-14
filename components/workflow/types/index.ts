@@ -71,7 +71,8 @@ export type {
 } from './workflow-types';
 
 // Common config panel props type
-import type { WorkflowNode, VariableDefinition } from './workflow-types';
+import type { WorkflowNode } from './workflow-types';
+import type { VariableDefinition } from './node-types';
 
 export interface NodeConfigProps {
   node: WorkflowNode;
