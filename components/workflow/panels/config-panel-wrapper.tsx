@@ -75,10 +75,11 @@ export function ConfigPanelWrapper({
     borderLeftColor: accentColor,
   };
 
+  // Design spec: 380px width, white background, left border with shadow-xl
   return (
     <div
       className={cn(
-        'fixed right-0 top-0 h-full w-[380px] bg-background border-l shadow-xl z-50 flex flex-col',
+        'fixed right-0 top-0 h-full w-[380px] bg-card border-l border-gray-200 shadow-xl z-50 flex flex-col',
         className
       )}
     >
@@ -132,7 +133,7 @@ export function ConfigPanelWrapper({
               className="flex-1 mt-0 min-h-0"
             >
               <ScrollArea className="h-full">
-                <div className="p-4 space-y-4">
+                <div className="p-4 space-y-4 text-xs">
                   {tab.content}
                 </div>
               </ScrollArea>
@@ -141,22 +142,22 @@ export function ConfigPanelWrapper({
         </Tabs>
       ) : (
         <ScrollArea className="flex-1">
-          <div className="p-4 space-y-4">
+          <div className="p-4 space-y-4 text-xs">
             {children}
           </div>
         </ScrollArea>
       )}
 
-      {/* Footer */}
+      {/* Footer - design spec: h-8 flex-1, left reset (outline), right save (primary) */}
       {showFooter && (
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t bg-muted/30">
+        <div className="flex items-center gap-2 px-4 py-3 border-t bg-muted/30">
           {onReset && (
-            <Button variant="outline" size="sm" onClick={onReset}>
+            <Button variant="outline" className="h-8 flex-1" onClick={onReset}>
               重置
             </Button>
           )}
           {onSave && (
-            <Button size="sm" onClick={onSave}>
+            <Button className="h-8 flex-1" onClick={onSave}>
               保存
             </Button>
           )}

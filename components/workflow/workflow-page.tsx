@@ -27,27 +27,30 @@ import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-// Custom node component
+// Custom node component - follows design spec:
+// - Width: 240px fixed
+// - Min height: 80px
+// - Border radius: 12px (rounded-xl)
+// - Left border: 4px
 function WorkflowNode({ data, selected }: { data: any; selected: boolean }) {
   const config = nodeRegistry[data.blockType as BlockEnum];
   if (!config) return null;
 
   const Icon = config.icon;
-  const isStartOrEnd = data.blockType === BlockEnum.Start || data.blockType === BlockEnum.End;
 
   return (
     <div
       className={cn(
-        'relative bg-white rounded-xl shadow-sm transition-shadow overflow-hidden',
+        'relative bg-card rounded-xl shadow-sm transition-shadow overflow-hidden border border-border',
         selected && 'ring-2 ring-primary shadow-md'
       )}
-      style={{ width: 240, minHeight: 80 }}
+      style={{ 
+        width: 240, 
+        minHeight: 80,
+        borderLeftWidth: '4px',
+        borderLeftColor: config.color,
+      }}
     >
-      {/* Left border stripe */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
-        style={{ backgroundColor: config.color }}
-      />
       <div className="p-3 pl-4">
         <div className="flex items-center gap-2 mb-1">
           <div
@@ -344,8 +347,8 @@ function WorkflowPageInner({
               variant={BackgroundVariant.Dots}
               gap={16}
               size={1.5}
-              color="#D1D5DB"
-              style={{ backgroundColor: '#F9FAFB' }}
+              color="var(--canvas-dot-color)"
+              style={{ backgroundColor: 'var(--canvas-bg)' }}
             />
             <MiniMap
               className="!bottom-16 !right-4 !rounded-xl !border !border-gray-200 !shadow-lg"

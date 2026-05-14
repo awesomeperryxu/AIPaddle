@@ -94,13 +94,13 @@ export function NodeCard({
   const cardContent = (
     <div
       className={cn(
-        'group relative w-[240px] rounded-lg border bg-card shadow-sm transition-all',
+        'group relative w-[240px] min-h-[80px] rounded-xl border bg-card shadow-sm transition-all',
         selected && 'ring-2 ring-primary shadow-md',
         disabled && 'opacity-50',
         className
       )}
       style={{
-        borderLeftWidth: '3px',
+        borderLeftWidth: '4px',
         borderLeftColor: accentColor,
       }}
     >
@@ -109,7 +109,7 @@ export function NodeCard({
 
       {/* Header */}
       <div
-        className="flex items-center gap-2 px-3 py-2 rounded-t-lg border-b"
+        className="flex items-center gap-2 px-3 py-2 rounded-tr-xl border-b"
         style={{
           backgroundColor: `${accentColor}10`,
         }}
@@ -146,7 +146,7 @@ export function NodeCard({
 
       {/* Disabled overlay */}
       {disabled && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/50">
+        <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-background/50">
           <EyeOff className="h-5 w-5 text-muted-foreground" />
         </div>
       )}
