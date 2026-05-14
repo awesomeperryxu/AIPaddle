@@ -13,4 +13,7 @@ export * from "./configs/v2"
 // Workflow run/debug panel
 export { WorkflowRunPanel, WorkflowRunPanelDemo } from "./workflow-run-panel"
 
+// Chatflow preview panel
+export { ChatflowPreviewPanel, ChatflowPreviewPanelDemo } from "./chatflow-preview-panel"
+
 // Note: original configs are imported directly by node-config-panel, not re-exported to avoid name conflicts with types
