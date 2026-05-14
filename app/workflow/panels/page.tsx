@@ -1,13 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { Sparkles, Code2, GitBranch } from 'lucide-react';
+import { Sparkles, Code2, GitBranch, Globe, BookOpen, RefreshCw, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   LLMConfigPanelV2,
   CodeConfigPanelV2,
   IfElseConfigPanelV2,
+  HttpConfigPanelV2,
+  KnowledgeConfigPanelV2,
+  IterationConfigPanelV2,
+  LoopConfigPanelV2,
 } from '@/components/workflow/panels/configs/v2';
 import type { WorkflowNode } from '@/components/workflow/types';
 
@@ -41,9 +45,37 @@ const mockNodes: WorkflowNode[] = [
     position: { x: 600, y: 0 },
     data: {},
   },
+  {
+    id: 'http-1',
+    type: 'http-request' as any,
+    title: 'HTTP Request',
+    position: { x: 800, y: 0 },
+    data: {},
+  },
+  {
+    id: 'knowledge-1',
+    type: 'knowledge-retrieval' as any,
+    title: 'Knowledge Retrieval',
+    position: { x: 1000, y: 0 },
+    data: {},
+  },
+  {
+    id: 'iteration-1',
+    type: 'iteration' as any,
+    title: 'Iteration',
+    position: { x: 1200, y: 0 },
+    data: {},
+  },
+  {
+    id: 'loop-1',
+    type: 'loop' as any,
+    title: 'Loop',
+    position: { x: 1400, y: 0 },
+    data: {},
+  },
 ];
 
-type PanelType = 'llm' | 'code' | 'ifelse' | null;
+type PanelType = 'llm' | 'code' | 'ifelse' | 'http' | 'knowledge' | 'iteration' | 'loop' | null;
 
 export default function PanelsDemoPage() {
   const [activePanel, setActivePanel] = useState<PanelType>(null);
@@ -71,6 +103,34 @@ export default function PanelsDemoPage() {
       color: '#3B82F6',
       description: '条件分支配置',
     },
+    {
+      id: 'http' as PanelType,
+      title: 'HTTP 节点面板',
+      icon: <Globe className="h-5 w-5" />,
+      color: '#EF4444',
+      description: 'HTTP 请求配置',
+    },
+    {
+      id: 'knowledge' as PanelType,
+      title: 'Knowledge 节点面板',
+      icon: <BookOpen className="h-5 w-5" />,
+      color: '#06B6D4',
+      description: '知识库检索配置',
+    },
+    {
+      id: 'iteration' as PanelType,
+      title: 'Iteration 节点面板',
+      icon: <RefreshCw className="h-5 w-5" />,
+      color: '#3B82F6',
+      description: '迭代容器配置',
+    },
+    {
+      id: 'loop' as PanelType,
+      title: 'Loop 节点面板',
+      icon: <Repeat className="h-5 w-5" />,
+      color: '#8B5CF6',
+      description: '循环容器配置',
+    },
   ];
 
   const handleUpdate = (data: any) => {
@@ -88,7 +148,7 @@ export default function PanelsDemoPage() {
 
   return (
     <div className="min-h-screen bg-muted/30 p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-5xl mx-auto space-y-8">
         {/* Header */}
         <div className="space-y-2">
           <h1 className="text-2xl font-bold">节点配置面板 Demo</h1>
@@ -122,7 +182,7 @@ export default function PanelsDemoPage() {
         </div>
 
         {/* Panel Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {panels.map((panel) => (
             <button
               key={panel.id}
@@ -151,7 +211,7 @@ export default function PanelsDemoPage() {
           <ul className="text-sm text-muted-foreground space-y-1">
             <li>- 面板宽度: 380px，右侧抽屉形式</li>
             <li>- Header: 节点主题色浅背景，包含图标、标题、类型徽章、关闭按钮</li>
-            <li>- Tab 栏: 下划线激活样式</li>
+            <li>- Tab 栏: 下划线激活样式（部分面板无 Tab）</li>
             <li>- 内容区: overflow-y-auto 滚动</li>
             <li>- Footer: 重置（outline）+ 保存（primary）按钮</li>
           </ul>
@@ -192,6 +252,50 @@ export default function PanelsDemoPage() {
         onReset={handleReset}
         isOpen={activePanel === 'ifelse'}
         appType={appType}
+      />
+
+      {/* HTTP Panel */}
+      <HttpConfigPanelV2
+        node={mockNodes[4]}
+        allNodes={mockNodes}
+        onUpdate={handleUpdate}
+        onClose={() => setActivePanel(null)}
+        onSave={handleSave}
+        onReset={handleReset}
+        isOpen={activePanel === 'http'}
+      />
+
+      {/* Knowledge Panel */}
+      <KnowledgeConfigPanelV2
+        node={mockNodes[5]}
+        allNodes={mockNodes}
+        onUpdate={handleUpdate}
+        onClose={() => setActivePanel(null)}
+        onSave={handleSave}
+        onReset={handleReset}
+        isOpen={activePanel === 'knowledge'}
+      />
+
+      {/* Iteration Panel */}
+      <IterationConfigPanelV2
+        node={mockNodes[6]}
+        allNodes={mockNodes}
+        onUpdate={handleUpdate}
+        onClose={() => setActivePanel(null)}
+        onSave={handleSave}
+        onReset={handleReset}
+        isOpen={activePanel === 'iteration'}
+      />
+
+      {/* Loop Panel */}
+      <LoopConfigPanelV2
+        node={mockNodes[7]}
+        allNodes={mockNodes}
+        onUpdate={handleUpdate}
+        onClose={() => setActivePanel(null)}
+        onSave={handleSave}
+        onReset={handleReset}
+        isOpen={activePanel === 'loop'}
       />
     </div>
   );
