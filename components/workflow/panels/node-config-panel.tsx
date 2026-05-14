@@ -16,7 +16,8 @@ import {
 } from '@/components/ui/tooltip';
 
 import { nodeRegistry } from '../nodes';
-import type { WorkflowNode, NodeConfig, BlockEnum, VarType, VariableDefinition } from '../types';
+import { BlockEnum } from '../types';
+import type { WorkflowNode, NodeConfig, VarType, VariableDefinition } from '../types';
 
 // Import config components
 import { StartNodeConfigPanel } from './configs/start-config';
@@ -132,7 +133,7 @@ function getNodeOutputVariables(node: WorkflowNode): OutputVariable[] {
 // Get input dependencies for a node
 function getNodeInputVariables(node: WorkflowNode): { nodeId: string; varKey: string }[] {
   const inputs: { nodeId: string; varKey: string }[] = [];
-  const data = node.data as Record<string, unknown>;
+  const data = node.data as unknown as Record<string, unknown>;
   
   // Check common variable selector patterns
   const checkSelector = (selector: unknown) => {
@@ -181,11 +182,10 @@ export function NodeConfigPanel({
       const outputs = getNodeOutputVariables(n);
       outputs.forEach((output) => {
         variables.push({
-          name: `${n.title || n.id}.${output.key}`,
+          key: `${n.title || n.id}.${output.key}`,
+          label: `${n.title || n.id} - ${output.key}`,
           type: output.type as VariableDefinition['type'],
           description: output.description,
-          sourceNodeId: n.id,
-          sourceNodeTitle: n.title,
         });
       });
     });
@@ -199,48 +199,49 @@ export function NodeConfigPanel({
       node,
       onUpdate: (updatedNode: WorkflowNode) => onUpdate(node.id, updatedNode.data as Partial<NodeConfig>),
       availableVariables,
+      allNodes,
     };
 
     switch (node.type) {
-      case 'start':
+      case BlockEnum.Start:
         return <StartNodeConfigPanel {...commonProps} />;
-      case 'end':
+      case BlockEnum.End:
         return <EndNodeConfigPanel {...commonProps} />;
-      case 'llm':
+      case BlockEnum.LLM:
         return <LLMNodeConfigPanel {...commonProps} />;
-      case 'code':
+      case BlockEnum.Code:
         return <CodeNodeConfigPanel {...commonProps} />;
-      case 'if-else':
+      case BlockEnum.IfElse:
         return <IfElseNodeConfigPanel {...commonProps} />;
-      case 'http-request':
+      case BlockEnum.HttpRequest:
         return <HttpNodeConfigPanel {...commonProps} />;
-      case 'iteration':
+      case BlockEnum.Iteration:
         return <IterationNodeConfigPanel {...commonProps} />;
-      case 'knowledge-retrieval':
+      case BlockEnum.KnowledgeRetrieval:
         return <KnowledgeRetrievalConfigPanel {...commonProps} />;
-      case 'agent':
+      case BlockEnum.Agent:
         return <AgentConfig {...commonProps} />;
-      case 'question-classifier':
+      case BlockEnum.QuestionClassifier:
         return <QuestionClassifierConfig {...commonProps} />;
-      case 'parameter-extractor':
+      case BlockEnum.ParameterExtractor:
         return <ParameterExtractorConfig {...commonProps} />;
-      case 'template-transform':
+      case BlockEnum.TemplateTransform:
         return <TemplateTransformConfig {...commonProps} />;
-      case 'variable-assigner':
+      case BlockEnum.AssignerWriteTo:
         return <VariableAssignerConfig {...commonProps} />;
-      case 'answer':
+      case BlockEnum.Answer:
         return <AnswerConfig {...commonProps} />;
-      case 'document-extractor':
+      case BlockEnum.DocumentExtractor:
         return <DocumentExtractorConfig {...commonProps} />;
-      case 'variable-aggregator':
+      case BlockEnum.VariableAggregator:
         return <VariableAggregatorConfig {...commonProps} />;
-      case 'list-operation':
+      case BlockEnum.ListOperator:
         return <ListOperationConfig {...commonProps} />;
-      case 'tool':
+      case BlockEnum.Tool:
         return <ToolConfig {...commonProps} />;
-      case 'sub-workflow':
+      case BlockEnum.SubWorkflow:
         return <SubWorkflowConfig {...commonProps} />;
-      case 'conversation-variable':
+      case BlockEnum.ConversationVariable:
         return <ConversationVariableConfig {...commonProps} />;
       default:
         return (
