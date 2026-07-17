@@ -1,6 +1,6 @@
-# AI LLMOps 平台产品需求文档 (PRD)
+# AIPaddle 产品需求文档 (PRD)
 
-**项目名称**: v0-ai-llmops-prototype  
+**项目名称**: AIPaddle
 **文档版本**: 1.04  
 **创建日期**: 2026-05-07  
 **更新日期**: 2026-05-12  
@@ -19,7 +19,7 @@
 
 ### 1.1 产品定位
 
-AI LLMOps 平台是一个**企业级 AI 运营管理平台**，专注于帮助企业构建、部署、管理和监控 AI Agent、Skill 和工作流。
+AIPaddle 是一个**企业级 AI 运营管理平台**，专注于帮助企业构建、部署、管理和监控 AI Agent、Skill 和工作流。
 
 **核心价值主张**:
 - **统一管理**: 集中管理所有 AI 资产（Agent、Skill、知识库、工作流）
@@ -1191,17 +1191,19 @@ Tenant 1:N Member (一个租户可以有多个成员)
 
 ## 7. 开发优先级
 
-### Phase 1: MVP (已完成)
-- ✅ 基础 UI 框架
-- ✅ 侧边栏导航
-- ✅ 监控面板
-- ✅ Agent 管理
-- ✅ Skill Hub
-- ✅ 工作流编辑器
-- ✅ 知识库管理
-- ✅ 安全审核
-- ✅ 成员管理
-- ✅ 租户管理
+### Phase 1: MVP UI 原型（已完成）
+- ✅ 基础 UI 框架（原型）
+- ✅ 侧边栏导航（原型）
+- ✅ 监控面板（静态演示数据）
+- ✅ Agent 管理（列表与详情原型）
+- ✅ Skill Hub（列表与详情原型）
+- ✅ 工作流编辑器（本地交互原型）
+- ✅ 知识库管理（列表与详情原型）
+- ✅ 安全审核（列表与详情原型）
+- ✅ 成员管理（列表原型）
+- ✅ 租户管理（列表与概览原型）
+
+> 上述完成状态仅表示前端页面覆盖；API、持久化、权限校验和执行引擎仍属于 Phase 2。具体边界见实现审计。
 
 ### Phase 2: 后端集成 (待开发)
 - ⏳ 用户认证系统
@@ -1233,8 +1235,8 @@ Tenant 1:N Member (一个租户可以有多个成员)
 ## 9. 参考资料
 
 ### 9.1 项目信息
-- **GitHub**: https://github.com/HELLOPERRYXU/v0-ai-llmops-prototype
-- **v0 项目**: https://v0.app/chat/projects/prj_ZAwVAdLgqJ8PZuBLGPrN1hoDJteq
+- **GitHub**: https://github.com/HELLOPERRYXU/AIPaddle
+- **实现审计**: `../IMPLEMENTATION_AUDIT.md`
 
 ### 9.2 技术文档
 - Next.js: https://nextjs.org/docs
@@ -1246,4 +1248,4 @@ Tenant 1:N Member (一个租户可以有多个成员)
 
 **文档结束**
 
-*本 PRD 基于 v0-ai-llmops-prototype 项目的前端代码分析生成，反映了当前已实现的功能。*
+*本 PRD 基于 AIPaddle 项目的前端代码分析生成，反映了当前已实现的功能。*

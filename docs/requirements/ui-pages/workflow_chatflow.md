@@ -3,7 +3,7 @@
 **文档版本**: v2.0  
 **更新日期**: 2026-05-11  
 **基于**: Dify 开源代码深度分析（937 个 TSX 文件）  
-**用途**: v0.dev 可用的 TSX 组件代码 + 提示词
+**用途**: Claude Code 可用的 TSX 组件代码 + 提示词
 
 ---
 
@@ -1546,7 +1546,7 @@ export function BlockSelector({ onSelect, onClose }: BlockSelectorProps) {
 
 ---
 
-## 10. v0.dev 提示词
+## 10. Claude Code 提示词
 
 ### 10.1 整体画布页面
 
@@ -4742,7 +4742,7 @@ export function CandidateNode({ type = "LLM", title = "LLM", color = "#6366F1" }
 
 ---
 
-## 16. v0.dev 提示词补全
+## 16. Claude Code 提示词补全
 
 ### 16.1 节点配置面板提示词集
 

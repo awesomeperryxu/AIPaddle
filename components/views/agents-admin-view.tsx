@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { mockAgents, Agent } from '@/lib/mock-data';
 import {
   Bot,
@@ -24,7 +24,6 @@ import {
   Phone,
   MessagesSquare,
   Globe,
-  ExternalLink,
   CheckCircle2,
   XCircle,
   Clock,
