@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./licon.js"></script>
+<style>
+  body{margin:0;background:oklch(0.1 0.01 250);color:oklch(0.95 0.005 260);font-family:'Geist',-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color-scheme:dark}
+  a{color:oklch(0.65 0.2 250);text-decoration:none} a:hover{color:oklch(0.75 0.16 250)}
+  l-icon{display:inline-flex;flex:none;line-height:0} l-icon svg{width:100%;height:100%}
+  input,button{font-family:inherit}
+  input::placeholder{color:oklch(0.6 0.01 260 / 0.7)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.28 0.015 250);border-radius:5px;border:2px solid oklch(0.1 0.01 250)}
+</style>
+</helmet>
+<div data-screen-label="个人助理" style="display:flex;gap:24px;height:calc(100vh - 88px)">
+  <div style="width:288px;flex:none;display:flex;flex-direction:column;gap:16px">
+    <button style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;font-size:14px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3)" style-hover="filter:brightness(1.12)"><l-icon name="plus" style="width:16px;height:16px"></l-icon>新建对话</button>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <p style="margin:0;padding:0 8px;font-size:12px;font-weight:500;color:oklch(0.6 0.01 260);text-transform:uppercase;letter-spacing:0.08em">历史会话</p>
+      <sc-for list="{{ convs }}" as="c" hint-placeholder-count="2">
+        <div onClick="{{ c.select }}" style="padding:12px;border-radius:8px;cursor:pointer;background:{{ c.bg }};border:{{ c.border }}" style-hover="background:oklch(0.2 0.015 250 / 0.5)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><l-icon name="bot" style="width:16px;height:16px;color:oklch(0.65 0.2 250)"></l-icon><span style="font-size:14px;font-weight:500;color:oklch(0.95 0.005 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.agentName }}</span></div>
+          <p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.preview }}</p>
+          <p style="margin:4px 0 0;font-size:12px;color:oklch(0.6 0.01 260)">{{ c.timestamp }}</p>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:1px solid oklch(0.25 0.015 250);flex:none">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,oklch(0.65 0.2 250 / 0.2),oklch(0.55 0.18 180 / 0.2));display:flex;align-items:center;justify-content:center"><l-icon name="bot" style="width:20px;height:20px;color:oklch(0.65 0.2 250)"></l-icon></div>
+        <div>
+          <h2 style="margin:0;font-size:15px;font-weight:500;color:oklch(0.95 0.005 260)">{{ activeName }}</h2>
+          <p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">正在使用个人助理</p>
+        </div>
+      </div>
+      <button style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="history" style="width:20px;height:20px;color:oklch(0.95 0.005 260)"></l-icon></button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:24px 0;display:flex;flex-direction:column;gap:24px;min-height:0">
+      <sc-for list="{{ msgs }}" as="m" hint-placeholder-count="2">
+        <div style="display:flex;gap:16px;flex-direction:{{ m.dir }}">
+          <div style="width:32px;height:32px;border-radius:8px;background:{{ m.avBg }};display:flex;align-items:center;justify-content:center;flex:none"><l-icon name="{{ m.avIcon }}" style="width:16px;height:16px;color:oklch(0.65 0.2 250)"></l-icon></div>
+          <div style="max-width:70%;text-align:{{ m.align }}">
+            <div style="padding:16px;border-radius:{{ m.radius }};background:{{ m.bubbleBg }};border:{{ m.bubbleBorder }};text-align:left">
+              <p style="margin:0;font-size:14px;color:{{ m.textColor }};line-height:1.6;white-space:pre-wrap">{{ m.content }}</p>
+            </div>
+            <p style="margin:4px 0 0;font-size:12px;color:oklch(0.6 0.01 260)">{{ m.timestamp }}</p>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="padding-top:16px;border-top:1px solid oklch(0.25 0.015 250);display:flex;flex-direction:column;gap:12px;flex:none">
+      <div style="display:flex;gap:8px">
+        <sc-for list="{{ quickActions }}" as="q" hint-placeholder-count="3">
+          <button onClick="{{ q.use }}" style="display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;font-size:13px;color:oklch(0.95 0.005 260);background:transparent;border:1px solid oklch(0.25 0.015 250);border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="{{ q.icon }}" style="width:14px;height:14px"></l-icon>{{ q.label }}</button>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:12px">
+        <div style="flex:1;position:relative">
+          <input placeholder="输入你的问题..." value="{{ message }}" onInput="{{ setMessage }}" style="width:100%;height:48px;font-size:14px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:0 88px 0 12px;color:oklch(0.95 0.005 260);outline:none" style-focus="border-color:oklch(0.65 0.2 250)">
+          <div style="position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:4px">
+            <button style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="paperclip" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon></button>
+            <button style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="mic" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon></button>
+          </div>
+        </div>
+        <button style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:12px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3)" style-hover="filter:brightness(1.12)"><l-icon name="send" style="width:20px;height:20px"></l-icon></button>
+      </div>
+    </div>
+  </div>
+  <div style="width:288px;flex:none;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h3 style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">我的 Skill</h3>
+      <button style="display:inline-flex;align-items:center;height:32px;padding:0 8px;font-size:13px;color:oklch(0.95 0.005 260);background:none;border:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)">查看全部<l-icon name="chevron-right" style="width:16px;height:16px;margin-left:4px"></l-icon></button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;border-radius:8px;background:oklch(0.65 0.2 250 / 0.1);display:flex;align-items:center;justify-content:center"><l-icon name="zap" style="width:16px;height:16px;color:oklch(0.65 0.2 250)"></l-icon></div>
+        <div style="flex:1;min-width:0"><p style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">周报生成器</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">45 次使用</p></div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;border-radius:8px;background:oklch(0.65 0.2 250 / 0.1);display:flex;align-items:center;justify-content:center"><l-icon name="zap" style="width:16px;height:16px;color:oklch(0.65 0.2 250)"></l-icon></div>
+        <div style="flex:1;min-width:0"><p style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">邮件回复助手</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">128 次使用</p></div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;border-radius:8px;background:oklch(0.65 0.2 250 / 0.1);display:flex;align-items:center;justify-content:center"><l-icon name="zap" style="width:16px;height:16px;color:oklch(0.65 0.2 250)"></l-icon></div>
+        <div style="flex:1;min-width:0"><p style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">会议纪要</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">32 次使用</p></div>
+      </div>
+    </div>
+    <button style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;font-size:14px;font-weight:500;background:transparent;color:oklch(0.95 0.005 260);border:1px solid oklch(0.25 0.015 250);border-radius:8px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="plus" style="width:16px;height:16px"></l-icon>创建新 Skill</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { D: null, activeId: 'conv-001', message: '' };
+  componentDidMount() { import('./data.js').then(m => this.setState({ D: m })).catch(e => console.error('data load', e)); }
+  renderVals() {
+    const D = this.state.D;
+    const convs = D ? D.conversations : [];
+    const active = convs.find(c => c.id === this.state.activeId) || convs[0];
+    return {
+      convs: convs.map(c => ({
+        agentName: c.agentName, timestamp: c.timestamp,
+        preview: c.messages[0] ? c.messages[0].content : '',
+        bg: active && active.id === c.id ? 'oklch(0.65 0.2 250 / 0.1)' : 'oklch(0.14 0.015 250)',
+        border: active && active.id === c.id ? '1px solid oklch(0.65 0.2 250 / 0.2)' : '1px solid transparent',
+        select: () => this.setState({ activeId: c.id })
+      })),
+      activeName: active ? active.agentName : '',
+      msgs: active ? active.messages.map(m => {
+        const user = m.role === 'user';
+        return {
+          content: m.content, timestamp: m.timestamp,
+          dir: user ? 'row-reverse' : 'row',
+          align: user ? 'right' : 'left',
+          avIcon: user ? 'user' : 'bot',
+          avBg: user ? 'oklch(0.65 0.2 250 / 0.1)' : 'linear-gradient(135deg,oklch(0.65 0.2 250 / 0.2),oklch(0.55 0.18 180 / 0.2))',
+          radius: user ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+          bubbleBg: user ? 'oklch(0.65 0.2 250)' : 'oklch(0.14 0.015 250)',
+          bubbleBorder: user ? 'none' : '1px solid oklch(0.25 0.015 250)',
+          textColor: user ? 'oklch(0.98 0 0)' : 'oklch(0.95 0.005 260)'
+        };
+      }) : [],
+      message: this.state.message,
+      setMessage: (e) => this.setState({ message: e.target.value }),
+      quickActions: [
+        { icon: 'file-text', label: '总结文档', prompt: '帮我总结一下这份文档的要点' },
+        { icon: 'zap', label: '创建 Skill', prompt: '帮我创建一个新的 Skill' },
+        { icon: 'image', label: '分析图片', prompt: '帮我分析这张图片的内容' }
+      ].map(q => Object.assign(q, { use: () => this.setState({ message: q.prompt }) }))
+    };
+  }
+}
+</script>
+</body>
+</html>

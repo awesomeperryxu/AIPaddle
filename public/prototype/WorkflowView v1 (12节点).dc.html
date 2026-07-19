@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./licon.js"></script>
+<style>
+  body{margin:0;background:oklch(0.1 0.01 250);color:oklch(0.95 0.005 260);font-family:'Geist',-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color-scheme:dark}
+  a{color:oklch(0.65 0.2 250);text-decoration:none} a:hover{color:oklch(0.75 0.16 250)}
+  l-icon{display:inline-flex;flex:none;line-height:0} l-icon svg{width:100%;height:100%}
+  input,textarea,select,button{font-family:inherit}
+  input::placeholder,textarea::placeholder{color:oklch(0.6 0.01 260 / 0.7)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.28 0.015 250);border-radius:5px;border:2px solid oklch(0.1 0.01 250)}
+  [data-seg][data-active="1"]{background:oklch(0.1 0.01 250) !important;color:oklch(0.95 0.005 260) !important;box-shadow:0 1px 2px rgba(0,0,0,.35)}
+  [data-wfnode][data-active="1"]{outline:2px solid oklch(0.65 0.2 250);outline-offset:2px;border-radius:10px}
+</style>
+</helmet>
+<div data-screen-label="工作流管理">
+  <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <h1 style="margin:0;font-size:20px;font-weight:600;color:oklch(0.95 0.005 260)">工作室</h1>
+          <p style="margin:2px 0 0;font-size:14px;color:oklch(0.6 0.01 260)">创建和管理 AI 应用工作流</p>
+        </div>
+        <button onClick="{{ openCreate }}" style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;font-size:14px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3)" style-hover="filter:brightness(1.12)"><l-icon name="plus" style="width:16px;height:16px"></l-icon>创建应用</button>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+        <div style="display:flex;background:oklch(0.2 0.015 250 / 0.5);border-radius:8px;padding:3px;height:36px;align-items:center">
+          <sc-for list="{{ typeTabs }}" as="t" hint-placeholder-count="5">
+            <button data-seg="1" data-active="{{ t.activeAttr }}" onClick="{{ t.go }}" style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;font-size:12px;border:none;background:transparent;color:oklch(0.6 0.01 260);cursor:pointer" style-hover="color:oklch(0.95 0.005 260)"><sc-if value="{{ t.hasIcon }}" hint-placeholder-val="{{ false }}"><l-icon name="{{ t.icon }}" style="width:14px;height:14px"></l-icon></sc-if>{{ t.label }}</button>
+          </sc-for>
+        </div>
+        <div style="position:relative;width:256px">
+          <l-icon name="search" style="width:16px;height:16px;color:oklch(0.6 0.01 260);position:absolute;left:12px;top:50%;transform:translateY(-50%)"></l-icon>
+          <input placeholder="搜索应用..." value="{{ search }}" onInput="{{ setSearch }}" style="width:100%;height:36px;font-size:14px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:0 12px 0 36px;color:oklch(0.95 0.005 260);outline:none" style-focus="border-color:oklch(0.65 0.2 250)">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+        <sc-for list="{{ apps }}" as="app" hint-placeholder-count="5">
+          <div onClick="{{ app.open }}" style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px;cursor:pointer;transition:border-color .15s" style-hover="border-color:oklch(0.65 0.2 250 / 0.5)">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div style="width:40px;height:40px;border-radius:8px;background:{{ app.typeBg }};display:flex;align-items:center;justify-content:center"><l-icon name="{{ app.typeIcon }}" style="width:20px;height:20px;color:{{ app.typeColor }}"></l-icon></div>
+                <div>
+                  <h3 style="margin:0;font-size:15px;font-weight:500;color:oklch(0.95 0.005 260)">{{ app.name }}</h3>
+                  <p style="margin:2px 0 0;font-size:12px;color:oklch(0.6 0.01 260)">{{ app.typeLabel }}</p>
+                </div>
+              </div>
+              <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:{{ app.stBg }};color:{{ app.stColor }};flex:none">{{ app.stLabel }}</span>
+            </div>
+            <p style="margin:0 0 12px;font-size:13px;color:oklch(0.6 0.01 260);line-height:1.5;height:40px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">{{ app.description }}</p>
+            <div style="display:flex;gap:6px;margin-bottom:12px">
+              <sc-for list="{{ app.tagList }}" as="tg" hint-placeholder-count="2">
+                <span style="font-size:11px;padding:2px 8px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.6 0.01 260)"><l-icon name="tag" style="width:10px;height:10px;margin-right:4px"></l-icon>{{ tg.name }}</span>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding-top:12px;border-top:1px solid oklch(0.25 0.015 250);font-size:12px;color:oklch(0.6 0.01 260)">
+              <span>{{ app.lastEditedBy }} 编辑于 {{ app.lastEditedAt }}</span>
+              <span style="display:flex;align-items:center;gap:12px">
+                <span style="display:flex;align-items:center;gap:4px"><l-icon name="play" style="width:12px;height:12px"></l-icon>{{ app.execFmt }}</span>
+                <span style="display:flex;align-items:center;gap:4px"><l-icon name="trending-up" style="width:12px;height:12px"></l-icon>{{ app.successRate }}%</span>
+              </span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <sc-if value="{{ createOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeCreate }}" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;display:flex;align-items:center;justify-content:center">
+        <div onClick="{{ swallow }}" style="width:512px;max-width:92vw;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.6)">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px">
+            <h2 style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">创建应用</h2>
+            <button onClick="{{ closeCreate }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="x" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon></button>
+          </div>
+          <p style="margin:0 0 16px;font-size:14px;color:oklch(0.6 0.01 260)">选择创建方式开始构建你的 AI 应用</p>
+          <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+            <div onClick="{{ createBlank }}" style="display:flex;align-items:center;gap:16px;padding:16px;border-radius:8px;border:1px solid oklch(0.25 0.015 250);cursor:pointer;transition:border-color .15s" style-hover="border-color:oklch(0.65 0.2 250 / 0.5)">
+              <div style="width:48px;height:48px;border-radius:8px;background:oklch(0.65 0.2 250 / 0.1);display:flex;align-items:center;justify-content:center"><l-icon name="file-text" style="width:24px;height:24px;color:oklch(0.65 0.2 250)"></l-icon></div>
+              <div><h3 style="margin:0;font-size:15px;font-weight:500;color:oklch(0.95 0.005 260)">创建空白应用</h3><p style="margin:2px 0 0;font-size:13px;color:oklch(0.6 0.01 260)">从零开始构建你的工作流</p></div>
+              <l-icon name="chevron-right" style="width:20px;height:20px;color:oklch(0.6 0.01 260);margin-left:auto"></l-icon>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;padding:16px;border-radius:8px;border:1px solid oklch(0.25 0.015 250);cursor:pointer;transition:border-color .15s" style-hover="border-color:oklch(0.65 0.2 250 / 0.5)">
+              <div style="width:48px;height:48px;border-radius:8px;background:oklch(0.55 0.18 180 / 0.1);display:flex;align-items:center;justify-content:center"><l-icon name="copy" style="width:24px;height:24px;color:oklch(0.55 0.18 180)"></l-icon></div>
+              <div><h3 style="margin:0;font-size:15px;font-weight:500;color:oklch(0.95 0.005 260)">从应用模板创建</h3><p style="margin:2px 0 0;font-size:13px;color:oklch(0.6 0.01 260)">使用预设模板快速开始</p></div>
+              <l-icon name="chevron-right" style="width:20px;height:20px;color:oklch(0.6 0.01 260);margin-left:auto"></l-icon>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;padding:16px;border-radius:8px;border:1px solid oklch(0.25 0.015 250);cursor:pointer;transition:border-color .15s" style-hover="border-color:oklch(0.65 0.2 250 / 0.5)">
+              <div style="width:48px;height:48px;border-radius:8px;background:rgba(34,197,94,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="upload" style="width:24px;height:24px;color:#22c55e"></l-icon></div>
+              <div><h3 style="margin:0;font-size:15px;font-weight:500;color:oklch(0.95 0.005 260)">导入 DSL 文件</h3><p style="margin:2px 0 0;font-size:13px;color:oklch(0.6 0.01 260)">导入已有的工作流配置</p></div>
+              <l-icon name="chevron-right" style="width:20px;height:20px;color:oklch(0.6 0.01 260);margin-left:auto"></l-icon>
+            </div>
+          </div>
+          <div style="border:2px dashed oklch(0.25 0.015 250);border-radius:8px;padding:24px;text-align:center">
+            <l-icon name="upload" style="width:32px;height:32px;color:oklch(0.6 0.01 260);margin-bottom:8px"></l-icon>
+            <p style="margin:0;font-size:14px;color:oklch(0.6 0.01 260)">拖放 DSL 文件到此处创建应用</p>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+  </sc-if>
+  <sc-if value="{{ isEditor }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;height:calc(100vh - 48px);margin:-20px;background:oklch(0.1 0.01 250)">
+      <div style="height:56px;flex:none;border-bottom:1px solid oklch(0.25 0.015 250);background:oklch(0.14 0.015 250);display:flex;align-items:center;justify-content:space-between;padding:0 16px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button onClick="{{ backToList }}" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="arrow-left" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:32px;height:32px;border-radius:8px;background:{{ curApp.typeBg }};display:flex;align-items:center;justify-content:center"><l-icon name="{{ curApp.typeIcon }}" style="width:16px;height:16px;color:{{ curApp.typeColor }}"></l-icon></div>
+            <div>
+              <h1 style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">{{ curApp.name }}</h1>
+              <p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">编辑于 {{ curApp.lastEditedAt }}</p>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;font-size:13px;color:oklch(0.95 0.005 260);background:none;border:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="history" style="width:15px;height:15px"></l-icon>历史版本</button>
+          <button style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;font-size:13px;color:oklch(0.95 0.005 260);background:none;border:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="eye" style="width:15px;height:15px"></l-icon>预览</button>
+          <div style="height:16px;width:1px;background:oklch(0.25 0.015 250);margin:0 4px"></div>
+          <button style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="undo-2" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+          <button style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="redo-2" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+          <div style="height:16px;width:1px;background:oklch(0.25 0.015 250);margin:0 4px"></div>
+          <button style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;font-size:13px;font-weight:500;color:oklch(0.95 0.005 260);background:transparent;border:1px solid oklch(0.25 0.015 250);border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="play" style="width:15px;height:15px"></l-icon>运行</button>
+          <button style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;font-size:13px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:6px;cursor:pointer" style-hover="filter:brightness(1.12)"><l-icon name="save" style="width:15px;height:15px"></l-icon>发布</button>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;overflow:hidden;min-height:0">
+        <div style="width:{{ sidebarW }};flex:none;border-right:1px solid oklch(0.25 0.015 250);background:oklch(0.14 0.015 250);transition:width .2s;display:flex;flex-direction:column">
+          <div style="height:40px;flex:none;border-bottom:1px solid oklch(0.25 0.015 250);display:flex;align-items:center;justify-content:space-between;padding:0 12px">
+            <sc-if value="{{ sidebarOpen }}" hint-placeholder-val="{{ true }}"><span style="font-size:12px;font-weight:500;color:oklch(0.6 0.01 260)">节点库</span></sc-if>
+            <button onClick="{{ toggleSidebar }}" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:4px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="{{ sidebarIcon }}" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+          </div>
+          <sc-if value="{{ sidebarOpen }}" hint-placeholder-val="{{ true }}">
+            <div style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:16px">
+              <sc-for list="{{ categories }}" as="cat" hint-placeholder-count="4">
+                <div>
+                  <p style="margin:0 0 8px;font-size:12px;font-weight:500;color:oklch(0.6 0.01 260)">{{ cat.label }}</p>
+                  <div style="display:flex;flex-direction:column;gap:4px">
+                    <sc-for list="{{ cat.types }}" as="nt" hint-placeholder-count="3">
+                      <div draggable="true" onDragStart="{{ nt.dragStart }}" onDragEnd="{{ nt.dragEnd }}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:grab;user-select:none" style-hover="background:oklch(0.2 0.015 250)" style-active="cursor:grabbing">
+                        <l-icon name="grip-vertical" style="width:12px;height:12px;color:oklch(0.6 0.01 260)"></l-icon>
+                        <span style="width:20px;height:20px;border-radius:4px;background:{{ nt.bg }};display:flex;align-items:center;justify-content:center"><l-icon name="{{ nt.icon }}" style="width:12px;height:12px;color:{{ nt.color }}"></l-icon></span>
+                        <span style="font-size:14px;color:oklch(0.95 0.005 260)">{{ nt.label }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+              <div style="padding-top:16px;border-top:1px solid oklch(0.25 0.015 250)">
+                <p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260);text-align:center">拖拽节点到画布中添加</p>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+        <div onDragOver="{{ canvasDragOver }}" onDragLeave="{{ canvasDragLeave }}" onDrop="{{ canvasDrop }}" onMouseDown="{{ canvasMouseDown }}" onMouseMove="{{ canvasMouseMove }}" onMouseUp="{{ canvasMouseUp }}" onMouseLeave="{{ canvasMouseUp }}" style="flex:1;position:relative;overflow:hidden;background:{{ canvasBg }};cursor:{{ canvasCursor }}" data-canvas="1">
+          <div style="position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:4px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,.3);z-index:10">
+            <button onClick="{{ toolSelect }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:{{ selToolBg }};border-radius:6px;cursor:pointer"><l-icon name="mouse-pointer-2" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+            <button onClick="{{ toolPan }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:{{ panToolBg }};border-radius:6px;cursor:pointer"><l-icon name="hand" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+          </div>
+          <div style="position:absolute;bottom:12px;left:12px;display:flex;align-items:center;gap:4px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,.3);z-index:10">
+            <button onClick="{{ zoomOut }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="zoom-out" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+            <span style="font-size:12px;color:oklch(0.6 0.01 260);width:48px;text-align:center">{{ zoomPct }}</span>
+            <button onClick="{{ zoomIn }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="zoom-in" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+            <div style="width:1px;height:16px;background:oklch(0.25 0.015 250);margin:0 4px"></div>
+            <button onClick="{{ zoomReset }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="maximize-2" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+          </div>
+          <div style="position:absolute;top:12px;right:12px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:6px 12px;box-shadow:0 2px 8px rgba(0,0,0,.3);z-index:10">
+            <span style="font-size:12px;color:oklch(0.6 0.01 260)">{{ nodeCount }} 个节点</span>
+          </div>
+          <sc-if value="{{ dropHint }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:16px;border:2px dashed oklch(0.65 0.2 250 / 0.5);border-radius:8px;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:10">
+              <div style="background:oklch(0.14 0.015 250);padding:8px 16px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.4)"><p style="margin:0;font-size:14px;font-weight:500;color:oklch(0.65 0.2 250)">释放以添加 {{ dragTypeLabel }} 节点</p></div>
+            </div>
+          </sc-if>
+          <div style="position:absolute;inset:0;background-image:radial-gradient(circle,oklch(0.25 0.015 250) 1px,transparent 1px);background-size:{{ gridSize }};background-position:{{ gridPos }}">
+            <div style="position:relative;transform:{{ canvasTransform }};transform-origin:0 0;width:3000px;height:2000px">
+              <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible">
+                <sc-for list="{{ conns }}" as="c" hint-placeholder-count="2">
+                  <g><path d="{{ c.d }}" fill="none" stroke="oklch(0.3 0.015 250)" stroke-width="2"></path><circle cx="{{ c.cx }}" cy="{{ c.cy }}" r="3" fill="oklch(0.3 0.015 250)"></circle></g>
+                </sc-for>
+              </svg>
+              <sc-for list="{{ nodes }}" as="n" hint-placeholder-count="3">
+                <div data-wfnode="1" data-active="{{ n.activeAttr }}" onMouseDown="{{ n.mouseDown }}" onClick="{{ n.click }}" style="position:absolute;left:{{ n.x }}px;top:{{ n.y }}px;z-index:{{ n.z }};cursor:{{ n.cursor }}">
+                  <sc-if value="{{ n.isPill }}" hint-placeholder-val="{{ false }}">
+                    <div style="width:96px;height:36px;border-radius:999px;background:oklch(0.14 0.015 250);border:2px solid {{ n.borderCol }};display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,.3)">
+                      <l-icon name="{{ n.icon }}" style="width:14px;height:14px;color:{{ n.color }}"></l-icon>
+                      <span style="font-size:12px;font-weight:500;color:oklch(0.95 0.005 260)">{{ n.label }}</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ n.isCard }}" hint-placeholder-val="{{ true }}">
+                    <div style="width:208px;background:oklch(0.14 0.015 250);border-radius:8px;border:2px solid {{ n.borderCol }};box-shadow:0 2px 6px rgba(0,0,0,.3);overflow:hidden;position:relative">
+                      <div style="height:6px;background:{{ n.color }}"></div>
+                      <div style="padding:12px">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                          <span style="width:24px;height:24px;border-radius:4px;background:{{ n.bg }};display:flex;align-items:center;justify-content:center"><l-icon name="{{ n.icon }}" style="width:14px;height:14px;color:{{ n.color }}"></l-icon></span>
+                          <span style="font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">{{ n.label }}</span>
+                        </div>
+                        <sc-if value="{{ n.hasDesc }}" hint-placeholder-val="{{ false }}"><p style="margin:0 0 0 32px;font-size:12px;color:oklch(0.6 0.01 260);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">{{ n.description }}</p></sc-if>
+                      </div>
+                      <div style="position:absolute;top:-7px;left:50%;transform:translateX(-50%);width:12px;height:12px;border-radius:999px;background:oklch(0.14 0.015 250);border:2px solid oklch(0.3 0.015 250)"></div>
+                      <div style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);width:12px;height:12px;border-radius:999px;background:oklch(0.14 0.015 250);border:2px solid oklch(0.3 0.015 250)"></div>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        <sc-if value="{{ hasSelNode }}" hint-placeholder-val="{{ false }}">
+          <div style="width:320px;flex:none;border-left:1px solid oklch(0.25 0.015 250);background:oklch(0.14 0.015 250);display:flex;flex-direction:column">
+            <div style="height:40px;flex:none;border-bottom:1px solid oklch(0.25 0.015 250);display:flex;align-items:center;justify-content:space-between;padding:0 12px">
+              <span style="font-size:12px;font-weight:500;color:oklch(0.6 0.01 260)">节点配置</span>
+              <div style="display:flex;align-items:center;gap:4px">
+                <sc-if value="{{ selNode.canDelete }}" hint-placeholder-val="{{ false }}"><button onClick="{{ deleteNode }}" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:4px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="trash-2" style="width:15px;height:15px;color:oklch(0.55 0.22 25)"></l-icon></button></sc-if>
+                <button onClick="{{ deselect }}" style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:4px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="x" style="width:15px;height:15px;color:oklch(0.95 0.005 260)"></l-icon></button>
+              </div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div style="width:40px;height:40px;border-radius:8px;background:{{ selNode.bg }};display:flex;align-items:center;justify-content:center"><l-icon name="{{ selNode.icon }}" style="width:20px;height:20px;color:{{ selNode.color }}"></l-icon></div>
+                <div><h3 style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">{{ selNode.label }}</h3><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">节点 ID: {{ selNode.shortId }}</p></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">X 坐标</label><input type="number" value="{{ selNode.x }}" onInput="{{ selNode.setX }}" style="width:100%;height:32px;font-size:12px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 8px;color:oklch(0.95 0.005 260);outline:none"></div>
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">Y 坐标</label><input type="number" value="{{ selNode.y }}" onInput="{{ selNode.setY }}" style="width:100%;height:32px;font-size:12px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 8px;color:oklch(0.95 0.005 260);outline:none"></div>
+              </div>
+              <sc-if value="{{ selNode.isLlm }}" hint-placeholder-val="{{ false }}">
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">模型</label>
+                  <select style="width:100%;height:32px;font-size:12px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 8px;color:oklch(0.95 0.005 260);outline:none"><option>GPT-4</option><option>GPT-3.5 Turbo</option><option>Claude 3 Opus</option><option>通义千问</option></select>
+                </div>
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">系统提示词</label>
+                  <textarea style="width:100%;min-height:100px;font-size:12px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:8px;color:oklch(0.95 0.005 260);outline:none;resize:vertical" style-focus="border-color:oklch(0.65 0.2 250)">你是一个专业的助手，请根据用户的输入提供准确的回答。</textarea>
+                </div>
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">用户输入</label>
+                  <div style="display:flex;align-items:center;gap:8px;padding:8px;background:oklch(0.2 0.015 250 / 0.5);border-radius:6px;border:1px solid oklch(0.25 0.015 250)"><l-icon name="variable" style="width:16px;height:16px;color:#06b6d4"></l-icon><span style="font-size:12px;color:oklch(0.95 0.005 260);font-family:'Geist Mono',monospace">{&#123;input&#125;}</span></div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ selNode.isKnowledge }}" hint-placeholder-val="{{ false }}">
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">知识库</label>
+                  <select style="width:100%;height:32px;font-size:12px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 8px;color:oklch(0.95 0.005 260);outline:none"><option>产品文档知识库</option><option>FAQ 知识库</option><option>技术文档</option></select>
+                </div>
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">检索模式</label>
+                  <select style="width:100%;height:32px;font-size:12px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 8px;color:oklch(0.95 0.005 260);outline:none"><option>混合检索</option><option>语义检索</option><option>关键词检索</option></select>
+                </div>
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">返回数量</label><input type="number" value="5" style="width:100%;height:32px;font-size:12px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 8px;color:oklch(0.95 0.005 260);outline:none"></div>
+              </sc-if>
+              <sc-if value="{{ selNode.isCondition }}" hint-placeholder-val="{{ false }}">
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">条件表达式</label>
+                  <textarea style="width:100%;min-height:80px;font-size:12px;font-family:'Geist Mono',monospace;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:8px;color:oklch(0.95 0.005 260);outline:none;resize:vertical">{&#123;result.score&#125;} &gt; 0.8</textarea>
+                </div>
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:8px">分支</label>
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(34,197,94,0.1);border-radius:6px;border:1px solid rgba(34,197,94,0.3)"><l-icon name="check-circle-2" style="width:16px;height:16px;color:#22c55e"></l-icon><span style="font-size:12px;color:oklch(0.95 0.005 260)">IF 条件为真</span></div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px;background:oklch(0.2 0.015 250);border-radius:6px;border:1px solid oklch(0.25 0.015 250)"><l-icon name="x" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon><span style="font-size:12px;color:oklch(0.95 0.005 260)">ELSE 条件为假</span></div>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ selNode.isCode }}" hint-placeholder-val="{{ false }}">
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">编程语言</label>
+                  <select style="width:100%;height:32px;font-size:12px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 8px;color:oklch(0.95 0.005 260);outline:none"><option>Python 3</option><option>JavaScript</option></select>
+                </div>
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">代码</label>
+                  <textarea style="width:100%;min-height:150px;font-size:12px;font-family:'Geist Mono',monospace;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:8px;color:oklch(0.95 0.005 260);outline:none;resize:vertical">def main(input):
+    # 处理输入
+    result = process(input)
+    return {"output": result}</textarea>
+                </div>
+              </sc-if>
+              <sc-if value="{{ selNode.isHttp }}" hint-placeholder-val="{{ false }}">
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">请求方法</label>
+                  <select style="width:100%;height:32px;font-size:12px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 8px;color:oklch(0.95 0.005 260);outline:none"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
+                </div>
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">请求地址</label><input placeholder="https://api.example.com/endpoint" style="width:100%;height:32px;font-size:12px;font-family:'Geist Mono',monospace;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 8px;color:oklch(0.95 0.005 260);outline:none"></div>
+                <div><label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:4px">请求头</label><textarea placeholder='{"Content-Type": "application/json"}' style="width:100%;min-height:60px;font-size:12px;font-family:'Geist Mono',monospace;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:8px;color:oklch(0.95 0.005 260);outline:none;resize:vertical"></textarea></div>
+              </sc-if>
+              <sc-if value="{{ selNode.showOutputs }}" hint-placeholder-val="{{ false }}">
+                <div style="padding-top:16px;border-top:1px solid oklch(0.25 0.015 250)">
+                  <label style="font-size:12px;color:oklch(0.95 0.005 260);display:block;margin-bottom:8px">输出变量</label>
+                  <div style="display:flex;flex-direction:column;gap:4px">
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px;background:oklch(0.2 0.015 250 / 0.5);border-radius:6px;border:1px solid oklch(0.25 0.015 250)"><l-icon name="type" style="width:16px;height:16px;color:#3b82f6"></l-icon><span style="font-size:12px;color:oklch(0.95 0.005 260)">text</span><span style="font-size:12px;color:oklch(0.6 0.01 260);margin-left:auto">String</span></div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px;background:oklch(0.2 0.015 250 / 0.5);border-radius:6px;border:1px solid oklch(0.25 0.015 250)"><l-icon name="braces" style="width:16px;height:16px;color:#a855f7"></l-icon><span style="font-size:12px;color:oklch(0.95 0.005 260)">metadata</span><span style="font-size:12px;color:oklch(0.6 0.01 260);margin-left:auto">Object</span></div>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    D: null, mode: 'list', search: '', type: 'all', createOpen: false,
+    appId: null, newApp: null,
+    nodes: [], conns: [], selNodeId: null,
+    sidebarOpen: true, zoom: 100, tool: 'select',
+    offset: { x: 0, y: 0 }, panning: false, panStart: null,
+    dragId: null, dragOff: null, dragType: null, overCanvas: false
+  };
+  nodeCfg(t) {
+    return {
+      start: { label: '开始', icon: 'circle-dot', c: '#22c55e', cat: 'basic' },
+      end: { label: '结束', icon: 'square', c: '#f97316', cat: 'basic' },
+      llm: { label: 'LLM', icon: 'sparkles', c: '#3b82f6', cat: 'ai' },
+      knowledge: { label: '知识检索', icon: 'database', c: '#a855f7', cat: 'ai' },
+      'question-classifier': { label: '问题分类器', icon: 'tag', c: '#f59e0b', cat: 'ai' },
+      'parameter-extractor': { label: '参数提取器', icon: 'braces', c: '#f43f5e', cat: 'ai' },
+      condition: { label: 'IF/ELSE', icon: 'diamond', c: '#eab308', cat: 'logic' },
+      iteration: { label: '迭代', icon: 'list', c: '#14b8a6', cat: 'logic' },
+      variable: { label: '变量赋值', icon: 'variable', c: '#06b6d4', cat: 'logic' },
+      code: { label: '代码执行', icon: 'code', c: '#6b7280', cat: 'integration' },
+      http: { label: 'HTTP 请求', icon: 'globe', c: '#ec4899', cat: 'integration' },
+      template: { label: '模板转换', icon: 'file-code', c: '#6366f1', cat: 'integration' }
+    }[t];
+  }
+  appCfg(t) {
+    return {
+      workflow: { label: '工作流', icon: 'git-branch', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
+      chatflow: { label: 'Chatflow', icon: 'message-square', color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
+      agent: { label: 'Agent', icon: 'bot', color: '#a855f7', bg: 'rgba(168,85,247,0.1)' },
+      'text-generation': { label: '文本生成', icon: 'file-text', color: '#f97316', bg: 'rgba(249,115,22,0.1)' }
+    }[t];
+  }
+  stCfg(s) {
+    return {
+      draft: { label: '草稿', bg: 'oklch(0.2 0.015 250)', color: 'oklch(0.6 0.01 260)' },
+      published: { label: '已发布', bg: 'rgba(34,197,94,0.1)', color: '#22c55e' },
+      offline: { label: '已下线', bg: 'oklch(0.55 0.22 25 / 0.1)', color: 'oklch(0.55 0.22 25)' }
+    }[s];
+  }
+  initialNodes() {
+    return [
+      { id: 'start-1', type: 'start', x: 250, y: 50 },
+      { id: 'llm-1', type: 'llm', x: 250, y: 180, description: '调用大语言模型处理用户输入' },
+      { id: 'end-1', type: 'end', x: 250, y: 340 }
+    ];
+  }
+  componentDidMount() {
+    import('./data.js').then(m => this.setState({ D: m })).catch(e => console.error('data load', e));
+    this._key = (e) => {
+      if (this.state.mode !== 'editor') return;
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && this.state.selNodeId) {
+        const n = this.state.nodes.find(x => x.id === this.state.selNodeId);
+        if (n && n.type !== 'start') this.removeSel();
+      }
+      if (e.key === 'Escape') this.setState({ selNodeId: null });
+    };
+    window.addEventListener('keydown', this._key);
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this._key); }
+  removeSel() {
+    this.setState(s => ({
+      nodes: s.nodes.filter(n => n.id !== s.selNodeId),
+      conns: s.conns.filter(c => c.s !== s.selNodeId && c.t !== s.selNodeId),
+      selNodeId: null
+    }));
+  }
+  openEditor(app) {
+    this.setState({ mode: 'editor', appId: app.id, newApp: app.id === 'new' ? app : null, nodes: app.id === 'new' ? [{ id: 'start-1', type: 'start', x: 250, y: 50 }] : this.initialNodes(), conns: app.id === 'new' ? [] : [{ id: 'c1', s: 'start-1', t: 'llm-1' }, { id: 'c2', s: 'llm-1', t: 'end-1' }], selNodeId: null, zoom: 100, offset: { x: 0, y: 0 }, tool: 'select' });
+  }
+  nodeGeom(n) {
+    const pill = n.type === 'start' || n.type === 'end';
+    return { cx: n.x + (pill ? 48 : 104), bottom: n.y + (pill ? 36 : (n.description ? 84 : 58)), top: n.y };
+  }
+  renderVals() {
+    const st = this.state;
+    const D = st.D;
+    const scale = st.zoom / 100;
+    const apps = D ? D.workflowApps : [];
+    const filtered = apps.filter(a => {
+      const m = a.name.toLowerCase().includes(st.search.toLowerCase()) || a.description.toLowerCase().includes(st.search.toLowerCase());
+      return m && (st.type === 'all' || a.type === st.type);
+    });
+    const curAppRaw = st.newApp || apps.find(a => a.id === st.appId);
+    const curCfg = curAppRaw ? this.appCfg(curAppRaw.type) : {};
+    const nodes = st.nodes.map(n => {
+      const cfg = this.nodeCfg(n.type);
+      const pill = n.type === 'start' || n.type === 'end';
+      return {
+        id: n.id, x: Math.round(n.x), y: Math.round(n.y), label: cfg.label, icon: cfg.icon,
+        color: cfg.c, bg: cfg.c + '33', borderCol: cfg.c + '66',
+        isPill: pill, isCard: !pill, hasDesc: !!n.description, description: n.description || '',
+        z: st.dragId === n.id ? 50 : 10,
+        cursor: st.tool === 'select' ? (st.dragId === n.id ? 'grabbing' : 'grab') : 'default',
+        activeAttr: st.selNodeId === n.id ? '1' : '0',
+        mouseDown: (e) => {
+          if (st.tool !== 'select') return;
+          e.stopPropagation();
+          this.setState({ dragId: n.id, selNodeId: n.id, dragOff: { x: e.clientX - n.x * scale - st.offset.x, y: e.clientY - n.y * scale - st.offset.y } });
+        },
+        click: (e) => { e.stopPropagation(); this.setState({ selNodeId: n.id }); }
+      };
+    });
+    const conns = st.conns.map(c => {
+      const s = st.nodes.find(n => n.id === c.s), t = st.nodes.find(n => n.id === c.t);
+      if (!s || !t) return { d: '', cx: -10, cy: -10 };
+      const gs = this.nodeGeom(s), gt = this.nodeGeom(t);
+      const midY = (gs.bottom + gt.top) / 2;
+      return { d: 'M ' + gs.cx + ' ' + gs.bottom + ' C ' + gs.cx + ' ' + midY + ', ' + gt.cx + ' ' + midY + ', ' + gt.cx + ' ' + gt.top, cx: gt.cx, cy: gt.top - 5 };
+    });
+    const selRaw = st.nodes.find(n => n.id === st.selNodeId);
+    const selCfg = selRaw ? this.nodeCfg(selRaw.type) : {};
+    const catDefs = [['basic', '基础节点', ['start', 'end']], ['ai', 'AI 节点', ['llm', 'knowledge', 'question-classifier', 'parameter-extractor']], ['logic', '逻辑节点', ['condition', 'iteration', 'variable']], ['integration', '集成节点', ['code', 'http', 'template']]];
+    return {
+      isList: st.mode === 'list', isEditor: st.mode === 'editor',
+      search: st.search, setSearch: (e) => this.setState({ search: e.target.value }),
+      typeTabs: [['all', '全部', ''], ['workflow', '工作流', 'git-branch'], ['chatflow', 'Chatflow', 'message-square'], ['agent', 'Agent', 'bot'], ['text-generation', '文本生成', 'file-text']].map(([v, label, icon]) => ({
+        label, icon, hasIcon: !!icon, activeAttr: st.type === v ? '1' : '0', go: () => this.setState({ type: v })
+      })),
+      apps: filtered.map(a => {
+        const tc = this.appCfg(a.type), sc = this.stCfg(a.status);
+        return Object.assign({}, a, {
+          typeLabel: tc.label, typeIcon: tc.icon, typeColor: tc.color, typeBg: tc.bg,
+          stLabel: sc.label, stBg: sc.bg, stColor: sc.color,
+          execFmt: a.executions.toLocaleString('en-US'),
+          tagList: a.tags.map(name => ({ name })),
+          open: () => this.openEditor(a)
+        });
+      }),
+      createOpen: st.createOpen,
+      openCreate: () => this.setState({ createOpen: true }),
+      closeCreate: () => this.setState({ createOpen: false }),
+      swallow: (e) => e.stopPropagation(),
+      createBlank: (e) => {
+        e.stopPropagation();
+        this.setState({ createOpen: false });
+        this.openEditor({ id: 'new', name: '新建工作流', description: '', type: 'workflow', tags: [], lastEditedBy: 'You', lastEditedAt: new Date().toLocaleString('zh-CN'), status: 'draft', executions: 0, successRate: 0 });
+      },
+      backToList: () => this.setState({ mode: 'list', selNodeId: null }),
+      curApp: curAppRaw ? Object.assign({}, curAppRaw, { typeIcon: curCfg.icon, typeColor: curCfg.color, typeBg: curCfg.bg }) : {},
+      sidebarOpen: st.sidebarOpen, sidebarW: st.sidebarOpen ? '240px' : '48px',
+      sidebarIcon: st.sidebarOpen ? 'panel-left-close' : 'panel-left',
+      toggleSidebar: () => this.setState(s => ({ sidebarOpen: !s.sidebarOpen })),
+      categories: catDefs.map(([id, label, types]) => ({
+        label,
+        types: types.map(t => {
+          const cfg = this.nodeCfg(t);
+          return {
+            label: cfg.label, icon: cfg.icon, color: cfg.c, bg: cfg.c + '33',
+            dragStart: (e) => { this.setState({ dragType: t }); try { e.dataTransfer.setData('text/plain', t); e.dataTransfer.effectAllowed = 'copy'; } catch (err) {} },
+            dragEnd: () => this.setState({ dragType: null, overCanvas: false })
+          };
+        })
+      })),
+      canvasBg: st.overCanvas && st.dragType ? 'oklch(0.65 0.2 250 / 0.05)' : 'oklch(0.2 0.015 250 / 0.3)',
+      canvasCursor: st.tool === 'pan' ? (st.panning ? 'grabbing' : 'grab') : 'default',
+      selToolBg: st.tool === 'select' ? 'oklch(0.2 0.015 250)' : 'transparent',
+      panToolBg: st.tool === 'pan' ? 'oklch(0.2 0.015 250)' : 'transparent',
+      toolSelect: () => this.setState({ tool: 'select' }),
+      toolPan: () => this.setState({ tool: 'pan' }),
+      zoomPct: st.zoom + '%',
+      zoomIn: () => this.setState(s => ({ zoom: Math.min(200, s.zoom + 25) })),
+      zoomOut: () => this.setState(s => ({ zoom: Math.max(25, s.zoom - 25) })),
+      zoomReset: () => this.setState({ zoom: 100 }),
+      nodeCount: st.nodes.length,
+      dropHint: !!st.dragType && st.overCanvas,
+      dragTypeLabel: st.dragType ? this.nodeCfg(st.dragType).label : '',
+      gridSize: (20 * scale) + 'px ' + (20 * scale) + 'px',
+      gridPos: st.offset.x + 'px ' + st.offset.y + 'px',
+      canvasTransform: 'translate(' + st.offset.x + 'px,' + st.offset.y + 'px) scale(' + scale + ')',
+      canvasDragOver: (e) => { e.preventDefault(); try { e.dataTransfer.dropEffect = 'copy'; } catch (err) {} if (!st.overCanvas) this.setState({ overCanvas: true }); },
+      canvasDragLeave: () => this.setState({ overCanvas: false }),
+      canvasDrop: (e) => {
+        e.preventDefault();
+        let t = st.dragType; try { t = e.dataTransfer.getData('text/plain') || t; } catch (err) {}
+        if (t) {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = (e.clientX - rect.left - st.offset.x) / scale - 100;
+          const y = (e.clientY - rect.top - st.offset.y) / scale - 30;
+          const id = t + '-' + Date.now();
+          this.setState(s => ({ nodes: s.nodes.concat([{ id, type: t, x: Math.max(0, x), y: Math.max(0, y) }]), selNodeId: id, dragType: null, overCanvas: false }));
+        } else this.setState({ dragType: null, overCanvas: false });
+      },
+      canvasMouseDown: (e) => { if (st.tool === 'pan' || e.button === 1) this.setState({ panning: true, panStart: { x: e.clientX, y: e.clientY } }); },
+      canvasMouseMove: (e) => {
+        if (st.dragId) {
+          const nx = (e.clientX - st.dragOff.x - st.offset.x) / scale;
+          const ny = (e.clientY - st.dragOff.y - st.offset.y) / scale;
+          this.setState(s => ({ nodes: s.nodes.map(n => n.id === s.dragId ? Object.assign({}, n, { x: Math.max(0, nx), y: Math.max(0, ny) }) : n) }));
+        }
+        if (st.panning && st.panStart) {
+          const dx = e.clientX - st.panStart.x, dy = e.clientY - st.panStart.y;
+          this.setState(s => ({ offset: { x: s.offset.x + dx, y: s.offset.y + dy }, panStart: { x: e.clientX, y: e.clientY } }));
+        }
+      },
+      canvasMouseUp: () => { if (st.dragId || st.panning) this.setState({ dragId: null, panning: false }); },
+      nodes, conns,
+      hasSelNode: !!selRaw,
+      selNode: selRaw ? {
+        label: selCfg.label, icon: selCfg.icon, color: selCfg.c, bg: selCfg.c + '33',
+        shortId: (selRaw.id || '').slice(0, 12) + '...',
+        x: Math.round(selRaw.x), y: Math.round(selRaw.y),
+        canDelete: selRaw.type !== 'start',
+        isLlm: selRaw.type === 'llm', isKnowledge: selRaw.type === 'knowledge',
+        isCondition: selRaw.type === 'condition', isCode: selRaw.type === 'code', isHttp: selRaw.type === 'http',
+        showOutputs: selRaw.type !== 'start' && selRaw.type !== 'end',
+        setX: (e) => { const x = parseInt(e.target.value) || 0; this.setState(s => ({ nodes: s.nodes.map(n => n.id === selRaw.id ? Object.assign({}, n, { x }) : n) })); },
+        setY: (e) => { const y = parseInt(e.target.value) || 0; this.setState(s => ({ nodes: s.nodes.map(n => n.id === selRaw.id ? Object.assign({}, n, { y }) : n) })); }
+      } : {},
+      deleteNode: () => this.removeSel(),
+      deselect: () => this.setState({ selNodeId: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

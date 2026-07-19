@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>开发启动 · 技术选型确认</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./licon.js"></script>
+<style>
+  body{margin:0;background:oklch(0.1 0.01 250);color:oklch(0.95 0.005 260);font-family:'Geist',-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color-scheme:dark}
+  a{color:oklch(0.65 0.2 250);text-decoration:none} a:hover{color:oklch(0.75 0.16 250);text-decoration:underline}
+  l-icon{display:inline-flex;flex:none;line-height:0}
+  input,textarea,button{font-family:inherit}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.28 0.015 250);border-radius:5px;border:2px solid oklch(0.1 0.01 250)}
+  [data-opt][data-active="1"]{background:oklch(0.65 0.2 250) !important;color:oklch(0.98 0 0) !important;border-color:oklch(0.65 0.2 250) !important}
+  [data-opt][data-active="1"] [data-rec]{color:oklch(0.98 0 0 / 0.85) !important;border-color:oklch(0.98 0 0 / 0.4) !important}
+  @keyframes omfade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div data-screen-label="技术选型确认" style="max-width:1080px;margin:0 auto;padding:40px 32px 80px;display:flex;flex-direction:column;gap:28px">
+  <sc-if value="{{ toastShow }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:24px;right:24px;z-index:300;background:oklch(0.14 0.015 250);border:1px solid oklch(0.55 0.18 145 / 0.4);border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:omfade .2s"><l-icon name="check-circle-2" style="width:16px;height:16px;color:#22c55e"></l-icon><span style="font-size:13px;color:oklch(0.95 0.005 260)">{{ toast }}</span></div>
+  </sc-if>
+  <div>
+    <p style="margin:0 0 8px;font-size:12px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:oklch(0.65 0.2 250)">AIPaddle · 开发启动确认 · 2026-07-18</p>
+    <h1 style="margin:0;font-size:28px;font-weight:600;color:oklch(0.95 0.005 260)">技术选型与架构决策清单</h1>
+    <p style="margin:8px 0 0;font-size:14px;color:oklch(0.6 0.01 260);line-height:1.7">结合 PRD v1.04 + 权限规范 v1.05，开发前仍需拍板的 22 项决策。带「荐」标的是我基于 PRD 约束给出的推荐项；全部选完点底部复制发我，我将产出《技术架构设计文档》+ 起步工程包（DDL / docker-compose / 目录骨架）。</p>
+  </div>
+  <div style="background:oklch(0.14 0.015 250);border:1px solid rgba(34,197,94,0.3);border-radius:12px;padding:16px 20px">
+    <h3 style="margin:0 0 10px;font-size:15px;font-weight:600;color:#22c55e;display:flex;align-items:center;gap:8px"><l-icon name="check-circle-2" style="width:16px;height:16px"></l-icon>已明确、无需再确认</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:13px;color:oklch(0.6 0.01 260);line-height:1.7">
+      <p style="margin:0">· RBAC 与审批流 → <a href="./docs/requirements/permissions.config.json">permissions.config.json</a> 直接建表</p>
+      <p style="margin:0">· 多租户业务模型 → 原型 data.js（租户/配额/账单/MCP/审计）即表结构蓝本</p>
+      <p style="margin:0">· Skill 三级、WF·CF·Agent 部门共享与审核流（PRD 2.11.5）</p>
+      <p style="margin:0">· 知识库穿透：调用者继承 + 交集校验（PRD 2.11.6）</p>
+      <p style="margin:0">· 审计不可篡改、管理员 MFA、双人复核</p>
+      <p style="margin:0">· 前端规格 = 深色 Web 控制台（以原型为准）</p>
+    </div>
+  </div>
+  <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+    <section>
+      <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">{{ g.title }}</h2>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{ g.qs }}" as="q" hint-placeholder-count="5">
+          <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px 20px">
+            <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
+              <span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:6px;background:oklch(0.65 0.2 250 / 0.12);color:oklch(0.65 0.2 250);flex:none">{{ q.id }}</span>
+              <div style="flex:1">
+                <p style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260);line-height:1.5">{{ q.title }}</p>
+                <p style="margin:4px 0 0;font-size:12px;color:oklch(0.6 0.01 260);line-height:1.6">{{ q.detail }}</p>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-left:44px">
+              <sc-for list="{{ q.options }}" as="o" hint-placeholder-count="3">
+                <button data-opt="1" data-active="{{ o.activeAttr }}" onClick="{{ o.pick }}" style="height:30px;padding:0 12px;font-size:13px;border-radius:999px;border:1px solid oklch(0.25 0.015 250);background:transparent;color:oklch(0.95 0.005 260);cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;gap:6px" style-hover="border-color:oklch(0.65 0.2 250 / 0.6)">{{ o.label }}<sc-if value="{{ o.rec }}" hint-placeholder-val="{{ false }}"><span data-rec="1" style="font-size:10px;padding:0 5px;border-radius:999px;border:1px solid oklch(0.65 0.2 250 / 0.5);color:oklch(0.65 0.2 250);line-height:15px">荐</span></sc-if></button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </sc-for>
+  <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px 20px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">
+      <p style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">补充说明（可选：预算、并发规模、信创要求、已有云账号等）</p>
+      <span style="font-size:13px;color:oklch(0.6 0.01 260)">已确认 <span style="color:oklch(0.65 0.2 250);font-weight:600">{{ answered }}</span> / {{ total }} 项</span>
+    </div>
+    <textarea placeholder="例如：首期并发 ≤200 QPS；已有阿里云企业账号；华润三九要求数据不出省……" value="{{ note }}" onInput="{{ setNote }}" style="width:100%;min-height:64px;padding:10px 12px;font-size:13px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:8px;color:oklch(0.95 0.005 260);outline:none;resize:vertical;box-sizing:border-box" style-focus="border-color:oklch(0.65 0.2 250)"></textarea>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+      <div style="display:flex;gap:8px">
+        <button onClick="{{ useRec }}" style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;font-size:13px;color:oklch(0.95 0.005 260);background:transparent;border:1px solid oklch(0.25 0.015 250);border-radius:8px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="sparkles" style="width:14px;height:14px"></l-icon>未选项全部采用推荐</button>
+      </div>
+      <button onClick="{{ copyResult }}" style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;font-size:14px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3)" style-hover="filter:brightness(1.12)"><l-icon name="copy" style="width:15px;height:15px"></l-icon>复制确认结果</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { answers: {}, note: '', toast: '' };
+  componentDidMount() {
+    try { const s = JSON.parse(localStorage.getItem('aipaddle-tech-confirm-v1') || '{}'); this.setState({ answers: s.answers || {}, note: s.note || '' }); } catch (e) {}
+  }
+  componentWillUnmount() { clearTimeout(this._tt); }
+  persist() { try { localStorage.setItem('aipaddle-tech-confirm-v1', JSON.stringify({ answers: this.state.answers, note: this.state.note })); } catch (e) {} }
+  showToast(msg) { this.setState({ toast: msg }); clearTimeout(this._tt); this._tt = setTimeout(() => this.setState({ toast: '' }), 2600); }
+  defs() {
+    const Q = (id, title, detail, opts) => ({ id, title, detail, opts });
+    return [
+      { title: '一、部署形态与 LLM 接入', qs: [
+        Q('T1', '整体部署形态', '品器（金融）与华润三九（医药）均有合规诉求；PRD 租户档案已含逻辑/物理隔离档位。', [['公有云 SaaS 多租户', 1], ['私有化交付', 0], ['SaaS 先行 + 物理隔离租户独立部署', 0]]),
+        Q('T2', '后端语言与框架', 'LLM/RAG/MCP 生态以 Python 最全；FastAPI 原生异步适合 SSE 流式输出。', [['Python · FastAPI', 1], ['Node.js · NestJS', 0], ['Java · Spring Boot', 0], ['Go', 0]]),
+        Q('T3', '服务架构风格', '首期 8 个业务域（租户/权限/Agent/Skill/KB/WF/账单/审计），建议模块化单体 + 任务队列（向量化、账单生成、审批通知走异步），流量上来再按域拆。', [['模块化单体 + 任务队列', 1], ['直接微服务', 0], ['单体起步，预留拆分边界', 0]]),
+        Q('T4', '服务端 LLM 统一客户端/网关', '对应原型「模型配置」页的多供应商开关、配额水位、Fallback 路由，以及监控/账单页的 Token 成本口径 —— 需要一个统一网关计量。', [['LiteLLM Proxy（多供应商统一 Key/限流/计费）', 1], ['OneAPI', 0], ['LangChain 直连各 SDK', 0], ['自研薄封装', 0]]),
+        Q('T5', 'LLM 供给方式', '华润三九合规注记要求日志脱敏；PRD 模型权限矩阵支持按部门限模型。混合路由可后置到二期。', [['云 API 为主（首期）', 1], ['全本地私有化', 0], ['混合：默认云 + 敏感数据路由本地', 0]]),
+        Q('T6', '云 LLM 主力模型', '原型里 GPT-4/Claude 仅为演示数据；生产建议以国内已备案模型为主力，LiteLLM 配多路 Fallback。配置方式=供应商 API Key + 模型路由表（对应模型配置页）。', [['通义千问 Qwen-Max/Plus', 1], ['DeepSeek-V3/R1（性价比）', 0], ['Azure GPT-4o（外资/出海场景）', 0], ['豆包 / Kimi', 0]]),
+        Q('T7', '本地模型（若选混合/本地）', '首期可不部署，仅在二期为医药/金融敏感场景引入。', [['暂不部署（首期）', 1], ['Qwen2.5-72B-Instruct', 0], ['DeepSeek-R1-Distill-32B', 0], ['Llama-3.1-70B', 0]]),
+        Q('T8', 'Embedding 与重排模型', '知识库混合检索（问答页相关性阈值 0.60）需要 向量 + 关键词 + 重排三段。bge-m3 本地部署零 Token 成本。', [['bge-m3 + bge-reranker（本地）', 1], ['通义 text-embedding', 0], ['OpenAI text-embedding-3', 0]]),
+        Q('T9', '本地推理框架（仅本地化时）', '', [['vLLM', 1], ['SGLang', 0], ['Ollama（仅 POC）', 0], ['暂不涉及', 0]])
+      ]},
+      { title: '二、数据与存储', qs: [
+        Q('T10', '主数据库', 'PostgreSQL 行级安全（RLS）天然承载 tenant_id 隔离，pgvector 一库两用；permissions.config.json 可直接映射表结构。', [['PostgreSQL 16', 1], ['MySQL 8', 0], ['OpenGauss / 达梦（信创）', 0]]),
+        Q('T11', '多租户隔离实现', '与租户档案「隔离级别」字段对应：逻辑隔离=共享表+RLS；物理隔离（品器 t-001 档位）=独立库/实例。', [['共享表 + tenant_id + RLS，物理档独立库', 1], ['Schema-per-tenant', 0], ['全部独立实例', 0]]),
+        Q('T12', '向量库', '文档量千万分块以内 pgvector 足够，少一个组件；超大规模再迁 Milvus。', [['pgvector（随主库）', 1], ['Milvus', 0], ['Qdrant', 0], ['Elasticsearch 8', 0]]),
+        Q('T13', '缓存与任务队列', '会话缓存、配额计数器、限流令牌桶 + 异步任务（向量化/账单/通知）。', [['Redis + Celery', 1], ['Redis + RabbitMQ', 0], ['引入 Kafka（大流量期）', 0]]),
+        Q('T14', '对象存储', '知识库原始文档、导出报表、账单 PDF。', [['MinIO（可私有化）', 1], ['阿里云 OSS', 0], ['腾讯云 COS', 0]])
+      ]},
+      { title: '三、平台核心能力', qs: [
+        Q('T15', 'Workflow/Chatflow 执行引擎', '原型 DSL=YAML、24 节点、重试/错误处理/变量语义已定，自研执行器可 100% 对齐；Dify 二开则受上游约束。', [['自研 DSL 执行器（对齐 v1.04 节点）', 1], ['基于 Dify 二次开发', 0], ['Temporal 承载执行层 + 自研节点', 0]]),
+        Q('T16', 'MCP 接入方式', '对应租户 MCP 审批（模式 B）、TPS 限流、安全等级评估字段。', [['官方 MCP Python SDK + 自建注册中心', 1], ['自研协议适配层', 0]]),
+        Q('T17', '认证与 SSO', 'PRD 2.10 要求：企微目录同步、SSO、MFA（TOTP）、在线会话管理。', [['Casdoor（开源、企微原生支持）', 1], ['Keycloak', 0], ['Authing（商业 SaaS）', 0], ['自研 JWT + 企微 OAuth', 0]]),
+        Q('T18', 'LLM 可观测与追踪', '监控页 Token/成本/成功率、工作流运行追踪面板的数据来源。', [['Langfuse + OpenTelemetry + Prometheus', 1], ['仅云厂商监控', 0], ['自研埋点', 0]])
+      ]},
+      { title: '四、基础设施与交付', qs: [
+        Q('T19', '云厂商 / 机房', '', [['阿里云', 1], ['腾讯云', 0], ['华为云（信创）', 0], ['自有 IDC', 0]]),
+        Q('T20', '运行时编排', 'dev 用 Compose 一键起，生产 K8s。', [['生产 K8s + 开发 Docker Compose', 1], ['全程 Docker Compose（小规模）', 0], ['云 Serverless 容器', 0]]),
+        Q('T21', '环境规划', '', [['dev / staging / prod 三套', 1], ['dev / prod 两套', 0]]),
+        Q('T22', 'CI/CD', '代码仓库已在 GitHub（HELLOPERRYXU/AIPaddle）。', [['GitHub Actions', 1], ['GitLab CI（自建）', 0], ['Jenkins', 0]])
+      ]}
+    ];
+  }
+  flatQs() { return this.defs().flatMap(g => g.qs); }
+  renderVals() {
+    const groups = this.defs();
+    const answers = this.state.answers;
+    return {
+      toast: this.state.toast, toastShow: !!this.state.toast,
+      groups: groups.map(g => ({
+        title: g.title,
+        qs: g.qs.map(q => ({
+          id: q.id, title: q.title, detail: q.detail,
+          options: q.opts.map(([label, rec]) => ({
+            label, rec: !!rec,
+            activeAttr: answers[q.id] === label ? '1' : '0',
+            pick: () => { this.setState(s => ({ answers: Object.assign({}, s.answers, { [q.id]: label }) })); setTimeout(() => this.persist(), 0); }
+          }))
+        }))
+      })),
+      answered: this.flatQs().filter(q => answers[q.id]).length,
+      total: this.flatQs().length,
+      note: this.state.note,
+      setNote: (e) => { this.setState({ note: e.target.value }); setTimeout(() => this.persist(), 0); },
+      useRec: () => {
+        const next = Object.assign({}, this.state.answers);
+        this.flatQs().forEach(q => { if (!next[q.id]) { const rec = q.opts.find(o => o[1]); if (rec) next[q.id] = rec[0]; } });
+        this.setState({ answers: next });
+        setTimeout(() => this.persist(), 0);
+        this.showToast('未选项已填入推荐方案，可继续手动调整');
+      },
+      copyResult: () => {
+        const lines = ['AIPaddle 技术选型确认结果（2026-07-18）', ''];
+        this.defs().forEach(g => {
+          lines.push('◆ ' + g.title);
+          g.qs.forEach(q => lines.push(q.id + ' ' + q.title + '：' + (this.state.answers[q.id] || '（未选择）')));
+          lines.push('');
+        });
+        if (this.state.note.trim()) lines.push('补充说明：' + this.state.note.trim());
+        const done = () => this.showToast('已复制，请粘贴到对话中发送');
+        try { navigator.clipboard.writeText(lines.join('\n')).then(done, done); } catch (e) { done(); }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
