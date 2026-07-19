@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/register')
   const isCallback = pathname.startsWith('/auth/callback')
-  const isPublic = pathname === '/' || isAuthPage || isCallback
+  const isPublic = isAuthPage || isCallback
 
   // 未登录访问受保护页面 → 跳转登录
   if (!user && !isPublic) {
