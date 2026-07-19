@@ -51,7 +51,7 @@
 | 0.6 | 建立 GitHub Issues 工作流 | 🔄 | Issue 模板已入库；标签体系已定义（`type:ui/logic/api/infra/slice-acceptance` + `flag:tenant-data/rag`，见 TESTING_WORKFLOW.md §1）；待做：在 GitHub 上创建这些标签、把阶段 2-3 任务批量建成 Issue |
 | 0.7 | 服务器部署链路（43.173.99.218，Ubuntu） | ⬜ | 服务器装好 Node/pnpm + 进程管理（PM2 或 Docker）+ Nginx 反代；`pnpm build && pnpm start` 在服务器可访问 |
 | 0.8 | 自动化部署（GitHub Actions：push main → 自动部署到服务器 + 部署后冒烟检查） | ⬜ | 推一次代码，线上自动更新 |
-| 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **E2E 冒烟集代码已入库**（`playwright.config.ts` + `tests/e2e/smoke.spec.ts`，实现 TC-00 的 7 条自动化用例）；待做：`pnpm add -D @playwright/test` 装依赖并首跑、装 Vitest、启用 CI 测试步骤、开分支保护 |
+| 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **✅ 0.9a(D1-C-1) Playwright 已装+首跑**：装 chromium、加 `test:e2e`/`test:smoke` 脚本，原型冒烟 6 条全绿（P-GLB-01/02/04、P-DSH-01、P-AGT-02、P-WF-01；P-AGT-01/03、P-WF-02 等为人工记录型，不做自动化）。**待做**：0.9b 装 Vitest+RTL、0.9c 启用 CI 测试步骤 + 开 main 分支保护 |
 
 ---
 
@@ -76,9 +76,9 @@
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
 | 2.1 | 后端形态选型 | ✅ | **已决策（2026-07-18）**：Next.js API Routes 单体 + Supabase 云托管（Postgres/Auth/Storage/pgvector），区域选新加坡或东京；浏览器永不直连 Supabase。详见 `docs/adr/ADR-001-backend-architecture.md` |
-| 2.2 | 认证与多租户方案：登录方式、租户上下文如何传递、`org_id` 隔离策略 | 🔄 | 认证已定 Supabase Auth（ADR-001）；待补：租户上下文传递方式 + RLS 策略设计，ADR + 时序图 |
+| 2.2 | 认证与多租户方案：登录方式、租户上下文如何传递、`org_id` 隔离策略 | 🔄 | **ADR-002 起草完成（2026-07-19，待 Perry 拍板）**：认证=Supabase Auth+服务端会话；上下文=`org_id` 进 JWT claim，请求契约 `{userId,orgId,roles}`；RLS 关键决策=请求级客户端（RLS 生效）vs 服务级客户端（唯一封装文件）严格分工，禁 service_role 应答用户请求；含 3 张时序图 + migration `current_org_id()` 改法。详见 `docs/adr/ADR-002-tenant-context-rls.md` |
 | 2.3 | 权限模型：角色定义（参照 PRD 成员/租户模块），API 级校验方案 | ⬜ | 角色-权限矩阵表 |
-| 2.4 | 数据模型设计：核心表 + ERD | ✅ | **v1.0 已确认（2026-07-18）**：16 张表，C1 文本部门 / C2 统一中间表 / C3 分表 / C4 多角色 / C5 1536 维 / C6 全表软删除；migration 已产出 `supabase/migrations/0001_initial_schema.sql`（含 RLS/索引/审计防篡改）。**待办：应用到 Supabase 项目（依赖 SUP 注册）** |
+| 2.4 | 数据模型设计：核心表 + ERD | ✅ | **v1.0 已确认（2026-07-18）**：16 张表，C1 文本部门 / C2 统一中间表 / C3 分表 / C4 多角色 / C5 1536 维 / C6 全表软删除；migration 已产出 `supabase/migrations/0001_initial_schema.sql`（含 RLS/索引/审计防篡改）。**已应用到 Supabase 项目**（2026-07-19，0001+0002 迁移落库，18 表就绪）|
 | 2.5 | 统一 API 客户端与数据层设计（替换组件直接消费 mock 的现状） | ⬜ | 约定写入 CLAUDE.md：组件只经数据层取数 |
 | 2.6 | 「不自己造的轮子」清单 | ✅ | 认证 = Supabase Auth、存储 = Supabase Storage、向量库 = pgvector（ADR-001）；模型网关 = 首版不引入，直连 Moonshot（ADR-003）；支付 = 阶段 6 再选 |
 | 2.8 | Vibe Coding 执行架构（ADR-005） | ✅ | **已拍板（2026-07-18，范围收缩版）**：仅限对话创建 Skill/Workflow/Agent 资产，无通用软件开发能力 → **无需沙盒、无独立执行服务、服务器不部署 Claude Code**，回归单体；四道防线替代隔离；Code 节点首版禁用；Copilot 任务并入切片 1/3/4（4.1.6/4.3.3/4.4.5）；PRD 升 v1.07 增 2.11 章 |
@@ -198,6 +198,8 @@
 5. 每周五自问：能演示什么？下周最重要的一个切片是什么？
 
 ---
+
+> **⚡ 冲刺模式（2026-07-19 用户强制拍板）**：全部开发任务压入 D1-D3 三天，5 条 CLI 并行道（A 数据/B 部署与Skill/C 测试与工作流/D 设计与租户/E 集成），测试以天为单位每晚打包执行（日结包①②③）。串行硬约束以红字标注于进度 Excel「任务清单」末列与「三天全量冲刺」表。冲刺期间批次关口压缩为两个：D2 早隔离专项（唯一硬闸）+ D3 晚终验收。**风险留档**：本计划移除批次缓冲，工程估算约 120-180 小时 vs 3×5 道理论容量，实际完成度取决于并行效率与修红速度；用户测试（5.2-4）与阶段 7 不在冲刺范围。
 
 ## 决策日志
 
