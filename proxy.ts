@@ -29,14 +29,11 @@ export async function proxy(request: NextRequest) {
   const isPrototype = pathname.startsWith('/prototype')
   const isPublic = isAuthPage || isCallback || isPrototype
 
-  // 根路径：未登录 → /login，已登录 → 直接展示 app/page.tsx（原型工作台）
+  // 根路径：未登录 → /login，已登录 → 最新原型工作台
   if (pathname === '/') {
-    if (!user) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      return NextResponse.redirect(url)
-    }
-    return supabaseResponse
+    const url = request.nextUrl.clone()
+    url.pathname = user ? '/prototype/AIPaddle.dc.html' : '/login'
+    return NextResponse.redirect(url)
   }
 
   // 未登录访问受保护页面 → /login

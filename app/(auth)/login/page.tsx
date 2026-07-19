@@ -29,7 +29,7 @@ function LoginForm() {
       return
     }
 
-    router.push('/')
+    router.push('/prototype/AIPaddle.dc.html')
     router.refresh()
   }
 
