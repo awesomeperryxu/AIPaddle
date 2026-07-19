@@ -24,8 +24,7 @@ import {
   Settings,
   Key,
   Ban,
-  Eye,
-  TrendingUp
+  Eye
 } from 'lucide-react';
 import {
   DropdownMenu,

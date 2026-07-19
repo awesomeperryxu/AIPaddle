@@ -8,11 +8,9 @@ import { Badge } from '@/components/ui/badge';
 import { mockAgents, Agent, mockConversations } from '@/lib/mock-data';
 import {
   Search,
-  Bot,
   MessageSquare,
   Send,
   Paperclip,
-  User,
   Phone,
   MessagesSquare,
   Clock,

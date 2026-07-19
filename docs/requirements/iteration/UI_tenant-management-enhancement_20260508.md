@@ -341,7 +341,7 @@ export function CreateTenantDrawer({ open, onOpenChange }) {
 }
 ```
 
-#### 2.1.2 v0.dev 提示词
+#### 2.1.2 Claude Code 提示词
 
 ```
 创建一个企业租户开通表单，使用 Drawer 组件，高度占屏幕 90%。
@@ -803,7 +803,7 @@ export function TenantActionsMenu({ tenant }) {
 
 ---
 
-## 三、v0.dev 提示词汇总
+## 三、Claude Code 提示词汇总
 
 ### 3.1 企业详情页
 

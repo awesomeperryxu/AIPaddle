@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIPaddle Vibe Coding 执行架构确认页（ADR-005 前置）</title>
+<style>
+  :root{--ink:#1a1f2e;--ink2:#5a6474;--ink3:#8a93a3;--line:#e3e7ee;--bg:#f7f8fa;--card:#ffffff;
+        --blue:#2f5597;--blue-bg:#eaf0f9;--amber:#b45f06;--amber-bg:#fdf3e3;--green:#2e7d4f;--green-bg:#e8f4ec;--red:#b0384f;--red-bg:#fbe9ec;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.65;padding:32px 16px 80px;}
+  .wrap{max-width:1000px;margin:0 auto;}
+  h1{font-size:21px;margin-bottom:4px;}
+  .sub{color:var(--ink2);font-size:13px;margin-bottom:20px;}
+  h2{font-size:16px;margin:32px 0 12px;padding-left:10px;border-left:4px solid var(--blue);}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:14px;}
+  .ok{border-left:4px solid var(--green);} .gap{border-left:4px solid var(--red);}
+  .confirm{border-left:4px solid var(--amber);}
+  .confirm h3{font-size:15px;margin-bottom:6px;}
+  .why{font-size:13px;color:var(--ink2);margin-bottom:10px;}
+  .opt{display:block;padding:9px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer;font-size:13px;background:#fbfcfe;}
+  .opt:hover{border-color:var(--blue);}
+  .opt input{margin-right:8px;}
+  .rec{font-size:11px;color:var(--green);background:var(--green-bg);padding:1px 7px;border-radius:8px;margin-left:6px;font-weight:600;}
+  .warn{font-size:11px;color:var(--amber);background:var(--amber-bg);padding:1px 7px;border-radius:8px;margin-left:6px;font-weight:600;}
+  ul{margin:6px 0 6px 20px;font-size:13px;}
+  li{margin-bottom:4px;}
+  .summary-btn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:12px 22px;font-size:15px;cursor:pointer;margin-top:8px;}
+  textarea{width:100%;min-height:150px;margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-family:ui-monospace,Menlo,monospace;background:#fffdf5;}
+  input[type=text]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-top:6px;}
+  code{background:#f0f3f8;padding:1px 5px;border-radius:4px;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Vibe Coding 执行架构确认页（已决策存档）</h1>
+  <div class="sub">2026-07-18 · 本页 Q1-Q7 已被范围收缩决策取代，保留为存档 · 现行方案见 <b>ADR-005</b> 与 PRD v1.07 §2.11</div>
+  <div class="card ok">
+    <b>✅ 最终决策（2026-07-18，Perry 拍板）：</b>vibe coding <b>仅限对话创建 Skill / Workflow / Chatflow / Agent 资产</b>，不提供通用软件开发能力。因产出物为结构化配置而非可执行代码：<b>无需沙盒隔离</b>（以 Schema 校验 / 权限边界 / 草稿-审核状态机 / 审计 四道防线替代）；无独立执行服务，回归 Next.js 单体；<b>服务器不部署 Claude Code client</b>；Workflow 的 Code/Template 任意代码节点首版禁用。Copilot 功能并入切片 1/3/4（任务 4.1.6 / 4.3.3 / 4.4.5）。若未来开放通用软件开发能力，重启下方 Q2/Q3/Q5 的沙盒设计。
+  </div>
+
+  <h2>一、现状盘点：哪些已清晰、哪些是空白</h2>
+  <div class="card ok">
+    <b>✅ 已清晰（可直接进入配置开发）</b>
+    <ul>
+      <li><b>产品内普通对话/Agent 的 LLM 接入</b>：Kimi 2.5（Moonshot API，OpenAI 兼容），Agent 级 config.model 调配，Key 服务端管理，call_logs 计量——ADR-003 闭环</li>
+      <li><b>Claude Code 与 Kimi 的适配通路</b>：Moonshot 提供 Anthropic 兼容端点 <code>api.moonshot.cn/anthropic</code>，两个环境变量即接通</li>
+      <li><b>员工个人终端用 Claude Code</b>：属工具订阅问题（GLM/Kimi Coding Plan），不涉及服务器开发</li>
+    </ul>
+  </div>
+  <div class="card gap">
+    <b>❌ 未清晰（阻塞开发的空白，即本页要确认的）</b>
+    <ul>
+      <li><b>PRD 空白</b>：v1.06 十大模块中没有「vibe coding 工作台」——它的用户故事、界面形态、验收标准均未定义</li>
+      <li><b>执行引擎未选型</b>：服务器上跑的是 Claude Code headless、Claude Agent SDK、还是自研 agent 循环？各方案的许可、成本、维护差异大</li>
+      <li><b>沙盒隔离方案未定</b>：多用户并发执行 AI 生成的代码，隔离怎么做、资源怎么限、服务器扛几个并发</li>
+      <li><b>架构冲突</b>：ADR-001 定的是 Next.js 单体，而沙盒/进程管理需要常驻执行服务——需要一次明确的架构豁免决策</li>
+      <li><b>信息缺口</b>：服务器（43.173.99.218）的 CPU/内存/磁盘规格未知，直接决定并发容量设计</li>
+    </ul>
+  </div>
+
+  <h2>二、7 个决策点</h2>
+
+  <div class="card confirm">
+    <h3>Q1 · 产品形态：vibe coding 在 AIPaddle 里是什么？</h3>
+    <div class="why">这决定 PRD 增章的写法和 UI 形态（编码需要文件树/终端输出/diff 视图，与聊天窗差异大）。</div>
+    <label class="opt"><input type="radio" name="Q1" value="A" checked>A：独立模块「AI 编码工作台」——新菜单入口，专用三栏界面（对话 + 文件树 + 预览/终端）<span class="rec">推荐：界面形态匹配，可独立排期</span></label>
+    <label class="opt"><input type="radio" name="Q1" value="B">B：数字员工里的一种特殊 Agent 类型「编码助手」——复用聊天界面，代码以卡片/附件形式呈现</label>
+    <label class="opt"><input type="radio" name="Q1" value="C">C：两步走——先 B（切片 1 顺带）后 A（独立切片升级）</label>
+  </div>
+
+  <div class="card confirm">
+    <h3>Q2 · 执行引擎：服务器上跑什么？</h3>
+    <div class="why">三条路线都能接 Kimi 2.5（Anthropic 兼容端点），差别在能力完整度、可控性与许可合规。</div>
+    <label class="opt"><input type="radio" name="Q2" value="A" checked>A：<b>Claude Agent SDK</b>（TypeScript，Claude Code 的官方可编程内核）——嵌入自己的执行服务，工具/权限/会话可编程控制<span class="rec">推荐：产品化的正路，与技术栈同语言</span></label>
+    <label class="opt"><input type="radio" name="Q2" value="B">B：Claude Code CLI headless（<code>claude -p</code> 每会话起进程）——上手最快，但进程管理粗放、定制受限<span class="warn">商用许可需核实</span></label>
+    <label class="opt"><input type="radio" name="Q2" value="C">C：自研 agent 循环直调 Kimi API——完全自主但等于重写一个 mini Claude Code，工作量极大</label>
+  </div>
+
+  <div class="card confirm">
+    <h3>Q3 · 沙盒隔离：AI 生成的代码在哪执行？</h3>
+    <div class="why">全员使用 = 不可信代码多租户并发执行，这是安全红线（等级与租户隔离同级）。</div>
+    <label class="opt"><input type="radio" name="Q3" value="A" checked>A：<b>Docker 容器 / 会话</b>——每个编码会话独立容器，限 CPU/内存/磁盘/进程数，会话结束销毁<span class="rec">推荐：隔离与成本的平衡点</span></label>
+    <label class="opt"><input type="radio" name="Q3" value="B">B：第三方沙盒云服务（E2B 等）——省运维但按量付费且数据出服务器</label>
+    <label class="opt"><input type="radio" name="Q3" value="C">C：先共享环境+目录隔离（无容器）——最快但 AI 代码可互访，仅限内部信任期<span class="warn">安全风险高</span></label>
+  </div>
+
+  <div class="card confirm">
+    <h3>Q4 · 工作区与产物：代码存哪、怎么带走？</h3>
+    <div class="why">决定用户"昨天写的东西今天还在吗"和交付方式。</div>
+    <label class="opt"><input type="radio" name="Q4" value="A" checked>A：服务器持久卷按 用户/项目 存工作区 + 支持下载 zip；Git 远程推送（GitHub/Gitee）作为二期<span class="rec">推荐：首版够用</span></label>
+    <label class="opt"><input type="radio" name="Q4" value="B">B：会话级临时工作区，结束即焚，产物仅下载带走——最省存储但无法续写</label>
+    <label class="opt"><input type="radio" name="Q4" value="C">C：首版就深度集成 Git（每项目一仓库、自动提交、可推远程）</label>
+  </div>
+
+  <div class="card confirm">
+    <h3>Q5 · 沙盒网络策略：能联网装包吗？</h3>
+    <div class="why">vibe coding 几乎必然要 npm/pip 装依赖，但全开放等于给 AI 代码开了外联通道。</div>
+    <label class="opt"><input type="radio" name="Q5" value="A" checked>A：<b>白名单出网</b>——仅放行 npm/pypi 镜像等包源域名，其余全禁<span class="rec">推荐：够用且可控</span></label>
+    <label class="opt"><input type="radio" name="Q5" value="B">B：完全断网——依赖预装进基础镜像，最安全但体验受限</label>
+    <label class="opt"><input type="radio" name="Q5" value="C">C：完全开放——体验最好<span class="warn">数据外带风险</span></label>
+  </div>
+
+  <div class="card confirm">
+    <h3>Q6 · 架构豁免：执行服务与 Next.js 单体的关系？</h3>
+    <div class="why">容器编排、长会话、流式输出不适合塞进 Next.js API Routes，需对 ADR-001"单体"做一次有记录的豁免。</div>
+    <label class="opt"><input type="radio" name="Q6" value="A" checked>A：服务器上新增一个<b>独立执行服务</b>（Node 常驻进程：管沙盒生命周期 + Agent SDK 会话），Next.js 经内网 API/WebSocket 调它；对外仍只有 Next.js 一个入口<span class="rec">推荐：豁免范围最小</span></label>
+    <label class="opt"><input type="radio" name="Q6" value="B">B：硬塞进 Next.js（API Routes + 自定义 server）——不加进程但技术债重</label>
+  </div>
+
+  <div class="card confirm">
+    <h3>Q7 · 排期：插入哪个批次？</h3>
+    <div class="why">当前批次 2-4 是地基→Agent→知识库。vibe coding 是重功能，插队会推迟核心闭环。</div>
+    <label class="opt"><input type="radio" name="Q7" value="A" checked>A：作为<b>新切片 6（批次 5.5）</b>——地基和 Agent/知识库闭环之后、Skill/Workflow 之前或并行<span class="rec">推荐：不动已排计划，地基复用充分</span></label>
+    <label class="opt"><input type="radio" name="Q7" value="B">B：提到切片 1 之后立即做——它就是我的核心卖点，其他让路</label>
+    <label class="opt"><input type="radio" name="Q7" value="C">C：MVP 验证期先不做产品内 vibe coding，员工先用各自的 Claude Code（Coding Plan），平台只做 MCP 治理</label>
+  </div>
+
+  <div class="card">
+    <h3 style="font-size:15px;margin-bottom:4px">信息缺口：服务器规格</h3>
+    <div class="why">请填 43.173.99.218 的配置（腾讯云控制台可查），用于并发容量与容器资源限额设计：</div>
+    <input type="text" id="spec" placeholder="例：4核8G 100G SSD 带宽5M（不清楚就填'待查'）">
+  </div>
+
+  <div class="card">
+    <h3 style="font-size:15px;margin-bottom:8px">生成确认结果 → 复制回聊天发给 Claude</h3>
+    <button class="summary-btn" onclick="gen()">生成确认结果</button>
+    <textarea id="out" placeholder="确认结果将显示在这里…"></textarea>
+  </div>
+</div>
+<script>
+  function gen(){
+    const labels={Q1:'产品形态',Q2:'执行引擎',Q3:'沙盒隔离',Q4:'工作区与产物',Q5:'沙盒网络',Q6:'架构豁免',Q7:'排期'};
+    let lines=['【Vibe Coding 执行架构确认 · '+new Date().toLocaleDateString('zh-CN')+'】'];
+    for(const k of Object.keys(labels)){
+      const v=document.querySelector('input[name="'+k+'"]:checked');
+      lines.push(k+' '+labels[k]+'：选 '+(v?v.value:'未选'));
+    }
+    lines.push('服务器规格：'+(document.getElementById('spec').value||'待查'));
+    lines.push('补充意见：（如有请填写）');
+    document.getElementById('out').value=lines.join('\n');
+    document.getElementById('out').select();
+  }
+</script>
+</body>
+</html>

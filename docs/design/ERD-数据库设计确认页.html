@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIPaddle 数据库设计确认页 v0.9</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<style>
+  :root{--ink:#1a1f2e;--ink2:#5a6474;--ink3:#8a93a3;--line:#e3e7ee;--bg:#f7f8fa;--card:#ffffff;
+        --blue:#2f5597;--blue-bg:#eaf0f9;--amber:#b45f06;--amber-bg:#fdf3e3;--green:#2e7d4f;--green-bg:#e8f4ec;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.6;padding:32px 16px 80px;}
+  .wrap{max-width:1080px;margin:0 auto;}
+  h1{font-size:22px;margin-bottom:4px;}
+  .sub{color:var(--ink2);font-size:13px;margin-bottom:24px;}
+  h2{font-size:17px;margin:36px 0 12px;padding-left:10px;border-left:4px solid var(--blue);}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px;}
+  .badge{display:inline-block;font-size:11px;padding:1px 8px;border-radius:10px;margin-left:8px;vertical-align:middle;font-weight:600;}
+  .b0{background:var(--blue-bg);color:var(--blue);} .b1{background:#f3e8fb;color:#7b3fa0;}
+  .b2{background:var(--green-bg);color:var(--green);} .b3{background:var(--amber-bg);color:var(--amber);}
+  .b4{background:#e6f3f5;color:#0e7490;} .b5{background:#fbe9ec;color:#b0384f;}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;}
+  th{background:#f0f3f8;text-align:left;padding:6px 10px;font-weight:600;color:var(--ink2);border:1px solid var(--line);}
+  td{padding:5px 10px;border:1px solid var(--line);vertical-align:top;}
+  td:first-child{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:nowrap;}
+  .pk{color:var(--blue);font-weight:700;} .fk{color:#7b3fa0;}
+  .note{font-size:12px;color:var(--ink3);margin-top:8px;}
+  .mermaid{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;}
+  /* 确认点 */
+  .confirm{border-left:4px solid var(--amber);}
+  .confirm h3{font-size:15px;margin-bottom:6px;}
+  .confirm .why{font-size:13px;color:var(--ink2);margin-bottom:10px;}
+  .opt{display:block;padding:9px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer;font-size:13px;background:#fbfcfe;}
+  .opt:hover{border-color:var(--blue);}
+  .opt input{margin-right:8px;}
+  .rec{font-size:11px;color:var(--green);background:var(--green-bg);padding:1px 7px;border-radius:8px;margin-left:6px;font-weight:600;}
+  .summary-btn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:12px 22px;font-size:15px;cursor:pointer;margin-top:8px;}
+  .summary-btn:hover{opacity:.9;}
+  textarea{width:100%;min-height:130px;margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-family:ui-monospace,Menlo,monospace;background:#fffdf5;}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+  .toc a{font-size:12px;color:var(--blue);background:var(--blue-bg);padding:3px 10px;border-radius:12px;text-decoration:none;}
+  .legend{font-size:12px;color:var(--ink3);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AIPaddle 数据库设计（v1.0 已确认）</h1>
+  <div class="sub">依据 PRD_Core_v1.04 按功能模块设计 · 对应 ROADMAP 任务 2.4 · 2026-07-18<br>
+  通用约定：所有业务表带 <b>org_id</b>（RLS 租户隔离，ADR-001）· 主键 uuid · created_at/updated_at 全表标配（下表省略不列）</div>
+  <div class="card" style="border-left:4px solid var(--green);background:var(--green-bg)">
+    <b>✅ 已确认（2026-07-18，Perry 拍板）：</b>
+    C1 部门=文本字段 ｜ C2 资源关联=统一中间表 ｜ C3 对话与计量=分表 ｜ <b>C4 角色=多角色（user_roles 表）</b> ｜ C5 向量=1536 维 ｜ <b>C6 删除=全业务表软删除（deleted_at）</b><br>
+    <span class="legend">正式建表 SQL：<code>supabase/migrations/0001_initial_schema.sql</code>（16 张表 + RLS + 索引 + 审计防篡改）。下方确认点区域保留为决策存档。</span>
+  </div>
+  <div class="toc">
+    <a href="#erd">全局 ERD</a><a href="#m0">租户与用户</a><a href="#m1">Agent</a><a href="#m2">知识库</a>
+    <a href="#m3">Skill</a><a href="#m4">工作流</a><a href="#m5">对话与日志</a><a href="#m6">安全与审计</a><a href="#confirm">⚠ 待你确认的 6 个决策</a>
+  </div>
+  <div class="legend">徽标 = 建表所在切片；<span class="pk">蓝色</span> = 主键，<span class="fk">紫色</span> = 外键</div>
+
+  <h2 id="erd">全局 ERD 关系图</h2>
+  <div class="mermaid">
+erDiagram
+  tenants ||--o{ users : "1 租户拥有 N 成员"
+  tenants ||--o{ agents : "拥有"
+  users ||--o{ agents : "创建"
+  agents ||--o{ agent_resources : "关联"
+  skills ||--o{ agent_resources : "被引用"
+  knowledge_bases ||--o{ agent_resources : "被引用"
+  workflows ||--o{ agent_resources : "被引用"
+  knowledge_bases ||--o{ documents : "包含文档"
+  documents ||--o{ chunks : "切块向量"
+  agents ||--o{ conversations : "承接对话"
+  users ||--o{ conversations : "发起"
+  conversations ||--o{ messages : "包含消息"
+  agents ||--o{ call_logs : "产生调用"
+  workflows ||--o{ workflow_runs : "运行记录"
+  tenants ||--o{ security_reviews : "审核单"
+  tenants ||--o{ audit_logs : "审计"
+
+  tenants { uuid id PK string name string code string plan_type bigint token_quota string status }
+  users { uuid id PK uuid org_id FK string name string email string role string status }
+  agents { uuid id PK uuid org_id FK string name string department string status jsonb config }
+  agent_resources { uuid id PK uuid agent_id FK string resource_type uuid resource_id }
+  skills { uuid id PK uuid org_id FK string name string type string risk_level string status }
+  knowledge_bases { uuid id PK uuid org_id FK string name string status }
+  documents { uuid id PK uuid kb_id FK string filename string status }
+  chunks { uuid id PK uuid document_id FK text content vector embedding }
+  workflows { uuid id PK uuid org_id FK string name jsonb graph string status }
+  workflow_runs { uuid id PK uuid workflow_id FK string status jsonb output }
+  conversations { uuid id PK uuid agent_id FK uuid user_id FK string title }
+  messages { uuid id PK uuid conversation_id FK string role text content int tokens }
+  call_logs { uuid id PK uuid agent_id FK int tokens_in int tokens_out bool success }
+  security_reviews { uuid id PK uuid org_id FK string type uuid resource_id string status }
+  audit_logs { uuid id PK uuid org_id FK string actor string action jsonb detail }
+  </div>
+  <div class="note">共 15 张核心表（切片 0-4 逐步建），bills / quota_adjustments / mcp_applications 等 PRD 2.9 计费类表按 ROADMAP 阶段 6 触发后再设计。</div>
+
+  <h2 id="m0">模块一：租户与用户（PRD 2.8 / 2.9）<span class="badge b0">切片 0</span></h2>
+  <div class="card">
+    <b>tenants 租户表</b>
+    <table><tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td class="pk">id</td><td>uuid</td><td>主键</td></tr>
+      <tr><td>name / code / short_name</td><td>text</td><td>企业名称 / 唯一编码 / 简称（PRD 2.9.1）</td></tr>
+      <tr><td>industry / company_size / country / timezone / logo_url</td><td>text</td><td>画像字段</td></tr>
+      <tr><td>contact_name / contact_email / contact_phone</td><td>text</td><td>主联系人（登录通知用）</td></tr>
+      <tr><td>plan_type / billing_mode</td><td>text</td><td>免费版/标准版/专业版/企业版 · 按量/包月</td></tr>
+      <tr><td>token_quota / qps_limit / storage_quota</td><td>bigint</td><td>配额三件套（PRD 2.9.8 区块3）</td></tr>
+      <tr><td>status</td><td>text</td><td>active / suspended（暂停即全员禁入）</td></tr>
+    </table>
+    <b style="display:block;margin-top:16px">users 成员表（关联 Supabase auth.users）</b>
+    <table><tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td class="pk">id</td><td>uuid</td><td>= auth.users.id</td></tr>
+      <tr><td class="fk">org_id</td><td>uuid</td><td>→ tenants，RLS 隔离锚点</td></tr>
+      <tr><td>name / email / department</td><td>text</td><td>部门先用文本字段（见确认点 C1）</td></tr>
+      <tr><td>role</td><td>text</td><td>Admin / Developer / User / Auditor（见确认点 C4）</td></tr>
+      <tr><td>status / last_active_at</td><td>text / timestamptz</td><td>active / inactive（禁用即会话失效）</td></tr>
+    </table>
+  </div>
+
+  <h2 id="m1">模块二：Agent 管理（PRD 2.2）<span class="badge b1">切片 1</span></h2>
+  <div class="card">
+    <b>agents 表</b>
+    <table><tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td class="pk">id</td><td>uuid</td><td></td></tr>
+      <tr><td class="fk">org_id / created_by</td><td>uuid</td><td>→ tenants / users</td></tr>
+      <tr><td>name / description / department</td><td>text</td><td>PRD 数据模型字段</td></tr>
+      <tr><td>status</td><td>text</td><td>draft → pending → published → offline（状态机服务端校验）</td></tr>
+      <tr><td>usage_scenarios</td><td>text[]</td><td>local-cc / wecom / web / api</td></tr>
+      <tr><td>config</td><td>jsonb</td><td>系统提示词、模型、温度等（避免频繁加列）</td></tr>
+      <tr><td>metrics_calls / metrics_success / metrics_avg_ms</td><td>bigint</td><td>冗余统计（由 call_logs 汇总更新）</td></tr>
+    </table>
+    <b style="display:block;margin-top:16px">agent_resources 资源关联表（统一中间表，见确认点 C2）</b>
+    <table><tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td class="fk">agent_id</td><td>uuid</td><td>→ agents</td></tr>
+      <tr><td>resource_type</td><td>text</td><td>skill / knowledge_base / workflow</td></tr>
+      <tr><td class="fk">resource_id</td><td>uuid</td><td>指向对应表（应用层校验同租户）</td></tr>
+    </table>
+  </div>
+
+  <h2 id="m2">模块三：知识库（PRD 2.4）<span class="badge b2">切片 2</span></h2>
+  <div class="card">
+    <table><tr><th>表</th><th>关键字段</th><th>说明</th></tr>
+      <tr><td>knowledge_bases</td><td>org_id, name, description, department, status(active/indexing/error)</td><td>库级信息，document_count / storage_size 由触发器维护</td></tr>
+      <tr><td>documents</td><td>kb_id, org_id, filename, storage_path, size_bytes, status(uploading/parsing/active/error)</td><td>storage_path 指向 Supabase Storage；删除时级联清理 chunks 与文件</td></tr>
+      <tr><td>chunks</td><td>document_id, org_id, content, metadata(页码等), embedding vector(1536)</td><td>pgvector；维度见确认点 C5；建 HNSW 索引</td></tr>
+    </table>
+  </div>
+
+  <h2 id="m3">模块四：Skill Hub（PRD 2.3）<span class="badge b3">切片 3</span></h2>
+  <div class="card">
+    <table><tr><th>表</th><th>关键字段</th><th>说明</th></tr>
+      <tr><td>skills</td><td>org_id, name, type(MCP/API/DB/Workflow/Prompt), publisher_id, version, installs, rating, risk_level(low/medium/high), status, config jsonb, documentation</td><td>状态机复用 Agent 模式；high 风险发布必过审（PRD 2.7）</td></tr>
+      <tr><td>skill_installs（切片3 再建）</td><td>skill_id, user_id, org_id</td><td>唯一约束保证安装幂等；installs 计数由此聚合</td></tr>
+    </table>
+  </div>
+
+  <h2 id="m4">模块五：工作流（PRD 2.5）<span class="badge b4">切片 4</span></h2>
+  <div class="card">
+    <table><tr><th>表</th><th>关键字段</th><th>说明</th></tr>
+      <tr><td>workflows</td><td>org_id, name, type(workflow/chatflow), graph jsonb, version, status, published_version</td><td>graph 存 ReactFlow 节点/连线/配置整图；保存时服务端做图结构校验</td></tr>
+      <tr><td>workflow_runs</td><td>workflow_id, org_id, trigger_user, status(per PRD NodeRunningStatus), input/output jsonb, node_traces jsonb, duration_ms</td><td>node_traces 记每节点状态与耗时，支撑运行调试三 Tab</td></tr>
+    </table>
+    <div class="note">版本历史首版存 workflows.graph 的快照数组于 jsonb；量大后拆 workflow_versions 表（记入 ROADMAP 切片 4 备注）。</div>
+  </div>
+
+  <h2 id="m5">模块六：对话与调用日志（PRD 2.2.2 / 2.6）<span class="badge b1">切片 1</span></h2>
+  <div class="card">
+    <table><tr><th>表</th><th>关键字段</th><th>说明</th></tr>
+      <tr><td>conversations</td><td>org_id, agent_id, user_id, title, source(数字员工/个人助理)</td><td>个人助理与数字员工共用（见确认点 C3）</td></tr>
+      <tr><td>messages</td><td>conversation_id, org_id, role(user/assistant), content, tokens, citations jsonb</td><td>citations 存 RAG 引用（文档+块）</td></tr>
+      <tr><td>call_logs</td><td>org_id, agent_id, user_id, model, tokens_in/out, latency_ms, success, error_code</td><td>计量与审计用，与对话内容分离；Dashboard 与 Token 计费（阶段6）都从这里聚合</td></tr>
+    </table>
+  </div>
+
+  <h2 id="m6">模块七：安全与审计（PRD 2.7 / 2.9.7）<span class="badge b1">切片 1</span></h2>
+  <div class="card">
+    <table><tr><th>表</th><th>关键字段</th><th>说明</th></tr>
+      <tr><td>security_reviews</td><td>org_id, type(agent/skill/knowledge/permission), resource_id, submitter_id, risk_level, status(pending/approved/rejected), reviewer_id, comments, reviewed_at</td><td>四类审核共用一表（PRD 2.7 审核类型）</td></tr>
+      <tr><td>audit_logs</td><td>org_id, actor_id, action, target_type, target_id, detail jsonb, ip</td><td>只插不改不删（撤销 UPDATE/DELETE 权限），审计不可篡改（PRD 2.10.6）</td></tr>
+    </table>
+  </div>
+
+  <h2 id="confirm">⚠ 需要你拍板的 6 个确认点</h2>
+  <div class="card confirm" id="C1">
+    <h3>C1 · 部门怎么存？</h3>
+    <div class="why">PRD 2.10 要求完整组织架构（无限层级部门树），但切片 0-2 用不到；agents/users 现在只需要"属于哪个部门"这一个信息。</div>
+    <label class="opt"><input type="radio" name="C1" value="A" checked>A：先用文本字段 department，切片 5 做组织架构时再建 departments 表并迁移<span class="rec">推荐：少建一张暂时用不上的表</span></label>
+    <label class="opt"><input type="radio" name="C1" value="B">B：现在就建 departments 表（org_id, name, parent_id 树形）</label>
+  </div>
+  <div class="card confirm" id="C2">
+    <h3>C2 · Agent 与 Skill/知识库/工作流的关联怎么建？</h3>
+    <div class="why">一个 Agent 可关联多个 Skill、多个知识库、一个工作流（PRD 5.2）。</div>
+    <label class="opt"><input type="radio" name="C2" value="A" checked>A：统一中间表 agent_resources（type + id）<span class="rec">推荐：一张表管三种关联，新增资源类型不加表</span></label>
+    <label class="opt"><input type="radio" name="C2" value="B">B：三张专用中间表（agent_skills / agent_kbs / agent_workflows），外键约束更严格</label>
+    <label class="opt"><input type="radio" name="C2" value="C">C：agents 表里存 uuid[] 数组，最简单但无法建外键</label>
+  </div>
+  <div class="card confirm" id="C3">
+    <h3>C3 · 对话内容和调用计量是否分表？</h3>
+    <div class="why">对话历史（用户看的）和调用日志（管理员计量审计用）用途完全不同。</div>
+    <label class="opt"><input type="radio" name="C3" value="A" checked>A：分表——conversations/messages 存内容，call_logs 存计量<span class="rec">推荐：日志只插不改、可独立归档，计费（阶段6）直接复用</span></label>
+    <label class="opt"><input type="radio" name="C3" value="B">B：合并——messages 里直接带 tokens/latency 字段，少一张表</label>
+  </div>
+  <div class="card confirm" id="C4">
+    <h3>C4 · 用户角色：单角色还是多角色？</h3>
+    <div class="why">PRD 2.8 定义 4 角色；PRD 2.10.2 提到"支持多角色"。多角色需要 user_roles 中间表且权限判断变复杂。</div>
+    <label class="opt"><input type="radio" name="C4" value="A" checked>A：首版单角色（users.role 枚举），切片 5 若有真实多角色需求再升级<span class="rec">推荐：权限矩阵简单可测</span></label>
+    <label class="opt"><input type="radio" name="C4" value="B">B：现在就建 user_roles 多角色表</label>
+  </div>
+  <div class="card confirm" id="C5">
+    <h3>C5 · 向量维度（chunks.embedding）？</h3>
+    <div class="why">pgvector 列维度建表时锁定，换嵌入模型要重建向量。该决策与 2.7 大模型接入方案联动。</div>
+    <label class="opt"><input type="radio" name="C5" value="A" checked>A：1536 维（OpenAI text-embedding-3-small 兼容，生态最通用）<span class="rec">推荐</span></label>
+    <label class="opt"><input type="radio" name="C5" value="B">B：1024 维（部分国产模型默认）</label>
+    <label class="opt"><input type="radio" name="C5" value="C">C：等 ADR-003（2.7）定了嵌入模型再锁定，切片 2 前必须给出</label>
+  </div>
+  <div class="card confirm" id="C6">
+    <h3>C6 · 删除策略？</h3>
+    <div class="why">企业产品误删找回和审计追溯很重要，但软删除让所有查询都要加过滤条件。</div>
+    <label class="opt"><input type="radio" name="C6" value="A" checked>A：核心资产表（agents/skills/kbs/workflows）软删除 deleted_at，其余物理删除<span class="rec">推荐：折中</span></label>
+    <label class="opt"><input type="radio" name="C6" value="B">B：全部物理删除，靠 audit_logs 留痕</label>
+    <label class="opt"><input type="radio" name="C6" value="C">C:全业务表统一软删除</label>
+  </div>
+
+  <div class="card">
+    <h3 style="font-size:15px;margin-bottom:8px">生成确认结果 → 复制回聊天窗口发给 Claude</h3>
+    <div class="note">选完上面 6 项后点按钮，把生成的文本粘回对话，我据此出正式建表 SQL（migration）并更新 ADR。</div>
+    <button class="summary-btn" onclick="gen()">生成确认结果</button>
+    <textarea id="out" placeholder="确认结果将显示在这里，全选复制发回给 Claude 即可…"></textarea>
+  </div>
+</div>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', er: { fontSize: 12 } });
+  function gen(){
+    const labels={C1:'部门存储',C2:'Agent资源关联',C3:'对话与计量分表',C4:'用户角色',C5:'向量维度',C6:'删除策略'};
+    let lines=['【数据库设计确认结果 v0.9 · '+new Date().toLocaleDateString('zh-CN')+'】'];
+    for(const k of Object.keys(labels)){
+      const v=document.querySelector('input[name="'+k+'"]:checked');
+      lines.push(k+' '+labels[k]+'：选 '+(v?v.value:'未选'));
+    }
+    lines.push('补充意见：（如有请在此填写）');
+    document.getElementById('out').value=lines.join('\n');
+    document.getElementById('out').select();
+  }
+</script>
+</body>
+</html>

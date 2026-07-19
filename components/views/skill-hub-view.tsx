@@ -18,9 +18,6 @@ import {
   MessageSquare,
   Shield,
   ChevronRight,
-  Star,
-  Users,
-  TrendingUp,
   CheckCircle2,
   Clock,
   XCircle

@@ -1,10 +1,18 @@
-# v0 runtime files
-__v0_runtime_loader.js
-__v0_devtools.tsx
-__v0_jsx-dev-runtime.ts
-
-# Common ignores
-node_modules
+# Dependencies and build output
+node_modules/
+.pnpm-store/
 .next/
+out/
+
+# Local configuration and secrets
 .env*.local
-.DS_Storev0-ai-llmops-prototype/
+.cursor/
+
+# Logs, caches, and OS files
+*.log
+*.tsbuildinfo
+.DS_Store
+
+# This project uses pnpm exclusively
+package-lock.json
+yarn.lock

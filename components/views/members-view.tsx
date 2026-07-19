@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { mockMembers, Member } from '@/lib/mock-data';
+import { mockMembers } from '@/lib/mock-data';
 import {
   Table,
   TableBody,

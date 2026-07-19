@@ -1,9 +1,9 @@
-# AI LLMOps 平台 - v0.dev UI 设计规范文档
+# AIPaddle - Claude Code UI 设计规范文档
 
 **文档版本**: 1.04  
 **创建日期**: 2026-05-07  
 **更新日期**: 2026-05-12  
-**用途**: 用于 v0.dev 生成相同的 UI 界面  
+**用途**: 作为 Claude Code 开发和 UI 验收依据
 **基于**: 已开发的前端代码 + Dify 开源代码深度分析
 
 **版本变更**:
@@ -16,8 +16,8 @@
 
 ## 📋 文档说明
 
-本文档专门为 **v0.dev** 设计，包含完整的 UI 规范、组件结构、样式系统和代码示例。
-通过本文档，v0.dev 可以生成与现有项目**完全一致**的 UI 界面。
+本文档专门为 **Claude Code** 设计，包含完整的 UI 规范、组件结构、样式系统和代码示例。
+通过本文档，Claude Code 可以生成与现有项目**完全一致**的 UI 界面。
 
 ---
 
@@ -121,7 +121,7 @@ shadow-lg   /* 弹窗阴影 */
   {/* Logo 区域 */}
   <div className="h-12 px-4 flex items-center border-b border-sidebar-border">
     <h1 className="text-sm font-semibold text-sidebar-foreground">
-      AI LLMOps 平台
+      AIPaddle
     </h1>
   </div>
   
@@ -776,7 +776,7 @@ export function CreateTenantDrawer({ open, onOpenChange }) {
 }
 ```
 
-**v0.dev 提示词**:
+**Claude Code 提示词**:
 ```
 创建一个企业租户开通表单，使用 Drawer 组件，高度占屏幕 90%。
 
@@ -946,7 +946,7 @@ export default function TenantDetailPage({ params }) {
 }
 ```
 
-**v0.dev 提示词**:
+**Claude Code 提示词**:
 ```
 创建一个企业租户详情页，左右布局：
 
@@ -1082,7 +1082,7 @@ export default function QuotaManagementPage({ params }) {
 }
 ```
 
-**v0.dev 提示词**:
+**Claude Code 提示词**:
 ```
 创建一个配额管理页，包含 3 个配额卡片（Token/存储/并发），横向排列。
 
@@ -1208,7 +1208,7 @@ export default function BillingManagementPage({ params }) {
 }
 ```
 
-**v0.dev 提示词**:
+**Claude Code 提示词**:
 ```
 创建一个账单管理页，包含：
 
@@ -1374,12 +1374,12 @@ export function TenantActionsMenu({ tenant }) {
 
 ---
 
-## 🎯 v0.dev 提示词模板
+## 🎯 Claude Code 提示词模板
 
 ### 模板 1: 监控面板
 
 ```
-创建一个 AI LLMOps 平台的监控面板页面，使用 Next.js + TypeScript + Tailwind CSS + shadcn/ui。
+创建一个 AIPaddle 的监控面板页面，使用 Next.js + TypeScript + Tailwind CSS + shadcn/ui。
 
 布局要求：
 1. 页面标题区域：
@@ -1425,7 +1425,7 @@ export function TenantActionsMenu({ tenant }) {
 ### 模板 2: Agent 管理页面
 
 ```
-创建一个 AI LLMOps 平台的 Agent 管理页面，使用 Next.js + TypeScript + Tailwind CSS + shadcn/ui。
+创建一个 AIPaddle 的 Agent 管理页面，使用 Next.js + TypeScript + Tailwind CSS + shadcn/ui。
 
 布局要求：
 1. 左右分栏布局（flex gap-6）：
@@ -1476,7 +1476,7 @@ export function TenantActionsMenu({ tenant }) {
 ### 模板 3: Skill Hub 页面
 
 ```
-创建一个 AI LLMOps 平台的 Skill Hub 页面，使用 Next.js + TypeScript + Tailwind CSS + shadcn/ui。
+创建一个 AIPaddle 的 Skill Hub 页面，使用 Next.js + TypeScript + Tailwind CSS + shadcn/ui。
 
 布局要求：
 1. 页面标题 + 创建按钮
@@ -1604,7 +1604,7 @@ const mockSkill: Skill = {
 
 ## ✅ 检查清单
 
-使用本文档在 v0.dev 生成 UI 时，请确保：
+使用本文档在 Claude Code 生成 UI 时，请确保：
 
 - [ ] 使用 OKLCH 色彩空间的颜色变量
 - [ ] 使用 shadcn/ui 组件库
@@ -1624,7 +1624,7 @@ const mockSkill: Skill = {
 
 **文档结束**
 
-*本文档基于 v0-ai-llmops-prototype 项目的实际代码生成，确保 v0.dev 可以生成一致的 UI。*
+*本文档基于 AIPaddle 项目的实际代码生成，确保 Claude Code 可以生成一致的 UI。*
 
 ---
 
@@ -1734,7 +1734,7 @@ WorkflowPage
 | 定时触发 | #F97316 | - | - |
 | 便签（Note） | 主题色 | - | - |
 
-### v0.dev 提示词索引
+### Claude Code 提示词索引
 
 完整提示词见 [ui-pages/workflow_chatflow.md 第 10 节](./ui-pages/workflow_chatflow.md)：
 
