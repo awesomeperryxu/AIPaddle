@@ -39,6 +39,26 @@
   --sidebar-ring: oklch(0.55 0.2 250);
   --success: oklch(0.6 0.18 145);
   --warning: oklch(0.7 0.18 80);
+
+  /* 画布背景 */
+  --canvas-bg: #F9FAFB;
+  --canvas-dot-color: #D1D5DB;
+
+  /* 节点颜色（左侧边框条 + 图标背景） */
+  --node-start: #2970FF;
+  --node-end: #6B7280;
+  --node-answer: #2970FF;
+  --node-llm: #7C3AED;
+  --node-agent: #10B981;
+  --node-code: #F59E0B;
+  --node-ifelse: #F59E0B;
+  --node-http: #EF4444;
+  --node-knowledge: #06B6D4;
+  --node-iteration: #3B82F6;
+  --node-loop: #8B5CF6;
+  --node-tool: #64748B;
+  --node-trigger: #F97316;
+  --node-note: #FEF08A;
 }
 
 .dark {
@@ -117,6 +137,24 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  
+  /* 画布 & 节点颜色 */
+  --color-canvas-bg: var(--canvas-bg);
+  --color-canvas-dot: var(--canvas-dot-color);
+  --color-node-start: var(--node-start);
+  --color-node-end: var(--node-end);
+  --color-node-answer: var(--node-answer);
+  --color-node-llm: var(--node-llm);
+  --color-node-agent: var(--node-agent);
+  --color-node-code: var(--node-code);
+  --color-node-ifelse: var(--node-ifelse);
+  --color-node-http: var(--node-http);
+  --color-node-knowledge: var(--node-knowledge);
+  --color-node-iteration: var(--node-iteration);
+  --color-node-loop: var(--node-loop);
+  --color-node-tool: var(--node-tool);
+  --color-node-trigger: var(--node-trigger);
+  --color-node-note: var(--node-note);
 }
 
 @layer base {
