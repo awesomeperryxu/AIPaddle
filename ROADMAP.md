@@ -76,7 +76,7 @@
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
 | 2.1 | 后端形态选型 | ✅ | **已决策（2026-07-18）**：Next.js API Routes 单体 + Supabase 云托管（Postgres/Auth/Storage/pgvector），区域选新加坡或东京；浏览器永不直连 Supabase。详见 `docs/adr/ADR-001-backend-architecture.md` |
-| 2.2 | 认证与多租户方案：登录方式、租户上下文如何传递、`org_id` 隔离策略 | 🔄 | **ADR-002 起草完成（2026-07-19，待 Perry 拍板）**：认证=Supabase Auth+服务端会话；上下文=`org_id` 进 JWT claim，请求契约 `{userId,orgId,roles}`；RLS 关键决策=请求级客户端（RLS 生效）vs 服务级客户端（唯一封装文件）严格分工，禁 service_role 应答用户请求；含 3 张时序图 + migration `current_org_id()` 改法。详见 `docs/adr/ADR-002-tenant-context-rls.md` |
+| 2.2 | 认证与多租户方案：登录方式、租户上下文如何传递、`org_id` 隔离策略 | ✅ | **ADR-002 已拍板（2026-07-20）**：认证=Supabase Auth+服务端会话；上下文=`org_id` 进 JWT claim，请求契约 `{userId,orgId,roles}`；RLS 关键决策=请求级客户端（RLS 生效）vs 服务级客户端（锁死 `lib/db/admin.ts` 单文件）严格分工，禁 service_role 应答用户请求；含 3 张时序图 + migration `current_org_id()` 改法。详见 `docs/adr/ADR-002-tenant-context-rls.md` |
 | 2.3 | 权限模型：角色定义（参照 PRD 成员/租户模块），API 级校验方案 | ⬜ | 角色-权限矩阵表 |
 | 2.4 | 数据模型设计：核心表 + ERD | ✅ | **v1.0 已确认（2026-07-18）**：16 张表，C1 文本部门 / C2 统一中间表 / C3 分表 / C4 多角色 / C5 1536 维 / C6 全表软删除；migration 已产出 `supabase/migrations/0001_initial_schema.sql`（含 RLS/索引/审计防篡改）。**已应用到 Supabase 项目**（2026-07-19，0001+0002 迁移落库，18 表就绪）|
 | 2.5 | 统一 API 客户端与数据层设计（替换组件直接消费 mock 的现状） | ⬜ | 约定写入 CLAUDE.md：组件只经数据层取数 |
@@ -216,6 +216,7 @@
 | 2026-07-18 | 办公文件处理拍板（ADR-006，高优先级基础能力）：三通道——上传处理下载（并入切片2）、企业云盘 MCP 含企微微盘（并入切片3）、浏览器授权直读写（二期）；AI 只调内置文件工具，延续无沙盒模型；PRD 升 v1.08 增 2.12 章 | ADR-006 / PRD v1.08 |
 | 2026-07-18 | Copilot 交互场景规范拍板：意图识别跳转（右对话左画布）、画布下方澄清面板（勾选回填）、Dify DSL 硬约束（AI 产物与手工同构）；PRD 升 v1.09，ADR-005 增交互协议，新增用例 CP-07~10 | ADR-005 / PRD v1.09 |
 | 2026-07-18 | 阶段性 E2E 套件入库：PRD 全量功能的 Playwright 可执行规格（S0-S5，含两租户五账号、状态机矩阵、金标准问答等具体测试数据），以 `E2E_STAGE` 环境变量按切片逐步启用；测试数据文件是 seed 脚本的契约 | tests/e2e/ |
+| 2026-07-20 | 认证与租户隔离拍板（ADR-002，冲刺 D1·D-1）：认证=Supabase Auth+`@supabase/ssr` 服务端会话（首版邮箱密码）；租户上下文=`org_id`+`roles` 进 JWT claim，全链路请求契约 `{userId,orgId,roles}`（只由服务端从可信会话推导，禁信前端入参）；**RLS 关键决策**=请求级客户端（带用户 token，RLS 生效，第二层）vs 服务级客户端（`service_role` 锁死 `lib/db/admin.ts` 单文件，仅系统级操作）严格分工，禁 service_role 应答用户请求，靠"单文件封装+ESLint 禁读密钥+CI+CodeReview"四道约束落地双层防护；migration `current_org_id()` 改为读 JWT claim+回退查表（A 道随 3.3 落地） | ADR-002 |
 
 ## 当前状态小结（2026-07-18 · 第 3 次更新）
 
