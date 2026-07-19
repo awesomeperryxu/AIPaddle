@@ -1,6 +1,6 @@
 # ADR-007：权限模型与角色-权限矩阵（RBAC）
 
-- 状态：**待拍板**（2026-07-20 起草，冲刺 D1·D-2）
+- 状态：**已采纳**（2026-07-20，Perry 拍板：补齐企业级上架审核流程，其余按起草建议）
 - 对应任务：ROADMAP 2.3（权限模型：角色定义 + API 级校验方案）
 - 决策人：Perry
 - 起草：Claude
@@ -37,32 +37,81 @@ ADR-002 定了"你是谁、属于哪家公司、什么职位（`roles`）"如何
 
 > **跨租户的"平台超级管理员"**（SaaS 运营方开通企业、调整他人配额、暂停租户，PRD 2.9）**不在这 4 个组织内角色里**，是独立的平台级角色（`tenant:manage`）。MVP 冲刺中 D3·D-2（4.5.1 成员/4.5.2 租户）先按"Admin 管理本租户"实现，跨租户运营超管留到阶段 6，见 §5。
 
+#### 2.1 PRD 业务角色 ↔ 4 个技术角色映射
+
+PRD 1.2 用业务语言描述了 4 类用户，落到数据模型的 `user_roles` 就是这 4 个技术角色：
+
+| PRD 业务角色（1.2） | 技术角色 | 说明 |
+|--------------------|---------|------|
+| 企业 IT 管理员 | **Admin** | 平台运维、审批、企业级资产创建、成员/配额管理 |
+| AI 开发者/使用者 | **Developer** | 创建 Agent/Skill/Workflow（部门级），提交上架审核 |
+| 普通使用者 | **User** | 只使用已发布资产 |
+| —（安全/审计岗） | **Auditor** | 只读 + 审核（PRD 2.6 安全审核模块的执行者） |
+| 业务部门 AIBP（部门负责人） | **协同审批人**（见 §2.2） | 非独立技术角色；由 Admin 在上架审核时**指派**具 `*:review` 权限的用户协同审批 |
+
+#### 2.2 统一上架审核流程（Agent / Skill / Workflow·Chatflow 三类资产，含企业级）
+
+PRD 硬要求（2.3 Skill Hub、2.6 安全审核）：**资产上架必须"创建者申请 → 审批通过"**，不能自己发布自己。本流程对 **Agent、Skill、Workflow/Chatflow 三类资产统一适用**，企业级资产审批更严。
+
+**状态机**（与 `test-data.ts` STATE_MACHINE、PRD 2.2.1 一致）：
+
+```mermaid
+stateDiagram-v2
+    [*] --> draft: 创建(create, 默认部门级)
+    draft --> pending: 提交上架(submit)
+    pending --> published: 审批通过(review·approve)
+    pending --> draft: 审批驳回(review·reject)
+    published --> offline: 下线(offline)
+    offline --> draft: 重新编辑
+```
+
+**资产范围（scope）与审批门槛**：每类资产带 `scope ∈ {department 部门级, enterprise 企业级}`（PRD 1.2④：企业级 skill/agent 创建是平台管理员职责）。
+
+| 环节 | 部门级资产 | 企业级资产 |
+|------|-----------|-----------|
+| 创建/转为该范围 | Developer / Admin（`*:create`） | **仅 Admin**（`*:create:enterprise`，Developer 不能直接产出企业级） |
+| 提交上架（submit） | 创建者本人（Developer/Admin） | 创建者本人（Admin） |
+| 审批（review） | Admin **或** Auditor 单审即可 | **Admin 必审**；Admin 可按需**指派业务部门 AIBP 协同审批**（`*:review:cooperate`），双签通过才上架（PRD 2.3：必要时增业务部门 AIBP 协同） |
+| 上架目标 | 本部门可见 | Skill Hub / 全企业可见 |
+
+**要点**：
+- 三类资产共用同一套 `submit`/`review` 动作与状态机，只是 `scope` 决定审批人数与可见范围——**一套流程，参数化企业级**。
+- **协同审批（AIBP）**：MVP 里 AIBP = Admin 从"持 `*:review` 权限的用户"中临时指派的第二审批人；其"部门绑定"依赖组织架构（切片 5），当前 `department` 是文本字段（C1），故首版**协同审批人由 Admin 手动指派**，部门自动路由留切片 5。
+- 审核动作、驳回理由、双签记录一律写 `audit_logs`（PRD 2.6 审核历史）。
+
 ### 3. 角色-权限矩阵（本 ADR 的核心交付物）
 
 ✅=允许　❌=拒绝(403)。"own"=仅限本人创建的资源（应用层附加归属校验）。
 
 | 模块 | 操作(action) | Admin | Developer | User | Auditor |
 |------|-------------|:-----:|:---------:|:----:|:-------:|
-| **Agent** | `agent:create` 创建 | ✅ | ✅ | ❌ | ❌ |
+| **Agent** | `agent:create` 创建(部门级) | ✅ | ✅ | ❌ | ❌ |
+| | `agent:create:enterprise` 创建企业级 | ✅ | ❌ | ❌ | ❌ |
 | | `agent:read` 查看 | ✅ | ✅ | ✅ 仅已发布 | ✅ |
 | | `agent:update` 编辑 | ✅ | ✅ own | ❌ | ❌ |
 | | `agent:delete` 删除 | ✅ | ✅ own | ❌ | ❌ |
-| | `agent:submit` 提交审核 | ✅ | ✅ | ❌ | ❌ |
-| | `agent:review` 审核批/驳 | ✅ | ❌ | ❌ | ✅ |
+| | `agent:submit` 提交上架审核 | ✅ | ✅ | ❌ | ❌ |
+| | `agent:review` 审批批/驳(部门级单审) | ✅ | ❌ | ❌ | ✅ |
+| | `agent:review:cooperate` 企业级协同审批 | ✅ 指派后 | ❌ | ❌ | ✅ 指派后 |
 | | `agent:chat` 使用对话 | ✅ | ✅ | ✅ | ❌ |
-| **Skill** | `skill:create` 创建 | ✅ | ✅ | ❌ | ❌ |
+| **Skill** | `skill:create` 创建(部门级) | ✅ | ✅ | ❌ | ❌ |
+| | `skill:create:enterprise` 创建企业级 | ✅ | ❌ | ❌ | ❌ |
 | | `skill:read` 查看 | ✅ | ✅ | ✅ 仅已发布 | ✅ |
 | | `skill:update` / `skill:delete` | ✅ | ✅ own | ❌ | ❌ |
 | | `skill:install` 安装 | ✅ | ✅ | ❌ | ❌ |
-| | `skill:submit` 提交审核 | ✅ | ✅ | ❌ | ❌ |
-| | `skill:review` 审核 | ✅ | ❌ | ❌ | ✅ |
+| | `skill:submit` 提交上架审核 | ✅ | ✅ | ❌ | ❌ |
+| | `skill:review` 审批(部门级单审) | ✅ | ❌ | ❌ | ✅ |
+| | `skill:review:cooperate` 企业级/上架Hub协同审批(AIBP) | ✅ 指派后 | ❌ | ❌ | ✅ 指派后 |
 | | `skill:test` 试跑 | ✅ | ✅ | ❌ | ❌ |
 | **知识库** | `kb:create` / `kb:update` / `kb:delete` / `kb:upload` | ✅ | ✅ own | ❌ | ❌ |
 | | `kb:read` 查看 | ✅ | ✅ | ❌ 经 Agent 间接 | ✅ |
-| **Workflow** | `workflow:create`/`update`/`delete` | ✅ | ✅ own | ❌ | ❌ |
+| **Workflow<br/>·Chatflow** | `workflow:create`/`update`/`delete`(部门级) | ✅ | ✅ own | ❌ | ❌ |
+| | `workflow:create:enterprise` 创建企业级/跨部门 | ✅ | ❌ | ❌ | ❌ |
 | | `workflow:read` 查看 | ✅ | ✅ | ✅ 仅已发布 | ✅ |
 | | `workflow:run` 运行 | ✅ | ✅ | ✅ 仅已发布 | ❌ |
-| | `workflow:submit` / `workflow:review` | 提交✅/审核✅ | 提交✅/审核❌ | ❌ | 审核✅ |
+| | `workflow:submit` 提交上架审核 | ✅ | ✅ | ❌ | ❌ |
+| | `workflow:review` 审批(部门级单审) | ✅ | ❌ | ❌ | ✅ |
+| | `workflow:review:cooperate` 企业级协同审批 | ✅ 指派后 | ❌ | ❌ | ✅ 指派后 |
 | **MCP** | `mcp:register` 注册申请 | ✅ | ✅ | ❌ | ❌ |
 | | `mcp:approve` 审批 | ✅ | ❌ | ❌ | ❌ |
 | | `mcp:read` 清单(权限过滤后) | ✅ | ✅ | ❌ | ✅ |
@@ -100,13 +149,11 @@ ADR-002 定了"你是谁、属于哪家公司、什么职位（`roles`）"如何
 
 ---
 
-## 需要你拍板的判断点（3 个）
+## 已拍板结论（2026-07-20 Perry 确认）
 
-矩阵大部分由 PRD + 契约唯一确定，以下 3 处是我做的默认判断，请确认或推翻：
-
-1. **Auditor 不能使用对话（`agent:chat`=❌）**：定位为"纯只读+审核"，不作为消费者。若你希望审计员也能试用 Agent 来判断该不该过审，改成 ✅。
-2. **发布必须走审核**：Developer 只能 `submit`（提交），`review`（批准发布）仅 Admin/Auditor。即开发者不能自己发布自己的资产。若你要"Developer 可直接发布、审核只对企业级资产"，需调整。
-3. **平台超管 `tenant:manage` 暂缓到阶段 6**（见 §5），MVP 里租户/成员管理按"Admin 管本租户"实现。
+1. **Auditor 不能使用对话（`agent:chat`=❌）**：审计员定位"纯只读+审核"，不作为消费者。✅ 采纳。
+2. **发布必须走审核**：三类资产（Agent/Skill/Workflow·Chatflow）统一走"创建者 `submit` → Admin/Auditor `review`"，开发者不能自己发布自己的资产；**企业级资产**创建仅 Admin、审批 Admin 必审 + 可指派 AIBP 协同双签（见 §2.2）。✅ 采纳并按 PRD 补齐企业级流程。
+3. **平台超管 `tenant:manage` 暂缓到阶段 6**（见 §5），MVP 里租户/成员管理按"Admin 管本租户"实现。✅ 采纳。
 
 ---
 
@@ -123,7 +170,7 @@ ADR-002 定了"你是谁、属于哪家公司、什么职位（`roles`）"如何
 
 - 新建 `lib/auth/permissions.ts`（`Role`/`Action` 类型 + `ROLE_PERMISSIONS` 表 + `hasPermission()`）——3.4 落地，A/相关道建。
 - 新建 `requirePermission()` 中间件包裹受保护 API——3.4。
-- `ROLE_MATRIX`（test-data.ts）在 3.7 隔离/权限专项里逐条断言（对应 S0 权限组用例）。
+- `ROLE_MATRIX`（test-data.ts）在 3.7 隔离/权限专项里逐条断言（对应 S0 权限组用例）；**并扩展补入企业级流程断言**：`*:create:enterprise`（仅 Admin）、`*:submit`/`*:review` 三资产统一、`*:review:cooperate`（AIBP 协同双签）——交 C 测试道随 3.7 补。
 - 本矩阵是**动作权限单一事实来源**：新增任何写操作 API，必须先在矩阵登记 action，再实现（否则默认拒绝）——写入 CLAUDE.md 约定。
 
 ## 复审条件
