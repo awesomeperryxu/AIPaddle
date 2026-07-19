@@ -350,41 +350,45 @@ export function VersionHistoryPanel({
   );
 }
 
+// Demo 数据提到模块级（避免渲染期调用 Date.now/new Date，满足 react-hooks/purity）
+const DEMO_NOW = Date.now();
+const MOCK_VERSIONS: Version[] = [
+  {
+    id: 'v12',
+    number: 12,
+    description: '添加了 Agent 节点支持',
+    createdAt: new Date(DEMO_NOW - 2 * 3600000),
+    createdBy: { id: 'user1', name: '张三', avatar: '' },
+  },
+  {
+    id: 'v11',
+    number: 11,
+    description: '修复了循环节点的 bug',
+    createdAt: new Date(DEMO_NOW - 5 * 3600000),
+    createdBy: { id: 'user2', name: '李四', avatar: '' },
+    isResolved: true,
+  },
+  {
+    id: 'v10',
+    number: 10,
+    description: '优化了 LLM 节点性能',
+    createdAt: new Date(DEMO_NOW - 24 * 3600000),
+    createdBy: { id: 'user1', name: '张三', avatar: '' },
+  },
+  {
+    id: 'v9',
+    number: 9,
+    description: '添加了知识库检索功能',
+    createdAt: new Date(DEMO_NOW - 3 * 24 * 3600000),
+    createdBy: { id: 'user3', name: '王五', avatar: '' },
+  },
+];
+
 // Demo component with mock data
 export function VersionHistoryPanelDemo() {
   const [isOpen, setIsOpen] = useState(true);
 
-  const mockVersions: Version[] = [
-    {
-      id: 'v12',
-      number: 12,
-      description: '添加了 Agent 节点支持',
-      createdAt: new Date(Date.now() - 2 * 3600000),
-      createdBy: { id: 'user1', name: '张三', avatar: '' },
-    },
-    {
-      id: 'v11',
-      number: 11,
-      description: '修复了循环节点的 bug',
-      createdAt: new Date(Date.now() - 5 * 3600000),
-      createdBy: { id: 'user2', name: '李四', avatar: '' },
-      isResolved: true,
-    },
-    {
-      id: 'v10',
-      number: 10,
-      description: '优化了 LLM 节点性能',
-      createdAt: new Date(Date.now() - 24 * 3600000),
-      createdBy: { id: 'user1', name: '张三', avatar: '' },
-    },
-    {
-      id: 'v9',
-      number: 9,
-      description: '添加了知识库检索功能',
-      createdAt: new Date(Date.now() - 3 * 24 * 3600000),
-      createdBy: { id: 'user3', name: '王五', avatar: '' },
-    },
-  ];
+  const mockVersions: Version[] = MOCK_VERSIONS;
 
   return (
     <div className="min-h-screen bg-muted/30 p-8">

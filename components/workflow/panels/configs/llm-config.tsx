@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ModelSelector } from '../common/model-selector';
 import { VariableSelector } from '../common/variable-selector';
 import type { WorkflowNode, LLMNodeConfig, PromptTemplate, ModelConfig, ValueSelector } from '../../types';
+import { VarType } from '../../types';
 
 interface LLMNodeConfigPanelProps {
   node: WorkflowNode;
@@ -395,7 +396,7 @@ export function LLMNodeConfigPanel({
               availableNodes={allNodes}
               currentNodeId={node.id}
               placeholder="选择图像变量"
-              filterTypes={['file', 'files'] as any}
+              filterTypes={[VarType.File, VarType.Files]}
             />
             <Select
               value={config.vision?.configs?.detail || 'auto'}

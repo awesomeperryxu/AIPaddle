@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Check, ChevronDown, Settings2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -115,8 +115,8 @@ export function ModelSelector({
   const [open, setOpen] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
 
-  // Normalize value to ModelConfig
-  const normalizedValue: ModelConfig = useMemo(() => {
+  // Normalize value to ModelConfig（去手动 useMemo，交给 React Compiler 自动记忆化）
+  const normalizedValue: ModelConfig = (() => {
     if (!value) {
       return { provider: 'openai', name: '', completion_params: {} };
     }
@@ -131,9 +131,9 @@ export function ModelSelector({
       return { provider: 'openai', name: value, completion_params: {} };
     }
     return value;
-  }, [value]);
+  })();
 
-  const selectedModel = useMemo(() => {
+  const selectedModel = (() => {
     for (const provider of modelOptions) {
       const model = provider.models.find(m => m.name === normalizedValue.name);
       if (model) {
@@ -141,7 +141,7 @@ export function ModelSelector({
       }
     }
     return null;
-  }, [normalizedValue.name]);
+  })();
 
   const handleSelectModel = (provider: ModelProvider, modelName: string) => {
     onChange({

@@ -110,7 +110,7 @@ export default function PanelsDemoPage() {
     },
   ];
 
-  const handleUpdate = (data: any) => {
+  const handleUpdate = (data: unknown) => {
     console.log('[v0] Panel update:', data);
   };
 

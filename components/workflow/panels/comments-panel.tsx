@@ -224,44 +224,48 @@ export function CommentsPanel({
   );
 }
 
+// Demo 数据提到模块级（避免在渲染期调用 Date.now/new Date，满足 react-hooks/purity）
+const DEMO_NOW = Date.now();
+const DEMO_COMMENTS: Comment[] = [
+  {
+    id: '1',
+    author: { name: '张三' },
+    content: '这个 LLM 节点的提示词需要优化一下，当前的回复不够准确，建议增加一些上下文约束。',
+    timestamp: new Date(DEMO_NOW - 1000 * 60 * 5), // 5 mins ago
+    isResolved: false,
+    replyCount: 3,
+  },
+  {
+    id: '2',
+    author: { name: '李四' },
+    content: '代码节点这里的错误处理需要加强，目前没有捕获异常的逻辑。',
+    timestamp: new Date(DEMO_NOW - 1000 * 60 * 60 * 2), // 2 hours ago
+    isResolved: false,
+    replyCount: 1,
+  },
+  {
+    id: '3',
+    author: { name: '王五' },
+    content: '已修复 HTTP 请求节点的超时问题，请复查。',
+    timestamp: new Date(DEMO_NOW - 1000 * 60 * 60 * 24), // 1 day ago
+    isResolved: true,
+    replyCount: 0,
+  },
+  {
+    id: '4',
+    author: { name: '赵六' },
+    content: '建议将这个分支逻辑拆分成两个独立的条件节点，更容易维护。',
+    timestamp: new Date(DEMO_NOW - 1000 * 60 * 60 * 24 * 3), // 3 days ago
+    isResolved: false,
+    replyCount: 5,
+  },
+];
+
 // Demo component
 export function CommentsPanelDemo() {
   const [isOpen, setIsOpen] = useState(true);
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
-  const [comments, setComments] = useState<Comment[]>([
-    {
-      id: '1',
-      author: { name: '张三' },
-      content: '这个 LLM 节点的提示词需要优化一下，当前的回复不够准确，建议增加一些上下文约束。',
-      timestamp: new Date(Date.now() - 1000 * 60 * 5), // 5 mins ago
-      isResolved: false,
-      replyCount: 3,
-    },
-    {
-      id: '2',
-      author: { name: '李四' },
-      content: '代码节点这里的错误处理需要加强，目前没有捕获异常的逻辑。',
-      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-      isResolved: false,
-      replyCount: 1,
-    },
-    {
-      id: '3',
-      author: { name: '王五' },
-      content: '已修复 HTTP 请求节点的超时问题，请复查。',
-      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
-      isResolved: true,
-      replyCount: 0,
-    },
-    {
-      id: '4',
-      author: { name: '赵六' },
-      content: '建议将这个分支逻辑拆分成两个独立的条件节点，更容易维护。',
-      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3), // 3 days ago
-      isResolved: false,
-      replyCount: 5,
-    },
-  ]);
+  const [comments, setComments] = useState<Comment[]>(DEMO_COMMENTS);
 
   const handleToggleResolved = (commentId: string) => {
     setComments((prev) =>

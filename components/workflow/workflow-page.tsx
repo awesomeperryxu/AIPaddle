@@ -27,13 +27,20 @@ import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+// ReactFlow 节点 data 的形状
+type WorkflowNodeData = {
+  blockType: BlockEnum;
+  label?: string;
+  description?: string;
+};
+
 // Custom node component - follows design spec:
 // - Width: 240px fixed
 // - Min height: 80px
 // - Border radius: 12px (rounded-xl)
 // - Left border: 4px
-function WorkflowNode({ data, selected }: { data: any; selected: boolean }) {
-  const config = nodeRegistry[data.blockType as BlockEnum];
+function WorkflowNode({ data, selected }: { data: WorkflowNodeData; selected: boolean }) {
+  const config = nodeRegistry[data.blockType];
   if (!config) return null;
 
   const Icon = config.icon;
@@ -163,7 +170,7 @@ function WorkflowPageInner({
   }, [fitView, getZoom]);
 
   const handleNodeUpdate = useCallback(
-    (nodeId: string, data: any) => {
+    (nodeId: string, data: Record<string, unknown>) => {
       setNodes((nds) =>
         nds.map((node) =>
           node.id === nodeId

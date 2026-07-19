@@ -246,7 +246,7 @@ export function CodeConfigPanelV2({
           ))}
           {inputVars.length === 0 && (
             <div className="text-center py-4 border rounded-lg border-dashed text-muted-foreground text-sm">
-              点击"添加"按钮添加输入变量
+              点击“添加”按钮添加输入变量
             </div>
           )}
         </div>
