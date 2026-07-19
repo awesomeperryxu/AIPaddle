@@ -29,11 +29,14 @@ export async function proxy(request: NextRequest) {
   const isPrototype = pathname.startsWith('/prototype')
   const isPublic = isAuthPage || isCallback || isPrototype
 
-  // 根路径：未登录 → /login，已登录 → /dashboard
+  // 根路径：未登录 → /login，已登录 → 直接展示 app/page.tsx（原型工作台）
   if (pathname === '/') {
-    const url = request.nextUrl.clone()
-    url.pathname = user ? '/dashboard' : '/login'
-    return NextResponse.redirect(url)
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
+    return supabaseResponse
   }
 
   // 未登录访问受保护页面 → /login
@@ -43,10 +46,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // 已登录访问认证页 → /dashboard
+  // 已登录访问认证页 → 工作台首页
   if (user && isAuthPage) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = '/'
     return NextResponse.redirect(url)
   }
 
