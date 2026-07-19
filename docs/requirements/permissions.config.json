@@ -1,0 +1,55 @@
+{
+  "$schema": "aipaddle/permissions-config",
+  "version": "1.05",
+  "updatedAt": "2026-07-18",
+  "source": ["docs/requirements/PRD_权限与角色_v1.05.md", "原型《权限角色确认》页确认记录 §2.11.9"],
+  "accessLevels": { "0": "none（导航不可见）", "1": "limited（只读/限范围/需审批）", "2": "full（含创建/编辑/删除）" },
+  "dataScopes": ["all", "dept_and_children", "dept", "self"],
+  "platformPages": ["saas-dashboard", "tenants", "keys", "billing", "settings", "notifications"],
+  "tenantPages": ["dashboard", "assistant", "agents-admin", "agents", "skill-hub", "my-skills", "knowledge-admin", "knowledge", "workflows", "security", "members", "tenant-admin", "tenant-billing"],
+  "platformRoles": [
+    { "id": "plat_super", "name": "平台超级管理员", "mfa": true, "pages": { "saas-dashboard": 2, "tenants": 2, "keys": 2, "billing": 2, "settings": 2, "notifications": 2 } },
+    { "id": "plat_ops", "name": "平台运营", "pages": { "saas-dashboard": 2, "tenants": 2, "keys": 1, "billing": 2, "settings": 0, "notifications": 2 } },
+    { "id": "plat_sec_audit", "name": "平台安全审计", "pages": { "saas-dashboard": 1, "tenants": 1, "keys": 0, "billing": 1, "settings": 1, "notifications": 2 }, "overrides": { "tenants.mcp_approval": 2, "settings.security_policy": 2 } }
+  ],
+  "tenantRoles": [
+    { "id": "tenant_super", "name": "企业超级管理员", "scope": "all", "locked": true, "pages": { "dashboard": 2, "assistant": 2, "agents-admin": 2, "agents": 2, "skill-hub": 2, "my-skills": 2, "knowledge-admin": 2, "knowledge": 2, "workflows": 2, "security": 2, "members": 2, "tenant-admin": 2, "tenant-billing": 2 } },
+    { "id": "tenant_admin", "name": "企业管理员", "scope": "all", "fourEyesOnGrant": true, "pages": { "dashboard": 2, "assistant": 2, "agents-admin": 1, "agents": 2, "skill-hub": 1, "my-skills": 2, "knowledge-admin": 1, "knowledge": 2, "workflows": 1, "security": 1, "members": 2, "tenant-admin": 2, "tenant-billing": 2 } },
+    { "id": "ai_admin", "name": "AI 管理员（系统管理员）", "scope": "all", "fourEyesOnGrant": true, "pages": { "dashboard": 2, "assistant": 2, "agents-admin": 2, "agents": 2, "skill-hub": 2, "my-skills": 2, "knowledge-admin": 2, "knowledge": 2, "workflows": 2, "security": 1, "members": 1, "tenant-admin": 0, "tenant-billing": 1 } },
+    { "id": "sec_admin", "name": "安全管理员", "scope": "all", "fourEyesOnGrant": true, "pages": { "dashboard": 1, "assistant": 2, "agents-admin": 1, "agents": 1, "skill-hub": 1, "my-skills": 2, "knowledge-admin": 1, "knowledge": 2, "workflows": 1, "security": 2, "members": 1, "tenant-admin": 1, "tenant-billing": 0 } },
+    { "id": "fin_admin", "name": "财务管理员", "scope": "all", "costGranularity": "dept_and_model_detail", "pages": { "dashboard": 1, "assistant": 2, "agents-admin": 0, "agents": 1, "skill-hub": 0, "my-skills": 2, "knowledge-admin": 0, "knowledge": 2, "workflows": 0, "security": 0, "members": 0, "tenant-admin": 1, "tenant-billing": 2 } },
+    { "id": "dept_admin", "name": "部门管理员", "scope": "dept_and_children", "pages": { "dashboard": 1, "assistant": 2, "agents-admin": 1, "agents": 2, "skill-hub": 1, "my-skills": 2, "knowledge-admin": 1, "knowledge": 2, "workflows": 1, "security": 0, "members": 1, "tenant-admin": 1, "tenant-billing": 1 }, "notes": "创建 Agent 需 ai_admin 审批（P2）" },
+    { "id": "developer", "name": "开发者", "scope": "dept", "pages": { "dashboard": 1, "assistant": 2, "agents-admin": 2, "agents": 2, "skill-hub": 2, "my-skills": 2, "knowledge-admin": 2, "knowledge": 2, "workflows": 2, "security": 0, "members": 0, "tenant-admin": 0, "tenant-billing": 0 } },
+    { "id": "employee", "name": "普通员工", "scope": "self", "default": true, "pages": { "dashboard": 0, "assistant": 2, "agents-admin": 0, "agents": 2, "skill-hub": 1, "my-skills": 2, "knowledge-admin": 0, "knowledge": 2, "workflows": 0, "security": 0, "members": 0, "tenant-admin": 0, "tenant-billing": 0 } },
+    { "id": "restricted_guest", "name": "受限访客", "scope": "self", "renamedFrom": "外包驻场", "denyExport": true, "denyUpload": true, "resourceAllowlist": true, "pages": { "dashboard": 0, "assistant": 1, "agents-admin": 0, "agents": 1, "skill-hub": 0, "my-skills": 0, "knowledge-admin": 0, "knowledge": 1, "workflows": 0, "security": 0, "members": 0, "tenant-admin": 0, "tenant-billing": 0 } }
+  ],
+  "resourceCreation": {
+    "knowledge_base": { "creators": ["ai_admin", "developer"], "developerScope": "dept" },
+    "skill": {
+      "tiers": {
+        "L1_enterprise": { "creators": ["ai_admin"], "distribution": "force_install_all", "uninstallable": false },
+        "L2_personal": { "creators": ["*"], "visibility": "self_only" },
+        "L3_marketplace": { "creators": ["*"], "flow": "submit -> ai_admin review (含安全扫描) -> publish to skill-hub", "rejectRequiresReason": true }
+      }
+    },
+    "workflow_chatflow": { "creators": ["*"], "draftVisibility": "self", "sharing": { "unit": "department", "flow": "submit -> ai_admin review -> share(dept | enterprise)", "maintainer": "creator", "forceOfflineBy": "ai_admin" } },
+    "agent": { "creators": ["*"], "deptAdminNeedsApprovalBy": "ai_admin", "sharing": "same_as_workflow" },
+    "multiagent_orchestration": { "creators": ["ai_admin"], "managedBy": "ai_admin", "scope": "enterprise" },
+    "mcp": { "creators": ["tenant_admin"], "approvalBy": "plat_sec_audit", "mode": "B_controlled", "ref": "PRD 2.9.8" }
+  },
+  "kbPassthrough": {
+    "defaultMode": "inherit_caller",
+    "inherit_caller": "运行时以最终用户身份校验 KB ACL；无权限的 KB 不参与召回（静默降级 + 审计）",
+    "resource_grant": { "desc": "资源 Owner 显式声明 KB 随资源共享", "requires": ["ai_admin", "kb_owner"], "audited": true, "labeledOnResource": true },
+    "chainRule": "每跳取 用户 ∩ 资源 ∩ KB ACL 最小交集；嵌套不得绕过；导出/下载按用户本人权限"
+  },
+  "approvalFlows": [
+    { "case": "skill_L3_publish", "from": "employee", "approver": "ai_admin" },
+    { "case": "wf_cf_agent_share", "from": "creator", "approver": "ai_admin", "target": "dept | enterprise" },
+    { "case": "dept_admin_create_agent", "from": "dept_admin", "approver": "ai_admin" },
+    { "case": "admin_role_grant_revoke", "from": "admin_A", "approver": "admin_B", "type": "four_eyes" },
+    { "case": "mcp_production", "from": "tenant_admin", "approver": "plat_sec_audit" },
+    { "case": "dept_quota_adjust", "from": "dept_admin", "approver": "tenant_admin" }
+  ],
+  "security": { "adminSensitiveOpsMFA": true, "auditImmutable": true, "auditRetention": "1y (enterprise 3-7y)", "defaultRoleForNewUser": "employee" }
+}

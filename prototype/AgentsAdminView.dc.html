@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./licon.js"></script>
+<style>
+  body{margin:0;background:oklch(0.1 0.01 250);color:oklch(0.95 0.005 260);font-family:'Geist',-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color-scheme:dark}
+  a{color:oklch(0.65 0.2 250);text-decoration:none} a:hover{color:oklch(0.75 0.16 250)}
+  l-icon{display:inline-flex;flex:none;line-height:0} l-icon svg{width:100%;height:100%}
+  input,textarea,button{font-family:inherit}
+  input::placeholder{color:oklch(0.6 0.01 260 / 0.7)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.28 0.015 250);border-radius:5px;border:2px solid oklch(0.1 0.01 250)}
+  [data-seg][data-active="1"]{background:oklch(0.1 0.01 250) !important;color:oklch(0.95 0.005 260) !important;box-shadow:0 1px 2px rgba(0,0,0,.35)}
+  [data-agentcard][data-active="1"]{box-shadow:0 0 0 2px oklch(0.65 0.2 250),0 4px 12px rgba(0,0,0,.3) !important}
+</style>
+</helmet>
+<div data-screen-label="Agent 管理" style="display:flex;gap:24px;height:calc(100vh - 88px)">
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex:none">
+      <div>
+        <h1 style="margin:0;font-size:20px;font-weight:600;color:oklch(0.95 0.005 260)">Agent 管理</h1>
+        <p style="margin:2px 0 0;font-size:14px;color:oklch(0.6 0.01 260)">创建、配置和管理 AI Agent</p>
+      </div>
+      <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;font-size:14px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3)" style-hover="filter:brightness(1.12)"><l-icon name="plus" style="width:16px;height:16px"></l-icon>创建 Agent</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;flex:none">
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:8px;background:oklch(0.65 0.2 250 / 0.1);display:flex;align-items:center;justify-content:center"><l-icon name="bot" style="width:16px;height:16px;color:oklch(0.65 0.2 250)"></l-icon></div>
+        <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">6</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">全部</p></div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:8px;background:oklch(0.55 0.18 145 / 0.12);display:flex;align-items:center;justify-content:center"><l-icon name="check-circle-2" style="width:16px;height:16px;color:oklch(0.55 0.18 145)"></l-icon></div>
+        <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">4</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">已发布</p></div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:8px;background:oklch(0.65 0.18 80 / 0.12);display:flex;align-items:center;justify-content:center"><l-icon name="clock" style="width:16px;height:16px;color:oklch(0.65 0.18 80)"></l-icon></div>
+        <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">1</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">待审核</p></div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:8px;background:oklch(0.2 0.015 250);display:flex;align-items:center;justify-content:center"><l-icon name="x-circle" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon></div>
+        <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">1</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">草稿</p></div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex:none">
+      <div style="position:relative;flex:1">
+        <l-icon name="search" style="width:16px;height:16px;color:oklch(0.6 0.01 260);position:absolute;left:12px;top:50%;transform:translateY(-50%)"></l-icon>
+        <input placeholder="搜索 Agent 名称或部门..." value="{{ search }}" onInput="{{ setSearch }}" style="width:100%;height:36px;font-size:14px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:0 12px 0 36px;color:oklch(0.95 0.005 260);outline:none" style-focus="border-color:oklch(0.65 0.2 250)">
+      </div>
+      <div style="display:flex;background:oklch(0.2 0.015 250 / 0.5);border-radius:8px;padding:3px;height:36px;align-items:center">
+        <sc-for list="{{ tabs }}" as="tab" hint-placeholder-count="4">
+          <button data-seg="1" data-active="{{ tab.activeAttr }}" onClick="{{ tab.go }}" style="padding:5px 12px;border-radius:6px;font-size:12px;border:none;background:transparent;color:oklch(0.6 0.01 260);cursor:pointer" style-hover="color:oklch(0.95 0.005 260)">{{ tab.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;min-height:0">
+      <sc-for list="{{ list }}" as="a" hint-placeholder-count="4">
+        <div data-agentcard="1" data-active="{{ a.activeAttr }}" onClick="{{ a.select }}" style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px;cursor:pointer;transition:box-shadow .15s" style-hover="box-shadow:0 4px 12px rgba(0,0,0,.3)">
+          <div style="display:flex;align-items:flex-start;gap:12px">
+            <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,oklch(0.65 0.2 250 / 0.2),oklch(0.55 0.18 180 / 0.2));display:flex;align-items:center;justify-content:center;font-size:20px;flex:none">{{ a.avatar }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <h3 style="margin:0;font-size:15px;font-weight:500;color:oklch(0.95 0.005 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.name }}</h3>
+                <span style="font-size:10px;padding:1px 6px;height:16px;display:inline-flex;align-items:center;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260);flex:none">{{ a.department }}</span>
+                <span style="display:flex;align-items:center;gap:6px;margin-left:auto;flex:none">
+                  <span style="width:6px;height:6px;border-radius:999px;background:{{ a.dotColor }}"></span>
+                  <span style="font-size:12px;color:oklch(0.6 0.01 260)">{{ a.statusLabel }}</span>
+                </span>
+              </div>
+              <p style="margin:0 0 8px;font-size:14px;color:oklch(0.6 0.01 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.description }}</p>
+              <div style="display:flex;align-items:center;gap:16px;font-size:12px;color:oklch(0.6 0.01 260)">
+                <span style="display:flex;align-items:center;gap:4px"><l-icon name="bot" style="width:12px;height:12px"></l-icon>{{ a.model }}</span>
+                <span style="display:flex;align-items:center;gap:4px"><l-icon name="message-square" style="width:12px;height:12px"></l-icon>{{ a.callsFmt }}</span>
+                <span style="display:flex;align-items:center;gap:4px"><l-icon name="trending-up" style="width:12px;height:12px"></l-icon>{{ a.successRate }}%</span>
+              </div>
+            </div>
+            <div style="position:relative;flex:none">
+              <button onClick="{{ a.toggleMenu }}" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="more-horizontal" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+              <sc-if value="{{ a.menuOpen }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;right:0;top:calc(100% + 4px);z-index:50;width:160px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,0.5)">
+                  <button onClick="{{ a.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="settings" style="width:15px;height:15px"></l-icon>配置</button>
+                  <button onClick="{{ a.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="play" style="width:15px;height:15px"></l-icon>调试</button>
+                  <button onClick="{{ a.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="copy" style="width:15px;height:15px"></l-icon>复制</button>
+                  <div style="height:1px;background:oklch(0.25 0.015 250);margin:4px 0"></div>
+                  <button onClick="{{ a.togglePublish }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="{{ a.pubIcon }}" style="width:15px;height:15px"></l-icon>{{ a.pubLabel }}</button>
+                  <button onClick="{{ a.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.55 0.22 25);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="trash-2" style="width:15px;height:15px"></l-icon>删除</button>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+    <div style="width:420px;flex:none;display:flex;flex-direction:column;gap:16px;overflow-y:auto">
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,oklch(0.65 0.2 250 / 0.2),oklch(0.55 0.18 180 / 0.2));display:flex;align-items:center;justify-content:center;font-size:24px">{{ sel.avatar }}</div>
+            <div>
+              <h3 style="margin:0;font-size:16px;font-weight:600;color:oklch(0.95 0.005 260)">{{ sel.name }}</h3>
+              <p style="margin:2px 0 0;font-size:12px;color:oklch(0.6 0.01 260)">{{ sel.department }}</p>
+            </div>
+          </div>
+          <span style="font-size:12px;padding:3px 10px;border-radius:999px;background:{{ sel.badgeBg }};color:{{ sel.badgeColor }}">{{ sel.statusLabel }}</span>
+        </div>
+        <p style="margin:0 0 16px;font-size:14px;color:oklch(0.6 0.01 260);line-height:1.5">{{ sel.description }}</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="padding:10px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.5)"><p style="margin:0 0 2px;font-size:12px;color:oklch(0.6 0.01 260)">总调用量</p><p style="margin:0;font-size:16px;font-weight:600;color:oklch(0.95 0.005 260)">{{ sel.callsFmt }}</p></div>
+          <div style="padding:10px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.5)"><p style="margin:0 0 2px;font-size:12px;color:oklch(0.6 0.01 260)">成功率</p><p style="margin:0;font-size:16px;font-weight:600;color:oklch(0.95 0.005 260)">{{ sel.successRate }}%</p></div>
+          <div style="padding:10px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.5)"><p style="margin:0 0 2px;font-size:12px;color:oklch(0.6 0.01 260)">Token 消耗</p><p style="margin:0;font-size:16px;font-weight:600;color:oklch(0.95 0.005 260)">{{ sel.tokenM }}M</p></div>
+          <div style="padding:10px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.5)"><p style="margin:0 0 2px;font-size:12px;color:oklch(0.6 0.01 260)">创建日期</p><p style="margin:0;font-size:16px;font-weight:600;color:oklch(0.95 0.005 260)">{{ sel.createdAt }}</p></div>
+        </div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+        <h4 style="margin:0;font-size:14px;font-weight:600;color:oklch(0.95 0.005 260)">使用场景</h4>
+        <p style="margin:2px 0 12px;font-size:12px;color:oklch(0.6 0.01 260)">配置 Agent 的接入渠道</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button style="padding:12px;border-radius:8px;border:1px solid oklch(0.65 0.2 250 / 0.3);background:oklch(0.65 0.2 250 / 0.05);cursor:pointer;text-align:left" style-hover="background:oklch(0.65 0.2 250 / 0.1)">
+            <span style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="width:28px;height:28px;border-radius:6px;background:rgba(59,130,246,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="phone" style="width:14px;height:14px;color:#3b82f6"></l-icon></span><span style="font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">本地CC</span><l-icon name="check-circle-2" style="width:14px;height:14px;color:oklch(0.65 0.2 250);margin-left:auto"></l-icon></span>
+            <span style="font-size:11px;color:oklch(0.6 0.01 260)">本地呼叫中心集成</span>
+          </button>
+          <button style="padding:12px;border-radius:8px;border:1px solid oklch(0.65 0.2 250 / 0.3);background:oklch(0.65 0.2 250 / 0.05);cursor:pointer;text-align:left" style-hover="background:oklch(0.65 0.2 250 / 0.1)">
+            <span style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="width:28px;height:28px;border-radius:6px;background:rgba(34,197,94,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="messages-square" style="width:14px;height:14px;color:#22c55e"></l-icon></span><span style="font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">企微对话</span><l-icon name="check-circle-2" style="width:14px;height:14px;color:oklch(0.65 0.2 250);margin-left:auto"></l-icon></span>
+            <span style="font-size:11px;color:oklch(0.6 0.01 260)">企业微信对话接入</span>
+          </button>
+          <button style="padding:12px;border-radius:8px;border:1px solid oklch(0.25 0.015 250);background:oklch(0.2 0.015 250 / 0.3);cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250 / 0.5)">
+            <span style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="width:28px;height:28px;border-radius:6px;background:rgba(168,85,247,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="globe" style="width:14px;height:14px;color:#a855f7"></l-icon></span><span style="font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">Web 接入</span></span>
+            <span style="font-size:11px;color:oklch(0.6 0.01 260)">网页端嵌入式对话</span>
+          </button>
+          <button style="padding:12px;border-radius:8px;border:1px solid oklch(0.25 0.015 250);background:oklch(0.2 0.015 250 / 0.3);cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250 / 0.5)">
+            <span style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="width:28px;height:28px;border-radius:6px;background:rgba(249,115,22,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="zap" style="width:14px;height:14px;color:#f97316"></l-icon></span><span style="font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">API 调用</span></span>
+            <span style="font-size:11px;color:oklch(0.6 0.01 260)">通过 API 直接调用</span>
+          </button>
+        </div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+        <h4 style="margin:0 0 8px;font-size:14px;font-weight:600;color:oklch(0.95 0.005 260)">配置信息</h4>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.3)"><span style="display:flex;align-items:center;gap:8px;font-size:14px;color:oklch(0.95 0.005 260)"><l-icon name="bot" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon>模型</span><span style="font-size:14px;color:oklch(0.6 0.01 260)">{{ sel.model }}</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.3)"><span style="display:flex;align-items:center;gap:8px;font-size:14px;color:oklch(0.95 0.005 260)"><l-icon name="database" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon>知识库</span><span style="font-size:14px;color:oklch(0.6 0.01 260)">2 个已绑定</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.3)"><span style="display:flex;align-items:center;gap:8px;font-size:14px;color:oklch(0.95 0.005 260)"><l-icon name="zap" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon>Skill</span><span style="font-size:14px;color:oklch(0.6 0.01 260)">5 个已绑定</span></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.3)"><span style="display:flex;align-items:center;gap:8px;font-size:14px;color:oklch(0.95 0.005 260)"><l-icon name="git-branch" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon>工作流</span><span style="font-size:14px;color:oklch(0.6 0.01 260)">1 个已绑定</span></div>
+        </div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+        <h4 style="margin:0;font-size:14px;font-weight:600;color:oklch(0.95 0.005 260)">API Token</h4>
+        <p style="margin:2px 0 12px;font-size:12px;color:oklch(0.6 0.01 260)">用于外部系统调用此 Agent</p>
+        <div style="display:flex;align-items:center;gap:8px">
+          <code style="flex:1;padding:8px;border-radius:6px;background:oklch(0.2 0.015 250);font-size:12px;color:oklch(0.6 0.01 260);font-family:'Geist Mono',ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ap_sk_live_xxxxxxxxxxxxxxxxxxxxx</code>
+          <button style="height:32px;padding:0 8px;border:1px solid oklch(0.25 0.015 250);background:transparent;border-radius:6px;cursor:pointer;display:flex;align-items:center" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="copy" style="width:14px;height:14px;color:oklch(0.95 0.005 260)"></l-icon></button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;font-size:14px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3)" style-hover="filter:brightness(1.12)"><l-icon name="settings" style="width:16px;height:16px"></l-icon>编辑配置</button>
+        <button style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;font-size:14px;font-weight:500;background:transparent;color:oklch(0.95 0.005 260);border:1px solid oklch(0.25 0.015 250);border-radius:8px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="play" style="width:16px;height:16px"></l-icon>调试测试</button>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { D: null, search: '', tab: 'all', selId: null, menuId: null, statusOverride: {} };
+  componentDidMount() {
+    import('./data.js').then(m => this.setState({ D: m })).catch(e => console.error('data load', e));
+    this._doc = () => { if (this.state.menuId) this.setState({ menuId: null }); };
+    document.addEventListener('click', this._doc);
+  }
+  componentWillUnmount() { document.removeEventListener('click', this._doc); }
+  statusCfg(s) {
+    return {
+      draft: { label: '草稿', dot: 'oklch(0.6 0.01 260)', bg: 'oklch(0.2 0.015 250)', color: 'oklch(0.6 0.01 260)' },
+      pending: { label: '待审核', dot: 'oklch(0.65 0.18 80)', bg: 'oklch(0.65 0.18 80 / 0.12)', color: 'oklch(0.65 0.18 80)' },
+      published: { label: '已发布', dot: 'oklch(0.55 0.18 145)', bg: 'oklch(0.55 0.18 145 / 0.12)', color: 'oklch(0.6 0.18 145)' },
+      offline: { label: '已下线', dot: 'oklch(0.55 0.22 25)', bg: 'oklch(0.55 0.22 25 / 0.12)', color: 'oklch(0.55 0.22 25)' }
+    }[s];
+  }
+  renderVals() {
+    const D = this.state.D;
+    const term = this.state.search.toLowerCase();
+    const all = D ? D.agents.map(a => Object.assign({}, a, { status: this.state.statusOverride[a.id] || a.status })) : [];
+    const filtered = all.filter(a => {
+      const m = a.name.toLowerCase().includes(term) || a.department.toLowerCase().includes(term);
+      return this.state.tab === 'all' ? m : m && a.status === this.state.tab;
+    });
+    const decorate = (a) => {
+      const cfg = this.statusCfg(a.status);
+      return Object.assign({}, a, {
+        statusLabel: cfg.label, dotColor: cfg.dot, badgeBg: cfg.bg, badgeColor: cfg.color,
+        callsFmt: a.calls.toLocaleString('en-US'), tokenM: (a.tokenUsage / 1000000).toFixed(2),
+        activeAttr: this.state.selId === a.id ? '1' : '0',
+        menuOpen: this.state.menuId === a.id,
+        pubLabel: a.status === 'published' ? '下线' : '发布',
+        pubIcon: a.status === 'published' ? 'pause' : 'play',
+        select: () => this.setState({ selId: a.id }),
+        toggleMenu: (e) => { e.stopPropagation(); this.setState(s => ({ menuId: s.menuId === a.id ? null : a.id })); },
+        closeMenu: (e) => { e.stopPropagation(); this.setState({ menuId: null }); },
+        togglePublish: (e) => {
+          e.stopPropagation();
+          const next = a.status === 'published' ? 'offline' : 'published';
+          this.setState(s => ({ statusOverride: Object.assign({}, s.statusOverride, { [a.id]: next }), menuId: null }));
+        }
+      });
+    };
+    const selRaw = all.find(a => a.id === this.state.selId);
+    return {
+      search: this.state.search,
+      setSearch: (e) => this.setState({ search: e.target.value }),
+      tabs: [['all', '全部'], ['published', '已发布'], ['pending', '待审核'], ['draft', '草稿']].map(([v, label]) => ({
+        label, activeAttr: this.state.tab === v ? '1' : '0', go: () => this.setState({ tab: v })
+      })),
+      list: filtered.map(decorate),
+      hasSel: !!selRaw,
+      sel: selRaw ? decorate(selRaw) : {}
+    };
+  }
+}
+</script>
+</body>
+</html>

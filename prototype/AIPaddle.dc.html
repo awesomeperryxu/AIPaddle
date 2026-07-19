@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIPaddle - AI 业务赋能平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./licon.js"></script>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:oklch(0.1 0.01 250);color:oklch(0.95 0.005 260);font-family:'Geist',-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color-scheme:dark;}
+  *{box-sizing:border-box}
+  a{color:oklch(0.65 0.2 250);text-decoration:none}
+  a:hover{color:oklch(0.75 0.16 250)}
+  l-icon{display:inline-flex;flex:none;line-height:0}
+  l-icon svg{width:100%;height:100%}
+  input,textarea,select,button{font-family:inherit}
+  input::placeholder,textarea::placeholder{color:oklch(0.6 0.01 260 / 0.7)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.28 0.015 250);border-radius:5px;border:2px solid oklch(0.1 0.01 250)}
+  ::-webkit-scrollbar-track{background:transparent}
+  [data-navitem][data-active="1"]{background:oklch(0.65 0.2 250) !important;color:oklch(0.98 0 0) !important;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+  [data-navitem][data-active="1"] [data-navbadge]{background:oklch(0.98 0 0 / 0.2) !important;color:oklch(0.98 0 0) !important}
+  [data-sechead][data-active="1"]{color:oklch(0.65 0.2 250) !important}
+  l-icon[data-rot]{transition:transform .15s}
+  l-icon[data-rot="1"]{transform:rotate(90deg)}
+  @keyframes ompulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+<div data-screen-label="AIPaddle 平台" style="display:flex;height:100vh;background:oklch(0.1 0.01 250);overflow:hidden">
+  <aside style="width:240px;flex:none;background:oklch(0.12 0.015 250);display:flex;flex-direction:column;height:100vh;border-right:1px solid oklch(0.25 0.015 250)">
+    <div style="height:56px;padding:0 16px;display:flex;align-items:center;border-bottom:1px solid oklch(0.25 0.015 250)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:32px;height:32px;border-radius:8px;background:oklch(0.65 0.2 250);display:flex;align-items:center;justify-content:center"><l-icon name="zap" style="width:16px;height:16px;color:oklch(0.98 0 0)"></l-icon></div>
+        <div>
+          <h1 style="margin:0;font-size:14px;font-weight:600;color:oklch(0.92 0.005 260)">AIPaddle</h1>
+          <p style="margin:0;font-size:10px;color:oklch(0.92 0.005 260 / 0.6)">AI 业务赋能平台</p>
+        </div>
+      </div>
+    </div>
+    <div data-menuroot="1" style="padding:10px 12px;border-bottom:1px solid oklch(0.25 0.015 250);position:relative">
+      <button onClick="{{ toggleTenantMenu }}" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:6px;background:oklch(0.2 0.015 250 / 0.5);border:none;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)">
+        <span style="display:flex;align-items:center;gap:8px;min-width:0">
+          <span style="width:24px;height:24px;border-radius:4px;background:oklch(0.65 0.2 250 / 0.2);display:flex;align-items:center;justify-content:center;flex:none"><l-icon name="building-2" style="width:14px;height:14px;color:oklch(0.65 0.2 250)"></l-icon></span>
+          <span style="font-size:12px;font-weight:500;color:oklch(0.92 0.005 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ curTenantShort }}</span>
+        </span>
+        <l-icon name="chevron-down" style="width:14px;height:14px;color:oklch(0.92 0.005 260 / 0.6)"></l-icon>
+      </button>
+      <sc-if value="{{ tenantMenu }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;left:12px;top:calc(100% - 4px);z-index:60;width:240px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,0.5)">
+          <p style="margin:4px 0 2px;padding:0 8px;font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.6 0.01 260)">切换租户</p>
+          <sc-for list="{{ tenantOpts }}" as="topt" hint-placeholder-count="2">
+            <button onClick="{{ topt.pick }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)">
+              <span style="width:24px;height:24px;border-radius:5px;background:{{ topt.avBg }};color:{{ topt.avColor }};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex:none">{{ topt.initial }}</span>
+              <span style="flex:1;min-width:0">
+                <span style="display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ topt.name }}</span>
+                <span style="display:block;font-size:10px;color:oklch(0.6 0.01 260)">{{ topt.meta }}</span>
+              </span>
+              <sc-if value="{{ topt.active }}" hint-placeholder-val="{{ false }}"><l-icon name="check" style="width:14px;height:14px;color:oklch(0.65 0.2 250)"></l-icon></sc-if>
+            </button>
+          </sc-for>
+          <div style="height:1px;background:oklch(0.25 0.015 250);margin:4px 0"></div>
+          <button onClick="{{ goTenantSettings }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="settings" style="width:15px;height:15px"></l-icon>租户设置（内部管理）</button>
+          <button onClick="{{ goTenantMgmt }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="building-2" style="width:15px;height:15px"></l-icon>租户管理（平台）</button>
+        </div>
+      </sc-if>
+    </div>
+    <nav style="flex:1;overflow-y:auto;padding:8px">
+      <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="7">
+        <div style="margin-bottom:4px">
+          <button data-sechead="1" data-active="{{ sec.activeAttr }}" onClick="{{ sec.toggle }}" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:6px 8px;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;border-radius:4px;background:none;border:none;cursor:pointer;color:oklch(0.92 0.005 260 / 0.5)" style-hover="color:oklch(0.92 0.005 260 / 0.7)">
+            <span>{{ sec.title }}</span>
+            <l-icon data-rot="{{ sec.openAttr }}" name="chevron-right" style="width:12px;height:12px"></l-icon>
+          </button>
+          <sc-if value="{{ sec.open }}" hint-placeholder-val="{{ true }}">
+            <ul style="list-style:none;margin:2px 0 0;padding:0;display:flex;flex-direction:column;gap:2px">
+              <sc-for list="{{ sec.items }}" as="it" hint-placeholder-count="2">
+                <li>
+                  <button data-navitem="1" data-active="{{ it.activeAttr }}" onClick="{{ it.go }}" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:6px;border:none;background:transparent;color:oklch(0.92 0.005 260 / 0.8);cursor:pointer;font-size:13px;text-align:left;transition:background .12s" style-hover="background:oklch(0.2 0.015 250);color:oklch(0.92 0.005 260)">
+                    <span style="display:flex;align-items:center;gap:10px;min-width:0"><l-icon name="{{ it.icon }}" style="width:16px;height:16px"></l-icon><span style="white-space:nowrap">{{ it.title }}</span></span>
+                    <sc-if value="{{ it.hasBadge }}" hint-placeholder-val="{{ false }}"><span data-navbadge="1" style="padding:2px 6px;font-size:10px;font-weight:500;border-radius:999px;background:oklch(0.65 0.2 250 / 0.12);color:oklch(0.65 0.2 250)">{{ it.badge }}</span></sc-if>
+                  </button>
+                </li>
+              </sc-for>
+            </ul>
+          </sc-if>
+        </div>
+      </sc-for>
+    </nav>
+    <div data-menuroot="1" style="padding:12px;border-top:1px solid oklch(0.25 0.015 250);position:relative">
+      <button onClick="{{ toggleUserMenu }}" style="width:100%;display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;background:none;border:none;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)">
+        <span style="width:32px;height:32px;border-radius:999px;background:oklch(0.65 0.2 250 / 0.2);color:oklch(0.65 0.2 250);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex:none">陈</span>
+        <span style="flex:1;min-width:0">
+          <span style="display:block;font-size:14px;font-weight:500;color:oklch(0.92 0.005 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">陈雪</span>
+          <span style="display:block;font-size:11px;color:oklch(0.92 0.005 260 / 0.6)">企业管理员</span>
+        </span>
+        <l-icon name="chevron-down" style="width:14px;height:14px;color:oklch(0.92 0.005 260 / 0.6)"></l-icon>
+      </button>
+      <sc-if value="{{ userMenu }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;left:12px;bottom:calc(100% - 4px);z-index:60;width:208px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,0.5)">
+          <button onClick="{{ closeMenus }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="sun" style="width:15px;height:15px"></l-icon>浅色模式</button>
+          <button onClick="{{ goSettings }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="settings" style="width:15px;height:15px"></l-icon>系统设置</button>
+          <div style="height:1px;background:oklch(0.25 0.015 250);margin:4px 0"></div>
+          <button onClick="{{ closeMenus }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.55 0.22 25);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="log-out" style="width:15px;height:15px"></l-icon>退出登录</button>
+        </div>
+      </sc-if>
+    </div>
+  </aside>
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0">
+    <header style="height:48px;flex:none;border-bottom:1px solid oklch(0.25 0.015 250);background:oklch(0.14 0.015 250);padding:0 20px;display:flex;align-items:center;justify-content:space-between">
+      <h2 style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">{{ pageTitle }}</h2>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div data-menuroot="1" style="position:relative;width:280px">
+          <l-icon name="search" style="width:14px;height:14px;color:oklch(0.6 0.01 260);position:absolute;left:10px;top:50%;transform:translateY(-50%)"></l-icon>
+          <input placeholder="搜索页面、Agent、Skill、租户..." value="{{ searchQ }}" onInput="{{ setSearchQ }}" onFocus="{{ searchFocus }}" onKeyDown="{{ searchKeyDown }}" style="width:100%;height:32px;font-size:13px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:6px;padding:0 10px 0 32px;color:oklch(0.95 0.005 260);outline:none" style-focus="border-color:oklch(0.65 0.2 250)">
+          <sc-if value="{{ searchOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:90;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:10px;padding:6px;box-shadow:0 14px 40px rgba(0,0,0,0.55);max-height:420px;overflow-y:auto">
+              <sc-if value="{{ searchEmpty }}" hint-placeholder-val="{{ false }}">
+                <p style="margin:0;padding:14px 10px;font-size:13px;color:oklch(0.6 0.01 260);text-align:center">未找到「{{ searchQ }}」相关内容</p>
+              </sc-if>
+              <sc-for list="{{ searchResults }}" as="r" hint-placeholder-count="5">
+                <button onClick="{{ r.go }}" style="width:100%;display:flex;align-items:center;gap:10px;padding:8px 10px;border:none;background:none;border-radius:7px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)">
+                  <span style="width:26px;height:26px;border-radius:6px;background:{{ r.bg }};display:flex;align-items:center;justify-content:center;flex:none"><l-icon name="{{ r.icon }}" style="width:13px;height:13px;color:{{ r.color }}"></l-icon></span>
+                  <span style="flex:1;min-width:0">
+                    <span style="display:block;font-size:13px;color:oklch(0.95 0.005 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.label }}</span>
+                    <span style="display:block;font-size:11px;color:oklch(0.6 0.01 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.sub }}</span>
+                  </span>
+                  <span style="font-size:10px;padding:2px 7px;border-radius:999px;background:oklch(0.2 0.015 250);color:oklch(0.6 0.01 260);flex:none">{{ r.kind }}</span>
+                </button>
+              </sc-for>
+              <sc-if value="{{ searchHint }}" hint-placeholder-val="{{ false }}">
+                <p style="margin:0;padding:8px 10px 4px;font-size:11px;color:oklch(0.6 0.01 260);border-top:1px solid oklch(0.25 0.015 250)">Enter 打开第一项 · Esc 关闭</p>
+              </sc-if>
+            </div>
+          </sc-if>
+        </div>
+        <button title="帮助文档" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="help-circle" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon></button>
+        <button onClick="{{ goNotifications }}" title="通知中心" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer;position:relative" style-hover="background:oklch(0.2 0.015 250)">
+          <l-icon name="bell" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon>
+          <sc-if value="{{ hasUnread }}" hint-placeholder-val="{{ true }}">
+            <span style="position:absolute;top:-2px;right:-2px;height:16px;min-width:16px;padding:0 3px;border-radius:999px;background:oklch(0.55 0.22 25);color:oklch(0.98 0 0);font-size:10px;display:flex;align-items:center;justify-content:center">{{ notifCount }}</span>
+          </sc-if>
+        </button>
+      </div>
+    </header>
+    <main style="flex:1;min-height:0;overflow:auto;padding:20px;background:oklch(0.1 0.01 250)">
+      <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}"><dc-import name="DashboardView" hint-size="100%,900px"></dc-import></sc-if>
+      <sc-if value="{{ isAssistant }}" hint-placeholder-val="{{ false }}"><dc-import name="AssistantView" hint-size="100%,700px"></dc-import></sc-if>
+      <sc-if value="{{ isAgentsAdmin }}" hint-placeholder-val="{{ false }}"><dc-import name="AgentsAdminView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isAgents }}" hint-placeholder-val="{{ false }}"><dc-import name="DigitalAgentsView" hint-size="100%,700px"></dc-import></sc-if>
+      <sc-if value="{{ isSkillHub }}" hint-placeholder-val="{{ false }}"><dc-import name="SkillHubView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isKnowledge }}" hint-placeholder-val="{{ false }}"><dc-import name="KnowledgeView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isKnowledgeQA }}" hint-placeholder-val="{{ false }}"><dc-import name="KnowledgeQAView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isWorkflows }}" hint-placeholder-val="{{ false }}"><dc-import name="WorkflowView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isSecurity }}" hint-placeholder-val="{{ false }}"><dc-import name="SecurityView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isMembers }}" hint-placeholder-val="{{ false }}"><dc-import name="MembersView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isTenants }}" hint-placeholder-val="{{ false }}"><dc-import name="TenantsView" hint-size="100%,900px"></dc-import></sc-if>
+      <sc-if value="{{ isSaas }}" hint-placeholder-val="{{ false }}"><dc-import name="SaasDashboardView" hint-size="100%,900px"></dc-import></sc-if>
+      <sc-if value="{{ isTenantAdmin }}" hint-placeholder-val="{{ false }}"><dc-import name="TenantAdminView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isKeys }}" hint-placeholder-val="{{ false }}"><dc-import name="KeysView" hint-size="100%,700px"></dc-import></sc-if>
+      <sc-if value="{{ isBilling }}" hint-placeholder-val="{{ false }}"><dc-import name="PlatformBillingView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}"><dc-import name="SettingsView" hint-size="100%,800px"></dc-import></sc-if>
+      <sc-if value="{{ isNotifications }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="通知中心" style="max-width:880px;display:flex;flex-direction:column;gap:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <h1 style="margin:0;font-size:20px;font-weight:600;color:oklch(0.95 0.005 260)">通知中心</h1>
+              <p style="margin:2px 0 0;font-size:14px;color:oklch(0.6 0.01 260)">审批、配额、账单与系统事件 · 未读 {{ notifCount }} 条</p>
+            </div>
+            <button onClick="{{ markAllRead }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;font-size:13px;color:oklch(0.95 0.005 260);background:transparent;border:1px solid oklch(0.25 0.015 250);border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="check-circle-2" style="width:14px;height:14px"></l-icon>全部标为已读</button>
+          </div>
+          <div style="display:flex;gap:8px">
+            <sc-for list="{{ notifFilters }}" as="f" hint-placeholder-count="4">
+              <button onClick="{{ f.go }}" style="height:30px;padding:0 14px;font-size:13px;border-radius:999px;border:1px solid {{ f.border }};background:{{ f.bg }};color:{{ f.color }};cursor:pointer">{{ f.label }}</button>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ notifications }}" as="n" hint-placeholder-count="6">
+              <div onClick="{{ n.open }}" style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:12px;background:{{ n.cardBg }};border:1px solid oklch(0.25 0.015 250);cursor:pointer" style-hover="border-color:oklch(0.65 0.2 250 / 0.5)">
+                <span style="width:8px;height:8px;border-radius:999px;background:{{ n.dotColor }};margin-top:6px;flex:none"></span>
+                <span style="width:34px;height:34px;border-radius:8px;background:{{ n.iconBg }};display:flex;align-items:center;justify-content:center;flex:none"><l-icon name="{{ n.icon }}" style="width:16px;height:16px;color:{{ n.iconColor }}"></l-icon></span>
+                <span style="flex:1;min-width:0">
+                  <span style="display:block;font-size:14px;font-weight:{{ n.weight }};color:oklch(0.95 0.005 260)">{{ n.title }}</span>
+                  <span style="display:block;font-size:12px;color:oklch(0.6 0.01 260);margin-top:2px;line-height:1.6">{{ n.detail }}</span>
+                </span>
+                <span style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none">
+                  <span style="font-size:11px;color:oklch(0.6 0.01 260)">{{ n.time }}</span>
+                  <span style="font-size:12px;color:oklch(0.65 0.2 250)">前往处理 →</span>
+                </span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;initialView&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;dashboard&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;dashboard&quot;,&quot;assistant&quot;,&quot;agents-admin&quot;,&quot;agents&quot;,&quot;skill-hub&quot;,&quot;knowledge-admin&quot;,&quot;workflows&quot;,&quot;security&quot;,&quot;members&quot;,&quot;saas-dashboard&quot;,&quot;tenants&quot;],&quot;section&quot;:&quot;导航&quot;},&quot;notificationCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:3,&quot;min&quot;:0,&quot;max&quot;:99,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;导航&quot;}}">
+class Component extends DCLogic {
+  state = { view: 'dashboard', openSections: ['工作台', 'Agent', 'Skill'], userMenu: false, tenantMenu: false, D: null, searchQ: '', searchOpen: false, notifRead: {}, notifFilter: 'all', tenantId: 't-001' };
+  notifs() {
+    return [
+      { id: 'n1', cat: '审批', icon: 'shield', color: 'oklch(0.55 0.22 25)', title: 'HR系统接口 Skill 待审核（高风险）', detail: '张明 提交发布审核 · 检出敏感字段 3 项（身份证 / 银行账户 / 薪资）', time: '今天 10:30', view: 'security' },
+      { id: 'n2', cat: '配额', icon: 'gauge', color: 'oklch(0.65 0.18 80)', title: '客服部 Token 配额告警 92%', detail: '超过 90% 告警阈值，已通知部门负责人王芳，建议调整月限额', time: '今天 09:15', view: 'tenant-admin' },
+      { id: 'n3', cat: '账单', icon: 'receipt', color: '#eab308', title: '品器资产 4 月账单待支付 ¥2,890', detail: 'BILL_20260501_0101 · 请于 5 月 15 日前完成支付', time: '昨天 10:00', view: 'billing' },
+      { id: 'n4', cat: '审批', icon: 'plug', color: 'oklch(0.65 0.2 250)', title: 'MCP 申请待审批 ×3', detail: '企业 CRM 连接器 / 飞书消息推送 / 运单轨迹数据库直连', time: '昨天 09:45', view: 'tenants' },
+      { id: 'n5', cat: '配额', icon: 'alert-triangle', color: 'oklch(0.55 0.22 25)', title: '云帆物流 Token 超配额 8%', detail: '本月 5.40M / 5.00M，超量部分按 1.5 倍计费，接近限流阈值', time: '07-16 21:04', view: 'tenants' },
+      { id: 'n6', cat: '系统', icon: 'lock', color: 'oklch(0.55 0.22 25)', title: '登录安全告警', detail: '已离职账号 wugang@company.com 连续 3 次登录失败，来源 IP 112.10.66.208', time: '07-17 10:21', view: 'tenant-admin' },
+      { id: 'n7', cat: '系统', icon: 'git-branch', color: '#22c55e', title: 'Workflow「Github热榜日报」发布 v13', detail: '发布前检查通过（1 项警告：HTTP 请求缺少失败分支）', time: '07-15 18:02', view: 'workflows' },
+      { id: 'n8', cat: '系统', icon: 'users', color: 'oklch(0.55 0.18 180)', title: '12 名新成员待激活', detail: '批量导入外包人员，等待首次登录激活（角色：受限访客）', time: '07-16 11:30', view: 'members' }
+    ];
+  }
+  titles() {
+    return { dashboard: '监控', 'agents-admin': 'Agent 管理', 'skill-hub': 'Skill Hub', security: '安全管理', workflows: '工作流管理', assistant: '个人助理', agents: '数字员工', members: '成员管理', 'knowledge-admin': '知识库管理', tenants: '租户管理', knowledge: '知识库问答', 'my-skills': '我的 Skill', 'saas-dashboard': '运营看板', keys: 'Key 管理', billing: '账单管理', settings: '系统设置', 'tenant-admin': '租户内部管理', notifications: '通知中心' };
+  }
+  nav() {
+    return [
+      { title: '工作台', items: [{ t: '监控', i: 'layout-dashboard', v: 'dashboard' }, { t: '个人助理', i: 'message-square', v: 'assistant' }] },
+      { title: 'Agent', items: [{ t: 'Agent 管理', i: 'bot', v: 'agents-admin', b: 6 }, { t: '数字员工', i: 'bot', v: 'agents' }] },
+      { title: 'Skill', items: [{ t: 'Skill Hub', i: 'boxes', v: 'skill-hub', b: 8 }, { t: '我的 Skill', i: 'zap', v: 'my-skills' }] },
+      { title: '知识库', items: [{ t: '知识库管理', i: 'file-text', v: 'knowledge-admin' }, { t: '知识库问答', i: 'database', v: 'knowledge' }] },
+      { title: '工作流', items: [{ t: '工作流管理', i: 'git-branch', v: 'workflows' }] },
+      { title: '安全与管理', items: [{ t: '安全管理', i: 'shield', v: 'security', b: 3 }, { t: '成员管理', i: 'users', v: 'members' }, { t: '租户内部管理', i: 'network', v: 'tenant-admin' }] },
+      { title: '平台管理', items: [{ t: '运营看板', i: 'bar-chart-3', v: 'saas-dashboard' }, { t: '租户管理', i: 'building-2', v: 'tenants' }, { t: 'Key 管理', i: 'key', v: 'keys' }, { t: '账单管理', i: 'credit-card', v: 'billing' }] }
+    ];
+  }
+  valid(v) { return !!this.titles()[v]; }
+  pick(v) { this.setState({ searchQ: '', searchOpen: false }); this.setView(v); }
+  setView(v, push) {
+    const sec = this.nav().find(s => s.items.some(i => i.v === v));
+    this.setState(s => ({
+      view: v, userMenu: false, tenantMenu: false,
+      openSections: sec && !s.openSections.includes(sec.title) ? s.openSections.concat([sec.title]) : s.openSections
+    }));
+    if (push !== false) { try { history.replaceState(null, '', '#' + v); } catch (e) {} }
+  }
+  componentDidMount() {
+    import('./data.js').then(m => this.setState({ D: m })).catch(e => console.error('search index', e));
+    const h = (location.hash || '').replace('#', '');
+    if (h && this.valid(h)) this.setView(h, false);
+    else if (this.props.initialView && this.valid(this.props.initialView)) this.setView(this.props.initialView, false);
+    this._hash = () => { const v = (location.hash || '').replace('#', ''); if (this.valid(v) && v !== this.state.view) this.setView(v, false); };
+    window.addEventListener('hashchange', this._hash);
+    this._doc = (e) => { if (!e.target.closest || !e.target.closest('[data-menuroot]')) { if (this.state.userMenu || this.state.tenantMenu || this.state.searchOpen) this.setState({ userMenu: false, tenantMenu: false, searchOpen: false }); } };
+    document.addEventListener('mousedown', this._doc);
+  }
+  componentWillUnmount() { window.removeEventListener('hashchange', this._hash); document.removeEventListener('mousedown', this._doc); }
+  renderVals() {
+    const v = this.state.view;
+    const unread = this.notifs().filter(n => !this.state.notifRead[n.id]).length;
+    const tList = [
+      { id: 't-001', name: '北京品器资产管理有限公司', short: '品器资产', meta: '企业版 · 1,245 人', avBg: 'oklch(0.65 0.2 250 / 0.2)', avColor: 'oklch(0.65 0.2 250)' },
+      { id: 't-005', name: '华润三九医药股份有限公司', short: '华润三九', meta: '专业版 · 2,134 人', avBg: 'rgba(239,68,68,0.16)', avColor: '#ef4444' }
+    ];
+    const curT = tList.find(t => t.id === this.state.tenantId) || tList[0];
+    const q = this.state.searchQ.trim().toLowerCase();
+    let results = [];
+    if (q) {
+      const D = this.state.D;
+      const push = (arr) => { results = results.concat(arr); };
+      push(this.nav().flatMap(s => s.items).filter(i => i.t.toLowerCase().includes(q)).map(i => ({ icon: i.i, label: i.t, sub: '打开页面', kind: '页面', bg: 'oklch(0.65 0.2 250 / 0.12)', color: 'oklch(0.65 0.2 250)', go: () => this.pick(i.v) })));
+      if (D) {
+        push(D.agents.filter(a => (a.name + a.department + a.description).toLowerCase().includes(q)).map(a => ({ icon: 'bot', label: a.name, sub: a.department + ' · ' + a.model, kind: 'Agent', bg: 'oklch(0.65 0.2 250 / 0.12)', color: 'oklch(0.65 0.2 250)', go: () => this.pick('agents-admin') })));
+        push(D.skills.filter(s => (s.name + s.description).toLowerCase().includes(q)).map(s => ({ icon: 'zap', label: s.name, sub: s.type + ' · ' + s.publisher, kind: 'Skill', bg: 'oklch(0.55 0.18 180 / 0.12)', color: 'oklch(0.55 0.18 180)', go: () => this.pick('skill-hub') })));
+        push(D.knowledgeBases.filter(k => (k.name + k.description).toLowerCase().includes(q)).map(k => ({ icon: 'folder-open', label: k.name, sub: k.documents + ' 文档 · ' + k.size, kind: '知识库', bg: 'rgba(168,85,247,0.12)', color: '#a855f7', go: () => this.pick('knowledge-admin') })));
+        push(D.workflowApps.filter(w => (w.name + w.description).toLowerCase().includes(q)).map(w => ({ icon: 'git-branch', label: w.name, sub: w.description, kind: '工作流', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', go: () => this.pick('workflows') })));
+        push(D.tenants.filter(t => (t.name + t.adminEmail).toLowerCase().includes(q)).map(t => ({ icon: 'building-2', label: t.name, sub: t.adminEmail, kind: '租户', bg: 'rgba(34,197,94,0.12)', color: '#22c55e', go: () => this.pick('tenants') })));
+        push(D.members.filter(m => (m.name + m.email + m.department).toLowerCase().includes(q)).map(m => ({ icon: 'user', label: m.name, sub: m.department + ' · ' + m.email, kind: '成员', bg: 'rgba(249,115,22,0.12)', color: '#f97316', go: () => this.pick('members') })));
+      }
+      results = results.slice(0, 8);
+    }
+    const sections = this.nav().map(sec => {
+      const open = this.state.openSections.includes(sec.title);
+      const hasActive = sec.items.some(i => i.v === v);
+      return {
+        title: sec.title, open: open, openAttr: open ? '1' : '0', activeAttr: hasActive ? '1' : '0',
+        toggle: () => this.setState(s => ({ openSections: s.openSections.includes(sec.title) ? s.openSections.filter(t => t !== sec.title) : s.openSections.concat([sec.title]) })),
+        items: sec.items.map(it => ({
+          title: it.t, icon: it.i, badge: it.b || 0, hasBadge: !!it.b,
+          activeAttr: v === it.v ? '1' : '0',
+          go: () => this.setView(it.v)
+        }))
+      };
+    });
+    return {
+      sections: sections,
+      pageTitle: this.titles()[v] || '监控',
+      notifCount: unread,
+      userMenu: this.state.userMenu, tenantMenu: this.state.tenantMenu,
+      toggleUserMenu: () => this.setState(s => ({ userMenu: !s.userMenu, tenantMenu: false })),
+      toggleTenantMenu: () => this.setState(s => ({ tenantMenu: !s.tenantMenu, userMenu: false })),
+      closeMenus: () => this.setState({ userMenu: false, tenantMenu: false }),
+      curTenantShort: curT.short,
+      tenantOpts: tList.map(t => ({
+        name: t.name, meta: t.meta, initial: t.short[0], avBg: t.avBg, avColor: t.avColor,
+        active: t.id === this.state.tenantId,
+        pick: () => this.setState({ tenantId: t.id, tenantMenu: false })
+      })),
+      goTenantSettings: () => this.setView('tenant-admin'),
+      goTenantMgmt: () => this.setView('tenants'),
+      goSettings: () => this.setView('settings'),
+      isDashboard: v === 'dashboard',
+      isAssistant: v === 'assistant',
+      isAgentsAdmin: v === 'agents-admin',
+      isAgents: v === 'agents',
+      isSkillHub: v === 'skill-hub' || v === 'my-skills',
+      isKnowledge: v === 'knowledge-admin',
+      isKnowledgeQA: v === 'knowledge',
+      isWorkflows: v === 'workflows',
+      isSecurity: v === 'security',
+      isMembers: v === 'members',
+      isTenants: v === 'tenants',
+      isSaas: v === 'saas-dashboard',
+      isTenantAdmin: v === 'tenant-admin',
+      isKeys: v === 'keys',
+      isBilling: v === 'billing',
+      isSettings: v === 'settings',
+      isNotifications: v === 'notifications',
+      goNotifications: () => this.setView('notifications'),
+      hasUnread: unread > 0,
+      markAllRead: () => { const r = {}; this.notifs().forEach(n => { r[n.id] = true; }); this.setState({ notifRead: r }); },
+      notifFilters: [['all', '全部'], ['审批', '待审批'], ['配额', '配额'], ['账单', '账单'], ['系统', '系统']].map(([fv, label]) => {
+        const on = this.state.notifFilter === fv;
+        return { label, go: () => this.setState({ notifFilter: fv }), bg: on ? 'oklch(0.65 0.2 250)' : 'transparent', color: on ? 'oklch(0.98 0 0)' : 'oklch(0.95 0.005 260)', border: on ? 'oklch(0.65 0.2 250)' : 'oklch(0.25 0.015 250)' };
+      }),
+      notifications: this.notifs().filter(n => this.state.notifFilter === 'all' || n.cat === this.state.notifFilter).map(n => {
+        const read = !!this.state.notifRead[n.id];
+        return {
+          title: n.title, detail: n.detail, time: n.time, icon: n.icon,
+          iconColor: n.color, iconBg: 'oklch(0.2 0.015 250)',
+          dotColor: read ? 'transparent' : 'oklch(0.65 0.2 250)',
+          cardBg: read ? 'oklch(0.14 0.015 250 / 0.6)' : 'oklch(0.14 0.015 250)',
+          weight: read ? 400 : 600,
+          open: () => { this.setState(s => ({ notifRead: Object.assign({}, s.notifRead, { [n.id]: true }) })); this.setView(n.view); }
+        };
+      }),
+      searchQ: this.state.searchQ,
+      setSearchQ: (e) => this.setState({ searchQ: e.target.value, searchOpen: true }),
+      searchFocus: () => this.setState({ searchOpen: true }),
+      searchOpen: this.state.searchOpen,
+      searchResults: results,
+      searchEmpty: this.state.searchQ.trim().length > 0 && results.length === 0,
+      searchHint: results.length > 0,
+      searchKeyDown: (e) => {
+        if (e.key === 'Enter' && results.length) results[0].go();
+        if (e.key === 'Escape') this.setState({ searchOpen: false });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

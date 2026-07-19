@@ -9,23 +9,6 @@ export const metadata: Metadata = {
   title: 'AIPaddle - AI 业务赋能平台',
   description: '企业级 AI Agent 与 Skill 管理平台，支持本地CC、企微对话等多场景接入',
   applicationName: 'AIPaddle',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
 }
 
 export default function RootLayout({

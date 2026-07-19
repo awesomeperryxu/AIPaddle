@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./licon.js"></script>
+<style>
+  body{margin:0;background:oklch(0.1 0.01 250);color:oklch(0.95 0.005 260);font-family:'Geist',-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color-scheme:dark}
+  a{color:oklch(0.65 0.2 250);text-decoration:none} a:hover{color:oklch(0.75 0.16 250)}
+  l-icon{display:inline-flex;flex:none;line-height:0} l-icon svg{width:100%;height:100%}
+  input,button{font-family:inherit}
+  input::placeholder{color:oklch(0.6 0.01 260 / 0.7)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.28 0.015 250);border-radius:5px;border:2px solid oklch(0.1 0.01 250)}
+  [data-kbcard][data-active="1"]{border-color:oklch(0.65 0.2 250) !important;box-shadow:0 0 0 1px oklch(0.65 0.2 250)}
+</style>
+</helmet>
+<div data-screen-label="知识库管理" style="display:flex;gap:24px;align-items:flex-start">
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h1 style="margin:0;font-size:24px;font-weight:600;color:oklch(0.95 0.005 260)">知识库管理</h1>
+        <p style="margin:2px 0 0;font-size:14px;color:oklch(0.6 0.01 260)">管理企业知识文档</p>
+      </div>
+      <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;font-size:14px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3)" style-hover="filter:brightness(1.12)"><l-icon name="plus" style="width:16px;height:16px"></l-icon>创建知识库</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:8px;background:oklch(0.65 0.2 250 / 0.1);display:flex;align-items:center;justify-content:center"><l-icon name="database" style="width:20px;height:20px;color:oklch(0.65 0.2 250)"></l-icon></div>
+        <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">5</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">知识库数量</p></div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:8px;background:oklch(0.55 0.18 180 / 0.1);display:flex;align-items:center;justify-content:center"><l-icon name="file-text" style="width:20px;height:20px;color:oklch(0.55 0.18 180)"></l-icon></div>
+        <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">563</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">总文档数</p></div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:8px;background:rgba(34,197,94,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="check-circle-2" style="width:20px;height:20px;color:#22c55e"></l-icon></div>
+        <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">4</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">已完成向量化</p></div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px;display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:8px;background:rgba(234,179,8,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="clock" style="width:20px;height:20px;color:#eab308"></l-icon></div>
+        <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">1</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">处理中</p></div>
+      </div>
+    </div>
+    <div style="position:relative">
+      <l-icon name="search" style="width:16px;height:16px;color:oklch(0.6 0.01 260);position:absolute;left:12px;top:50%;transform:translateY(-50%)"></l-icon>
+      <input placeholder="搜索知识库..." value="{{ search }}" onInput="{{ setSearch }}" style="width:100%;height:38px;font-size:14px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:0 12px 0 36px;color:oklch(0.95 0.005 260);outline:none" style-focus="border-color:oklch(0.65 0.2 250)">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <sc-for list="{{ list }}" as="kb" hint-placeholder-count="4">
+        <div data-kbcard="1" data-active="{{ kb.activeAttr }}" onClick="{{ kb.select }}" style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px;cursor:pointer;transition:border-color .15s" style-hover="border-color:oklch(0.65 0.2 250 / 0.5)">
+          <div style="display:flex;align-items:flex-start;gap:16px">
+            <div style="width:48px;height:48px;border-radius:12px;background:oklch(0.65 0.2 250 / 0.1);display:flex;align-items:center;justify-content:center;flex:none"><l-icon name="folder-open" style="width:24px;height:24px;color:oklch(0.65 0.2 250)"></l-icon></div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <h3 style="margin:0;font-size:15px;font-weight:500;color:oklch(0.95 0.005 260)">{{ kb.name }}</h3>
+                <span style="font-size:12px;padding:2px 8px;display:inline-flex;align-items:center;gap:4px;border-radius:999px;background:{{ kb.stBg }};color:{{ kb.stColor }}"><l-icon name="{{ kb.stIcon }}" style="width:12px;height:12px"></l-icon>{{ kb.stLabel }}</span>
+              </div>
+              <p style="margin:0;font-size:14px;color:oklch(0.6 0.01 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ kb.description }}</p>
+              <div style="display:flex;align-items:center;gap:16px;margin-top:8px;font-size:12px;color:oklch(0.6 0.01 260)">
+                <span style="display:flex;align-items:center;gap:4px"><l-icon name="file-text" style="width:12px;height:12px"></l-icon>{{ kb.documents }} 文档</span>
+                <span>{{ kb.size }}</span>
+                <span>更新于 {{ kb.lastUpdated }}</span>
+              </div>
+            </div>
+            <div style="position:relative;flex:none">
+              <button onClick="{{ kb.toggleMenu }}" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="more-horizontal" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+              <sc-if value="{{ kb.menuOpen }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;right:0;top:calc(100% + 4px);z-index:50;width:160px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,0.5)">
+                  <button onClick="{{ kb.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="upload" style="width:15px;height:15px"></l-icon>上传文档</button>
+                  <button onClick="{{ kb.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="refresh-cw" style="width:15px;height:15px"></l-icon>重新向量化</button>
+                  <button onClick="{{ kb.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="settings" style="width:15px;height:15px"></l-icon>设置</button>
+                  <div style="height:1px;background:oklch(0.25 0.015 250);margin:4px 0"></div>
+                  <button onClick="{{ kb.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.55 0.22 25);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)">删除知识库</button>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+    <div style="width:420px;flex:none;display:flex;flex-direction:column;gap:16px">
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+          <div style="width:48px;height:48px;border-radius:12px;background:oklch(0.65 0.2 250 / 0.1);display:flex;align-items:center;justify-content:center;flex:none"><l-icon name="folder-open" style="width:24px;height:24px;color:oklch(0.65 0.2 250)"></l-icon></div>
+          <div style="flex:1;min-width:0">
+            <h3 style="margin:0;font-size:16px;font-weight:600;color:oklch(0.95 0.005 260)">{{ sel.name }}</h3>
+            <p style="margin:2px 0 0;font-size:13px;color:oklch(0.6 0.01 260)">{{ sel.description }}</p>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+          <div style="padding:12px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.5);text-align:center"><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">{{ sel.documents }}</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">文档数量</p></div>
+          <div style="padding:12px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.5);text-align:center"><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">{{ sel.size }}</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">存储大小</p></div>
+        </div>
+        <div style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <h4 style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">向量化状态</h4>
+            <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:{{ sel.stBg }};color:{{ sel.stColor }}">{{ sel.stLabel }}</span>
+          </div>
+          <sc-if value="{{ sel.isProcessing }}" hint-placeholder-val="{{ false }}">
+            <div style="height:8px;background:oklch(0.2 0.015 250);border-radius:999px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:65%;background:oklch(0.65 0.2 250);border-radius:999px"></div></div>
+            <p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">正在处理: 技术架构文档.pdf (65%)</p>
+          </sc-if>
+          <sc-if value="{{ sel.isDone }}" hint-placeholder-val="{{ true }}">
+            <p style="margin:0;font-size:14px;color:oklch(0.6 0.01 260)">所有文档已完成向量化处理</p>
+          </sc-if>
+        </div>
+        <div style="margin-bottom:20px">
+          <h4 style="margin:0 0 12px;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">最近文档</h4>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.3)"><span style="display:flex;align-items:center;gap:8px;font-size:14px;color:oklch(0.95 0.005 260)"><l-icon name="file-text" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon>员工手册 v2.0.pdf</span><button style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:4px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="eye" style="width:12px;height:12px;color:oklch(0.95 0.005 260)"></l-icon></button></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.3)"><span style="display:flex;align-items:center;gap:8px;font-size:14px;color:oklch(0.95 0.005 260)"><l-icon name="file-text" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon>请假制度说明.docx</span><button style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:4px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="eye" style="width:12px;height:12px;color:oklch(0.95 0.005 260)"></l-icon></button></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.3)"><span style="display:flex;align-items:center;gap:8px;font-size:14px;color:oklch(0.95 0.005 260)"><l-icon name="file-text" style="width:16px;height:16px;color:oklch(0.6 0.01 260)"></l-icon>福利政策.md</span><button style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:none;background:none;border-radius:4px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="eye" style="width:12px;height:12px;color:oklch(0.95 0.005 260)"></l-icon></button></div>
+          </div>
+        </div>
+        <div style="margin-bottom:20px">
+          <h4 style="margin:0 0 12px;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">权限范围</h4>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <span style="font-size:12px;padding:3px 10px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">全员可访问</span>
+            <span style="font-size:12px;padding:3px 10px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">HR政策顾问 Agent</span>
+            <span style="font-size:12px;padding:3px 10px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">智能客服助手 Agent</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;font-size:14px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:8px;cursor:pointer" style-hover="filter:brightness(1.12)"><l-icon name="upload" style="width:16px;height:16px"></l-icon>上传文档</button>
+          <button style="display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;font-size:14px;font-weight:500;background:transparent;color:oklch(0.95 0.005 260);border:1px solid oklch(0.25 0.015 250);border-radius:8px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="eye" style="width:16px;height:16px"></l-icon>测试召回</button>
+        </div>
+      </div>
+      <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+        <h4 style="margin:0 0 12px;font-size:14px;font-weight:600;color:oklch(0.95 0.005 260)">支持的文档格式</h4>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <span style="font-size:12px;padding:3px 10px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">PDF</span>
+          <span style="font-size:12px;padding:3px 10px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">Word</span>
+          <span style="font-size:12px;padding:3px 10px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">Excel</span>
+          <span style="font-size:12px;padding:3px 10px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">Markdown</span>
+          <span style="font-size:12px;padding:3px 10px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">TXT</span>
+          <span style="font-size:12px;padding:3px 10px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">HTML</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { D: null, search: '', selId: null, menuId: null };
+  componentDidMount() {
+    import('./data.js').then(m => this.setState({ D: m })).catch(e => console.error('data load', e));
+    this._doc = () => { if (this.state.menuId) this.setState({ menuId: null }); };
+    document.addEventListener('click', this._doc);
+  }
+  componentWillUnmount() { document.removeEventListener('click', this._doc); }
+  stCfg(s) {
+    return {
+      processing: { label: '处理中', icon: 'clock', bg: 'rgba(234,179,8,0.1)', color: '#eab308' },
+      completed: { label: '已完成', icon: 'check-circle-2', bg: 'rgba(34,197,94,0.1)', color: '#22c55e' },
+      failed: { label: '失败', icon: 'x-circle', bg: 'oklch(0.55 0.22 25 / 0.1)', color: 'oklch(0.55 0.22 25)' }
+    }[s];
+  }
+  decorate(kb) {
+    const st = this.stCfg(kb.vectorStatus);
+    return Object.assign({}, kb, {
+      stLabel: st.label, stIcon: st.icon, stBg: st.bg, stColor: st.color,
+      isProcessing: kb.vectorStatus === 'processing', isDone: kb.vectorStatus !== 'processing',
+      activeAttr: this.state.selId === kb.id ? '1' : '0',
+      menuOpen: this.state.menuId === kb.id,
+      select: () => this.setState({ selId: kb.id }),
+      toggleMenu: (e) => { e.stopPropagation(); this.setState(s => ({ menuId: s.menuId === kb.id ? null : kb.id })); },
+      closeMenu: (e) => { e.stopPropagation(); this.setState({ menuId: null }); }
+    });
+  }
+  renderVals() {
+    const D = this.state.D;
+    const term = this.state.search.toLowerCase();
+    const all = D ? D.knowledgeBases : [];
+    const selRaw = all.find(k => k.id === this.state.selId);
+    return {
+      search: this.state.search,
+      setSearch: (e) => this.setState({ search: e.target.value }),
+      list: all.filter(k => k.name.toLowerCase().includes(term)).map(k => this.decorate(k)),
+      hasSel: !!selRaw,
+      sel: selRaw ? this.decorate(selRaw) : {}
+    };
+  }
+}
+</script>
+</body>
+</html>
