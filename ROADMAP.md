@@ -49,9 +49,9 @@
 | 0.4 | CLAUDE.md 入库 | 🔄 | 本次生成，放仓库根目录 |
 | 0.5 | ROADMAP.md 入库（本文件） | 🔄 | 放仓库根目录 |
 | 0.6 | 建立 GitHub Issues 工作流 | 🔄 | Issue 模板已入库；标签体系已定义（`type:ui/logic/api/infra/slice-acceptance` + `flag:tenant-data/rag`，见 TESTING_WORKFLOW.md §1）；待做：在 GitHub 上创建这些标签、把阶段 2-3 任务批量建成 Issue |
-| 0.7 | 服务器部署链路（43.173.99.218，Ubuntu） | 🔄 待验收 | 已全新部署 main → `/opt/aipaddle`（PM2 托管 3000 + 开机自启）+ Nginx 反代到 `https://aipaddle.net`（复用证书）；旧 Vite 原型已清除；Issue #52。待用户亲验放行改 ✅ |
+| 0.7 | 服务器部署链路（43.173.99.218，Ubuntu） | ✅ | 已全新部署 main → `/opt/aipaddle`（PM2 托管 3000 + 开机自启）+ Nginx 反代到 `https://aipaddle.net`；用户隐私窗口登录验收通过（2026-07-20）；Issue #52 已关闭 |
 | 0.8 | 自动化部署（GitHub Actions：push main → 自动部署到服务器 + 部署后冒烟检查） | ⬜ | 推一次代码，线上自动更新 |
-| 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **✅ 0.9a(D1-C-1) Playwright 已装+首跑**：装 chromium、加 `test:e2e`/`test:smoke` 脚本，原型冒烟 6 条全绿（P-GLB-01/02/04、P-DSH-01、P-AGT-02、P-WF-01；P-AGT-01/03、P-WF-02 等为人工记录型，不做自动化）。**待做**：0.9b 装 Vitest+RTL、0.9c 启用 CI 测试步骤 + 开 main 分支保护 |
+| 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **✅ 0.9a(D1-C-1) Playwright 已装+首跑**：装 chromium、加 `test:e2e`/`test:smoke` 脚本，原型冒烟 6 条全绿（P-GLB-01/02/04、P-DSH-01、P-AGT-02、P-WF-01；P-AGT-01/03、P-WF-02 等为人工记录型，不做自动化）。**✅ 0.9b(D1-C-2) Vitest+RTL 已装+启用 CI**：`vitest.config.ts`（jsdom）+ `tests/unit/setup.ts`，加 `test`/`test:watch` 脚本，样例 7 条全绿（cn 工具 4 + Button 组件 3），ci.yml 已取消注释单元测试步骤。**待做**：0.9c 开 main 分支保护 |
 
 ---
 
