@@ -89,6 +89,22 @@ export async function updateAgent(
   return data ? mapRow(data as Row) : null
 }
 
+// 软删除单个 Agent（置 deleted_at）。RLS 兜底租户隔离：他租户 id 影响 0 行 → false → 路由 404。
+// 已删除的再删也返回 false（`.is('deleted_at', null)` 只命中未删行），保证幂等且不泄露存在性。
+export async function deleteAgent(_ctx: RequestContext, id: string): Promise<boolean> {
+  if (!UUID_RE.test(id)) return false
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('agents')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select('id')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return !!data
+}
+
 export async function createAgent(
   ctx: RequestContext,
   input: { name: string; department?: string; description?: string },

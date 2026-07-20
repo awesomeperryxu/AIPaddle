@@ -93,9 +93,11 @@ const usageScenarios = [
 export function AgentsAdminView({
   agents = [],
   canCreate = false,
+  canDelete = false,
 }: {
   agents?: Agent[];
   canCreate?: boolean;
+  canDelete?: boolean;
 }) {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -107,6 +109,23 @@ export function AgentsAdminView({
   const [form, setForm] = useState({ name: '', department: '', description: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // 删除 Agent（软删除）
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleDelete(agent: Agent) {
+    if (deletingId) return;
+    if (!window.confirm(`确定删除 Agent「${agent.name}」？删除后可在回收站找回（软删除）。`)) return;
+    setDeletingId(agent.id);
+    try {
+      await apiFetch(`/api/agents/${agent.id}`, { method: 'DELETE' });
+      router.refresh(); // 重新从服务端拉取列表，删除项消失
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '删除失败');
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function handleCreate() {
     if (!form.name.trim()) {
@@ -345,10 +364,19 @@ export function AgentsAdminView({
                           发布
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem className="text-destructive">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        删除
-                      </DropdownMenuItem>
+                      {canDelete && (
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          disabled={deletingId === agent.id}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            handleDelete(agent);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          {deletingId === agent.id ? '删除中...' : '删除'}
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
