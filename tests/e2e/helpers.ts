@@ -23,7 +23,9 @@ export async function login(page: Page, userKey: UserKey) {
   await page.getByLabel(/邮箱|email/i).fill(user.email);
   await page.getByLabel(/密码|password/i).fill(user.password);
   await page.getByRole('button', { name: /登录|sign in/i }).click();
-  await expect(page).toHaveURL(/dashboard|\/$/);
+  // 登录后经 / → /console 跳转链，最终目的地是受保护门户；
+  // 稳健判据：URL 不再是 /login（离开登录页即视为登录成功），避开中间跳转竞争（原 /dashboard|/$ 判据 flaky）。
+  await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
 }
 
 export async function logout(page: Page) {

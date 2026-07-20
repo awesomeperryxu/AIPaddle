@@ -109,9 +109,10 @@ const navSections: NavSection[] = [
 interface AppSidebarProps {
   activeView: string;
   onViewChange: (view: string) => void;
+  orgName?: string;
 }
 
-export function AppSidebar({ activeView, onViewChange }: AppSidebarProps) {
+export function AppSidebar({ activeView, onViewChange, orgName = '—' }: AppSidebarProps) {
   const [openSections, setOpenSections] = useState<string[]>(
     navSections.filter(s => s.defaultOpen).map(s => s.title)
   );
@@ -154,7 +155,7 @@ export function AppSidebar({ activeView, onViewChange }: AppSidebarProps) {
                 <div className="w-6 h-6 rounded bg-primary/20 flex items-center justify-center shrink-0">
                   <Building2 className="h-3.5 w-3.5 text-primary" />
                 </div>
-                <span className="text-xs font-medium text-sidebar-foreground truncate">示范科技</span>
+                <span className="text-xs font-medium text-sidebar-foreground truncate">{orgName}</span>
               </div>
               <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/60 shrink-0" />
             </button>
@@ -162,11 +163,7 @@ export function AppSidebar({ activeView, onViewChange }: AppSidebarProps) {
           <DropdownMenuContent align="start" className="w-52">
             <DropdownMenuItem>
               <Building2 className="h-4 w-4 mr-2" />
-              示范科技有限公司
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Building2 className="h-4 w-4 mr-2" />
-              测试租户
+              {orgName}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem>

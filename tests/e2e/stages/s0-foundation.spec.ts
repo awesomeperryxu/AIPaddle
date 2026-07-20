@@ -5,7 +5,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { stageGate, login, logout, expectNoText } from '../helpers';
-import { USERS, BAD_CREDENTIALS, AGENTS } from '../fixtures/test-data';
+import { USERS, BAD_CREDENTIALS, AGENTS, TENANTS } from '../fixtures/test-data';
 
 test.describe('S0-AUTH 认证 @stage0', () => {
   stageGate(0);
@@ -64,7 +64,7 @@ test.describe('S0-ISO 租户隔离专项 @stage0 @isolation', () => {
     await login(page, 'adminB');
     // 遍历核心页面，断言不出现 orgA 的标志性数据
     const orgAMarkers = [
-      '示范科技', // orgA 租户名
+      TENANTS.orgA.name, // orgA 真实租户名（seed：AIPaddle Demo）
       USERS.adminA.email,
       ...AGENTS.valid.map((a) => a.name),
     ];

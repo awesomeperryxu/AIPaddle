@@ -25,9 +25,11 @@ const TITLES: Record<string, string> = {
 
 export function DashboardShell({
   userName,
+  orgName = '—',
   children,
 }: {
   userName: string
+  orgName?: string
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -36,7 +38,7 @@ export function DashboardShell({
 
   return (
     <div className="flex h-screen bg-background text-foreground">
-      <AppSidebar activeView={activeView} onViewChange={(href) => router.push(`/${href}`)} />
+      <AppSidebar activeView={activeView} orgName={orgName} onViewChange={(href) => router.push(`/${href}`)} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="flex items-center justify-between border-b border-border px-6 h-12 shrink-0">

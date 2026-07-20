@@ -90,6 +90,28 @@ async function ensureAccount(
   return userId
 }
 
+// 幂等建 Agent：按 (org_id, name) 判重，供隔离用例提供可测的租户资源。
+async function ensureAgent(orgId: string, createdBy: string, name: string, department: string) {
+  const { data: existing } = await admin
+    .from('agents')
+    .select('id')
+    .eq('org_id', orgId)
+    .eq('name', name)
+    .maybeSingle()
+  if (existing) {
+    console.log(`  ✓ Agent 已存在: ${name} id=${existing.id}`)
+    return existing.id as string
+  }
+  const { data, error } = await admin
+    .from('agents')
+    .insert({ org_id: orgId, created_by: createdBy, name, department, status: 'published' })
+    .select('id')
+    .single()
+  if (error) throw new Error(`建 Agent 失败(${name}): ${error.message}`)
+  console.log(`  ✓ Agent: ${name} id=${data.id}`)
+  return data.id as string
+}
+
 async function main() {
   console.log('=== AIPaddle Seed 开始 ===\n')
 
@@ -98,11 +120,15 @@ async function main() {
   const tenantAcme = await ensureTenant('Acme Corp', 'acme-corp', 'standard')
 
   console.log('\n【账号】')
-  await ensureAccount('admin-demo@aipaddle.dev', 'Admin', tenantDemo.id, 'Demo 管理员')
+  const adminDemoId = await ensureAccount('admin-demo@aipaddle.dev', 'Admin', tenantDemo.id, 'Demo 管理员')
   await ensureAccount('dev@aipaddle.dev', 'Developer', tenantDemo.id, 'Demo 开发者')
   await ensureAccount('user@aipaddle.dev', 'User', tenantDemo.id, 'Demo 用户')
   await ensureAccount('auditor@aipaddle.dev', 'Auditor', tenantDemo.id, 'Demo 审计员')
-  await ensureAccount('admin-acme@acme.dev', 'Admin', tenantAcme.id, 'Acme 管理员')
+  const adminAcmeId = await ensureAccount('admin-acme@acme.dev', 'Admin', tenantAcme.id, 'Acme 管理员')
+
+  console.log('\n【Agent（每租户 1 个，供隔离/API 用例）】')
+  await ensureAgent(tenantDemo.id, adminDemoId, '客服问答助手', '市场部')
+  await ensureAgent(tenantAcme.id, adminAcmeId, 'Acme 内部助手', '综合部')
 
   console.log(`\n=== Seed 完成 ===`)
   console.log(`默认密码: ${DEFAULT_PASSWORD}`)
