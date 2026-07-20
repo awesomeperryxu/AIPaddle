@@ -25,14 +25,29 @@ export default async function DashboardPage() {
             <h1 className="text-xl font-semibold text-white">AIPaddle</h1>
             <p className="text-xs text-white/30 mt-0.5">AI 业务赋能平台</p>
           </div>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="text-xs text-white/40 hover:text-white/70 transition px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20"
+          <details className="relative">
+            <summary
+              data-testid="user-menu"
+              className="flex items-center gap-2 cursor-pointer list-none rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/70 hover:border-white/20 [&::-webkit-details-marker]:hidden"
             >
-              退出登录
-            </button>
-          </form>
+              {displayName}
+              <span className="text-white/30">▾</span>
+            </summary>
+            <div
+              role="menu"
+              className="absolute right-0 mt-2 w-36 rounded-lg border border-white/10 bg-[#161616] p-1 shadow-xl z-10"
+            >
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  role="menuitem"
+                  className="w-full text-left rounded-md px-3 py-2 text-xs text-white/70 hover:bg-white/5 hover:text-white transition"
+                >
+                  退出登录
+                </button>
+              </form>
+            </div>
+          </details>
         </header>
 
         {/* 欢迎卡片 */}

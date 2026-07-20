@@ -1,37 +1,35 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense } from 'react'
+import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { useSearchParams } from 'next/navigation'
+import { login } from '../actions'
+
+const ERR_MAP: Record<string, string> = {
+  email_format: '邮箱格式不正确',
+  need_password: '请输入密码',
+  invalid_credentials: '账号不存在或密码错误',
+  service: '登录服务暂不可用，请稍后重试或联系管理员',
+  callback_failed: '认证回调失败，请重试',
+}
+
+function SubmitButton() {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
+    >
+      {pending ? '登录中...' : '登录'}
+    </button>
+  )
+}
 
 function LoginForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(
-    searchParams.get('error') === 'callback_failed' ? '认证回调失败，请重试' : null
-  )
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-
-    const supabase = createClient()
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
-
-    if (authError) {
-      setError(authError.message === 'Invalid login credentials' ? '邮箱或密码错误' : authError.message)
-      setLoading(false)
-      return
-    }
-
-    router.push('/prototype/AIPaddle.dc.html')
-    router.refresh()
-  }
+  const error = ERR_MAP[searchParams.get('error') ?? '']
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-8">
@@ -43,40 +41,34 @@ function LoginForm() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form action={login} noValidate className="space-y-4">
         <div>
-          <label className="block text-xs text-white/50 mb-1.5">邮箱</label>
+          <label htmlFor="email" className="block text-xs text-white/50 mb-1.5">邮箱</label>
           <input
+            id="email"
+            name="email"
             type="email"
             autoComplete="email"
             required
-            value={email}
-            onChange={e => setEmail(e.target.value)}
             placeholder="you@company.com"
             className="w-full rounded-lg border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition"
           />
         </div>
 
         <div>
-          <label className="block text-xs text-white/50 mb-1.5">密码</label>
+          <label htmlFor="password" className="block text-xs text-white/50 mb-1.5">密码</label>
           <input
+            id="password"
+            name="password"
             type="password"
             autoComplete="current-password"
             required
-            value={password}
-            onChange={e => setPassword(e.target.value)}
             placeholder="••••••••"
             className="w-full rounded-lg border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition"
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
-        >
-          {loading ? '登录中...' : '登录'}
-        </button>
+        <SubmitButton />
       </form>
 
       <p className="mt-6 text-center text-xs text-white/30">
