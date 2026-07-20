@@ -11,6 +11,9 @@ export type Action =
   | 'agent:submit'
   | 'agent:review'
   | 'agent:chat'
+  | 'knowledge:create'
+  | 'knowledge:read'
+  | 'knowledge:delete'
   | 'member:manage'
   | 'audit:read'
 
@@ -23,6 +26,9 @@ const MATRIX: Record<Action, Role[]> = {
   'agent:submit': ['Admin', 'Developer'],
   'agent:review': ['Admin', 'Auditor'],
   'agent:chat': ['Admin', 'Developer', 'User', 'Auditor'],
+  'knowledge:create': ['Admin', 'Developer'],
+  'knowledge:read': ['Admin', 'Developer', 'User', 'Auditor'],
+  'knowledge:delete': ['Admin', 'Developer'],
   'member:manage': ['Admin'],
   'audit:read': ['Admin', 'Auditor'],
 }
