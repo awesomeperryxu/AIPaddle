@@ -50,7 +50,7 @@
 | 0.5 | ROADMAP.md 入库（本文件） | 🔄 | 放仓库根目录 |
 | 0.6 | 建立 GitHub Issues 工作流 | 🔄 | Issue 模板已入库；标签体系已定义（`type:ui/logic/api/infra/slice-acceptance` + `flag:tenant-data/rag`，见 TESTING_WORKFLOW.md §1）；待做：在 GitHub 上创建这些标签、把阶段 2-3 任务批量建成 Issue |
 | 0.7 | 服务器部署链路（43.173.99.218，Ubuntu） | ✅ | 已全新部署 main → `/opt/aipaddle`（PM2 托管 3000 + 开机自启）+ Nginx 反代到 `https://aipaddle.net`；用户隐私窗口登录验收通过（2026-07-20）；Issue #52 已关闭 |
-| 0.8 | 自动化部署（GitHub Actions：push main → 自动部署到服务器 + 部署后冒烟检查） | 🔄 | `.github/workflows/deploy.yml` 已入库，git-pull 方案（并发保护 + 6次冒烟retry）（2026-07-20，commit 2cca51e1）；Issue #55 进行中；**待做**：在 GitHub Settings → Secrets 添加 `DEPLOY_SSH_KEY`（ed25519 部署私钥）后 push main 即自动部署 |
+| 0.8 | 自动化部署（GitHub Actions：push main → 自动部署到服务器 + 部署后冒烟检查） | ✅ | `.github/workflows/deploy.yml` 已入库，git-pull 方案（并发保护 + 6次冒烟retry）；`DEPLOY_SSH_KEY`（ed25519）已配；冒烟 HTTP 200 通过（2026-07-20，run #29741561949）；Issue #55、#77 已关闭 |
 | 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **✅ 0.9a(D1-C-1) Playwright 已装+首跑**：装 chromium、加 `test:e2e`/`test:smoke` 脚本，原型冒烟 6 条全绿（P-GLB-01/02/04、P-DSH-01、P-AGT-02、P-WF-01；P-AGT-01/03、P-WF-02 等为人工记录型，不做自动化）。**✅ 0.9b(D1-C-2) Vitest+RTL 已装+启用 CI**：`vitest.config.ts`（jsdom）+ `tests/unit/setup.ts`，加 `test`/`test:watch` 脚本，样例 7 条全绿（cn 工具 4 + Button 组件 3），ci.yml 已取消注释单元测试步骤。**待做**：0.9c 开 main 分支保护 |
 
 ---
@@ -226,16 +226,16 @@
 | 2026-07-20 | 线上部署验证（B 道，D1-B 后）：aipaddle.net 登录/会话✅、`/console` iframe 门户✅、DashboardShell 侧边栏✅、`/api/agents` 返真实 DB 数据✅、**租户隔离实测通过**（orgA 见自己 agent，orgB 返空）；发现 4 缺陷入排期：#72 登录卡「登录中...」/ #73 侧边栏二级菜单不切换视图 / #74 监控指标+侧栏用户仍 mock / #75 agents-admin 未接 /api/agents | Issues #72-75 |
 | 2026-07-20 | D1-E 集成任务显式化（E道D1职责=合并/修红/部署，冲刺表原未排编号）：用 GitHub 侧原子合并集成绿灯 PR、合并后复核 main CI 绿、确认自动部署与线上正常；E道纪律=不产新功能，合并前检查无 MERGE_HEAD/锁避免撞车 | Issue #77 |
 
-## 当前状态小结（2026-07-20 · 第 5 次更新）
+## 当前状态小结（2026-07-20 · 第 6 次更新）
 
-- ✅ **已完成**：前端原型（11 个模块 UI）、PRD v1.04、UI 规范、实现审计、全部 ADR（001~008）、数据库 18 张表+seed、认证闭环（注册/登录/退出/中间件守卫）、服务器部署链路（0.7）、Vitest+RTL+Playwright 测试基建（0.9a/0.9b）、`/console` 受保护控制台门户
-- 🔄 **代码已实现待线上验收**：
-  - **0.8** deploy.yml 已入库，待配 `DEPLOY_SSH_KEY` GitHub Secret
-  - **3.3** `getRequestContext()` + RLS 隔离，35条测试全绿，待两租户账号亲手验收
-  - **3.4** RBAC 权限矩阵 + 403 门，35条测试全绿，待 User 角色验 403
-  - **3.5** `lib/data/agents` + `lib/api/client` + DashboardShell 完整外壳，待部署到服务器验收
-  - **3.7** L2+L3 测试 35 条 CI 全绿，租户隔离 L5 专项待补
-- ⬜ **下一步（按顺序）**：
-  1. 配 GitHub Secret `DEPLOY_SSH_KEY` → 触发自动部署 → 验收 3.3/3.4/3.5/3.6
-  2. 补 3.7 租户隔离专项（`supabase start` 本地栈），全绿后关检测关口 3
+- ✅ **已完成**：前端原型（11 个模块 UI）、PRD v1.04、UI 规范、实现审计、全部 ADR（001~009）、数据库 18 张表+seed、认证闭环、服务器部署链路（0.7）、**GitHub Actions 自动部署（0.8）**、Vitest+RTL+Playwright 测试基建（0.9a/0.9b）、Phase 3 全部（3.1~3.5/3.7，关口3已过）、D1-E 集成（#77）
+- 🔄 **进行中**：
+  - **3.6** 服务器部署人工验收（不阻塞 Phase 4）→ Issue #59
+  - **4.1.1** Agent CRUD（B道）→ Issue #62
+  - **4.2.2** 文档解析+向量化（A道）→ Issue #88
+  - **0.9c** main 分支保护（需在 GitHub Settings 操作，用户动作）
+  - **缺陷** #72/#73/#74/#75 排期修复
+- ⬜ **E道下一步（Phase 4）**：
+  - **4.5.1** 成员邀请/编辑/禁用/角色变更（当前开工）
+  - **4.5.2** 租户创建/编辑/停用+配额（4.5.1 完成后）
   3. 启动 Phase 4 切片 1：4.1.1 Agent CRUD API + 页面接通
