@@ -13,9 +13,11 @@ export async function createClient() {
         getAll() { return cookieStore.getAll() },
         setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
+            cookiesToSet.forEach(({ name, value, options }) => {
+              // 去掉 maxAge/expires，使 Supabase cookie 成为 session cookie
+              const { maxAge: _m, expires: _e, ...sessionOpts } = (options ?? {}) as Record<string, unknown>
+              cookieStore.set(name, value, sessionOpts as Parameters<typeof cookieStore.set>[2])
+            })
           } catch {} // Server Component 中 set 会抛出，忽略即可
         },
       },

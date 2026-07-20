@@ -1,6 +1,15 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+const SESSION_MAX_MS = 24 * 60 * 60 * 1000 // 24 小时强制重登
+const SESSION_START_COOKIE = 'aipaddle_session_start'
+
+// 将 Supabase cookie 的 maxAge/expires 去掉，使其成为 session cookie（关浏览器即清除）
+function toSessionCookieOptions(options: Record<string, unknown> = {}) {
+  const { maxAge: _m, expires: _e, ...rest } = options
+  return rest
+}
+
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -14,7 +23,7 @@ export async function proxy(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, toSessionCookieOptions(options as Record<string, unknown>))
           )
         },
       },
@@ -28,6 +37,30 @@ export async function proxy(request: NextRequest) {
   const isCallback = pathname.startsWith('/auth/callback')
   const isPrototype = pathname.startsWith('/prototype')
   const isPublic = isAuthPage || isCallback || isPrototype
+
+  // 已登录：检查 24h 会话有效期
+  if (user) {
+    const sessionStart = request.cookies.get(SESSION_START_COOKIE)?.value
+    const now = Date.now()
+
+    if (!sessionStart) {
+      // 首次请求，打上登录时间戳
+      supabaseResponse.cookies.set(SESSION_START_COOKIE, String(now), {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        // 不设 maxAge/expires → session cookie
+      })
+    } else if (now - parseInt(sessionStart) > SESSION_MAX_MS) {
+      // 超过 24 小时，强制退出
+      await supabase.auth.signOut()
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      const response = NextResponse.redirect(url)
+      response.cookies.delete(SESSION_START_COOKIE)
+      return response
+    }
+  }
 
   // 根路径：未登录 → /login，已登录 → 最新原型工作台
   if (pathname === '/') {
