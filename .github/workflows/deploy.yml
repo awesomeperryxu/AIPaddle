@@ -31,16 +31,16 @@ jobs:
           cd /opt/aipaddle
           export PATH="$HOME/.local/share/pnpm:$PATH"
 
-          # 保留 .env（密钥只存服务器，不进 GitHub）
-          cp -f .env /tmp/aipaddle.env.bak 2>/dev/null || true
+          # 保留 .env.local（密钥只存服务器，不进 GitHub）
+          cp -f .env.local /tmp/aipaddle.env.bak 2>/dev/null || true
 
           # 用 Actions 临时 token 拉取私有仓库最新 main（一次性 URL，不写入 remote）
           git fetch "https://x-access-token:${GH_PAT}@github.com/HELLOPERRYXU/AIPaddle.git" main
           git reset --hard FETCH_HEAD
 
-          # 恢复/校验 .env
-          [ -f .env ] || cp -f /tmp/aipaddle.env.bak .env 2>/dev/null || true
-          [ -f .env ] || { echo "FATAL: /opt/aipaddle/.env 缺失，终止部署"; exit 1; }
+          # 恢复/校验 .env.local
+          [ -f .env.local ] || cp -f /tmp/aipaddle.env.bak .env.local 2>/dev/null || true
+          [ -f .env.local ] || { echo "FATAL: /opt/aipaddle/.env.local 缺失，终止部署"; exit 1; }
 
           pnpm install --frozen-lockfile
           rm -rf .next
