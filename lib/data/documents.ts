@@ -38,6 +38,41 @@ function mapRow(r: DocRow): DocumentItem {
 
 const COLS = 'id,kb_id,filename,size_bytes,status,created_at'
 
+// ── 向量化(4.2.2)辅助 ──────────────────────────────────────
+/** 取文档存储路径（请求级 RLS，只能取到本租户的）。 */
+export async function getDocumentStoragePath(_ctx: RequestContext, id: string): Promise<string | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('documents')
+    .select('storage_path')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data as { storage_path: string } | null)?.storage_path ?? null
+}
+
+/** 从存储下载文件字节（系统级）。 */
+export async function downloadDocumentBytes(storagePath: string): Promise<ArrayBuffer> {
+  const admin = createAdminClient()
+  const { data, error } = await admin.storage.from(DOC_BUCKET).download(storagePath)
+  if (error || !data) throw new Error(`下载失败：${error?.message}`)
+  return data.arrayBuffer()
+}
+
+/** 更新文档状态（uploading/parsing/active/error）。 */
+export async function setDocumentStatus(
+  _ctx: RequestContext,
+  id: string,
+  status: 'uploading' | 'parsing' | 'active' | 'error',
+  errorMsg?: string,
+): Promise<void> {
+  const supabase = await createClient()
+  const patch: Record<string, unknown> = { status }
+  if (errorMsg !== undefined) patch.error_msg = errorMsg
+  await supabase.from('documents').update(patch).eq('id', id)
+}
+
 export async function listDocuments(_ctx: RequestContext, kbId?: string): Promise<DocumentItem[]> {
   const supabase = await createClient()
   let q = supabase.from('documents').select(COLS).is('deleted_at', null)
