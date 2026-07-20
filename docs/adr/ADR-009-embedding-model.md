@@ -24,7 +24,9 @@
 
 ## 决策
 
-**默认嵌入模型 = 阿里云百炼 `text-embedding-v3`，输出维度设为 1536，走 OpenAI 兼容接口。**
+**默认嵌入模型 = 阿里云百炼 `text-embedding-v4`，输出维度设为 1536，走 OpenAI 兼容接口。**
+
+> **修正（2026-07-20，4.2.2 实现时实测）**：起草时误记 `text-embedding-v3` 支持 1536。实测 DashScope **v3 维度上限为 1024**（合法值 `[64,128,256,512,768,1024]`，传 1536 报 400）；**v4 才支持 1536**。故改用 **`text-embedding-v4` @1536**，无需改 pgvector 列/迁移。代码实现（`lib/ai/index.ts`）已用 v4；本文档下方残留的"v3"表述均以 v4 为准。
 
 - 接口：`base_url = https://dashscope.aliyuncs.com/compatible-mode/v1`，OpenAI SDK 直接调，传 `dimensions=1536`。**与 ADR-003 的对话模型（Qwen）为同一供应商（阿里云百炼）、同一 `DASHSCOPE_API_KEY`**——`lib/llm` 里嵌入客户端与对话客户端只差 model 名，一家全包。
 - Key 管理：`DASHSCOPE_API_KEY` **只存服务器环境变量**（同 ADR-003 铁律，对话与嵌入共用这一把），call_logs / 用量单独记（嵌入调用也计量）。
@@ -33,7 +35,7 @@
 
 ### 理由
 
-1. **1536 维原生可选**：v3 支持通过 `dimensions` 指定 1536，正好对齐已落库的列，零改库。
+1. **1536 维支持**：v4 支持通过 `dimensions` 指定 1536（v3 上限 1024），正好对齐已落库的列，零改库。
 2. **中文强**：企业文档以中文为主，通义系对中文检索质量好，优于多数英文优先模型。
 3. **国内低延迟 + 免运维**：服务器在腾讯云国内，调阿里云百炼是境内互通，稳定性远好于境外 API（直接呼应 ADR-001 对海外链路的顾虑）；SaaS 接口无需自建 GPU/向量服务（呼应 ADR-001 不造轮子）。
 4. **OpenAI 兼容 + 同供应商**：适配成本几乎为零，与对话模型 Qwen 同为百炼 OpenAI 兼容接口，`lib/llm` 里只差 model 名。
@@ -44,7 +46,7 @@
 
 | 模型 | 1536 维 | 中文 | 国内访问 | 免运维 | 否决/取舍 |
 |------|:------:|:----:|:--------:|:------:|-----------|
-| **通义 text-embedding-v3**（选定） | ✅ 可指定 | 强 | ✅ 境内 | ✅ SaaS | — |
+| **通义 text-embedding-v4**（选定） | ✅ 可指定 1536 | 强 | ✅ 境内 | ✅ SaaS | — |
 | OpenAI text-embedding-3-small | ✅ 原生 1536 | 中 | ❌ 境外，延迟/稳定性差 | ✅ | 违背 ADR-001 海外链路顾虑；中文弱于通义 |
 | 智谱 embedding-3 | 需确认默认维（部分档位非 1536） | 强 | ✅ 境内 | ✅ | 维度需确认能否精确 1536；作**备选** |
 | BGE / bge-m3（开源自托管） | 默认 1024，需改维/微调 | 强 | ✅ 自托管 | ❌ 要自己部署 GPU | 违背"不造轮子"+ 运维负担；ADR-005 已定服务器不扛重服务 |
@@ -56,20 +58,20 @@
 
 1. **供应商锁定风险**：嵌入向量由具体模型产出，换模型需全量重灌。缓解：`chunks` 表已存 `embedding` + 建议加 `embedding_model` / `embedding_dim` 记录来源（migration 补丁交 A 道），便于将来识别与重灌；调用层抽象成 `lib/llm/embedding.ts` 单点，换供应商只改一处。
 2. **限流/配额**：批量灌库时嵌入调用量大，需在 4.2.2 做**批处理 + 限流 + 失败重试**，用量进计量（call_logs）。
-3. **1536 维成本/精度权衡**：v3 支持 512/768/1024/1536/2048，1536 精度高但存储与检索开销略大；已由数据库列锁定，本版不做可变维实验。
+3. **维度与精度**：v3 上限 1024；v4 支持 512/768/1024/1536/2048，1536 精度高但存储与检索开销略大；已由数据库列锁定，本版不做可变维实验。
 4. **归一化不一致**：务必统一"入库与查询用同一模型同一维同一归一化策略"，否则相似度失真——写进 4.2.2 实现清单。
 
 ---
 
 ## 连带决定与落地清单
 
-- 新增环境变量 `DASHSCOPE_API_KEY`（服务器）、常量 `EMBEDDING_MODEL='text-embedding-v3'` / `EMBEDDING_DIM=1536`——写入 `.env.local.example` 与 `lib/llm/embedding.ts`。
+- 新增环境变量 `DASHSCOPE_API_KEY`（服务器）、常量 `EMBEDDING_MODEL='text-embedding-v4'` / `EMBEDDING_DIM=1536`——写入 `.env.local.example` 与 `lib/llm/embedding.ts`。
 - `lib/llm/embedding.ts`：OpenAI 兼容客户端封装 `embed(texts: string[]): number[][]`，含批处理 + 限流 + 重试；4.2.2 落地。
 - **migration 补丁（交 A 道）**：`chunks` 加 `embedding_model text` / `embedding_dim int`，记录向量来源，便于换模型时识别重灌范围。
 - ADR-003 的「嵌入模型选型」遗留 → **本 ADR 结案**，ROADMAP 2.7 备注更新。
 
 ## 复审条件
 
-- 若实测通义 v3 中文检索质量或延迟不达标：切**智谱 embedding-3**（同为境内、需先确认可精确输出 1536 维）为备选，按上面单点抽象换 `lib/llm/embedding.ts` + 全量重灌。
+- 若实测通义 v4 中文检索质量或延迟不达标：切**智谱 embedding-3**（同为境内、需先确认可精确输出 1536 维）为备选，按上面单点抽象换 `lib/llm/embedding.ts` + 全量重灌。
 - 若未来引入多语言/跨境场景，再评估是否需要多模型路由（当前单模型足够，KISS）。
 - `chunks.embedding` 维度若因选型变化需改，`EMBEDDING_DIM` 常量、pgvector 列、已灌数据三者必须同步，属重大变更需重开本 ADR。
