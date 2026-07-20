@@ -11,7 +11,7 @@
 ## 2. 生成链路（五步）
 
 1. 画布右侧 Copilot 面板接收自然语言
-2. Kimi 2.5 function calling 输出**图操作 patch 序列**：`add_node / update_node_config / connect / remove_node / remove_edge`
+2. 通义 Qwen function calling 输出**图操作 patch 序列**：`add_node / update_node_config / connect / remove_node / remove_edge`
 3. 服务端逐条执行：每条过 zod Schema + 图结构校验（无 Start/End、成环、孤立节点、Code 类节点【ADR-005 禁用】→ 拒绝）；校验错误自动喂回模型修正（生成-校验-修复循环，对用户无感）
 4. 合法 patch 经 SSE 推送前端
 5. 前端应用到画布 Zustand store → ReactFlow 增量渲染（节点逐个"生长"）

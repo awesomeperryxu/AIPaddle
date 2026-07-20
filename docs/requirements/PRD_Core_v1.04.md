@@ -1330,11 +1330,11 @@ Tenant 1:N Member (一个租户可以有多个成员)
 | 数据库与基础服务 | Supabase 云托管（Postgres + Auth + Storage），区域新加坡/东京；浏览器永不直连 Supabase | ADR-001 |
 | RAG 向量库 | **Supabase 内置 pgvector**（chunks.embedding vector(1536) + HNSW 索引），不使用独立向量数据库，应用服务器无需安装任何向量组件 | ADR-001 / migration 0001 |
 | 数据模型 | 16 张核心表；全业务表软删除；多角色 user_roles；对话与计量分表；Agent 资源统一中间表；部门文本字段 | docs/design/ERD 确认页 v1.0 |
-| 默认对话模型 | **Kimi 2.5（Moonshot API，OpenAI 兼容格式）**；每个 Agent 可经 config.model 自主调配模型，未配置则逐级回落租户/平台默认 | ADR-003 |
-| 模型网关 | 首版直连 Moonshot，不引入 LiteLLM；接入第 3 家供应商或需路由/统一计量时再上 | ADR-003 |
-| 嵌入模型 | 待选型（切片 2 前锁定），约束 1536 维；Moonshot 无 embedding API | ADR-003 待办 |
+| 默认对话模型 | **通义 Qwen（阿里云百炼/DashScope，OpenAI 兼容格式），默认 qwen-plus**；每个 Agent 可经 config.model 自主调配模型，未配置则逐级回落租户/平台默认 | ADR-003（2026-07-20 由 Kimi 改 Qwen）|
+| 模型网关 | 首版直连百炼，不引入 LiteLLM；接入第 3 家供应商或需路由/统一计量时再上 | ADR-003 |
+| 嵌入模型 | **通义 text-embedding-v3 @1536 维**（OpenAI 兼容），与对话同供应商同 Key，一家全包 | ADR-009 |
 | MCP 治理 | 两层结构：mcp_servers 注册中心（连接层，migration 0002）+ Skill 封装（能力层）；平台内调用强制经 Skill；MCP 清单按角色+部门权限过滤 | ADR-004 |
-| AI Copilot | 仅限创建 Skill/Workflow/Agent 资产，无通用软件开发能力；结构化生成+四道防线，无需沙盒；引擎为 Next.js 内 LLM tool-calling（Kimi 2.5），服务器不部署 Claude Code；Code 节点首版禁用 | ADR-005 |
+| AI Copilot | 仅限创建 Skill/Workflow/Agent 资产，无通用软件开发能力；结构化生成+四道防线，无需沙盒；引擎为 Next.js 内 LLM tool-calling（通义 Qwen），服务器不部署 Claude Code；Code 节点首版禁用 | ADR-005 |
 | 办公文件处理 | 三通道：上传-处理-下载（切片2）/ 企业云盘 MCP 含企微微盘（切片3）/ 浏览器授权直读写（二期）；AI 只调平台内置文件工具，延续无沙盒模型 | ADR-006 |
 | API Key | 仅存服务器环境变量，不入库、不进前端、不进 git | ADR-001/003 |
 

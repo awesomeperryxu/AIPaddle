@@ -1,10 +1,10 @@
 # ADR-009：嵌入（Embedding）模型选型
 
-- 状态：**待拍板**（2026-07-20 起草，冲刺 D 道知识库前置）
+- 状态：**已采纳**（2026-07-20，Perry 拍板：通义一家全包，已开通 DashScope Key）
 - 对应任务：ROADMAP 2.7 遗留项（ADR-003：「嵌入模型选型，切片 2 前锁定，约束 1536 维」）；解锁 4.2.2 解析/向量化
 - 决策人：Perry
 - 起草：Claude
-- 依赖：2.4（数据模型 `chunks.embedding vector(1536)`，维度已硬约束）、ADR-003（LLM=Kimi，直连国内 API 不上网关）
+- 依赖：2.4（数据模型 `chunks.embedding vector(1536)`，维度已硬约束）、ADR-003（LLM=通义 Qwen，与本嵌入同供应商同 Key，直连国内 API 不上网关）
 
 ---
 
@@ -16,7 +16,7 @@
 
 两条硬约束：
 1. **输出维度必须 = 1536**（对齐已落库的 pgvector 列，不可改）。
-2. **Kimi/Moonshot 不提供 embedding 接口**（仅 Chat Completions，已查证平台文档）→ 嵌入必须**独立选一个供应商**，不能复用 LLM 的 Key。
+2. **原默认 LLM Kimi（及 DeepSeek）均不提供 embedding 接口**（仅 Chat Completions，已查证官方文档）。为实现"一家全包"，ADR-003 已把 LLM 换到**通义 Qwen**——通义（百炼）同时提供对话与嵌入，故本嵌入**与对话复用同一供应商、同一把 `DASHSCOPE_API_KEY`**。
 
 评估维度：中文语义质量、1536 维支持、国内访问延迟与稳定性（呼应 ADR-001：服务器在腾讯云国内）、OpenAI 兼容度（少写适配代码）、成本、免运维。
 
@@ -26,8 +26,8 @@
 
 **默认嵌入模型 = 阿里云百炼 `text-embedding-v3`，输出维度设为 1536，走 OpenAI 兼容接口。**
 
-- 接口：`base_url = https://dashscope.aliyuncs.com/compatible-mode/v1`，OpenAI SDK 直接调，传 `dimensions=1536`。与 ADR-003 的 Moonshot 调用同为 OpenAI 兼容风格，`lib/llm` 里嵌入客户端与对话客户端同构，只是换 base_url + Key + model。
-- Key 管理：`DASHSCOPE_API_KEY` **只存服务器环境变量**（同 ADR-003 铁律），call_logs / 用量单独记（嵌入调用也计量）。
+- 接口：`base_url = https://dashscope.aliyuncs.com/compatible-mode/v1`，OpenAI SDK 直接调，传 `dimensions=1536`。**与 ADR-003 的对话模型（Qwen）为同一供应商（阿里云百炼）、同一 `DASHSCOPE_API_KEY`**——`lib/llm` 里嵌入客户端与对话客户端只差 model 名，一家全包。
+- Key 管理：`DASHSCOPE_API_KEY` **只存服务器环境变量**（同 ADR-003 铁律，对话与嵌入共用这一把），call_logs / 用量单独记（嵌入调用也计量）。
 - 维度：显式传 `1536`，**代码里写成常量 `EMBEDDING_DIM=1536`**，与 `vector(1536)` 单一来源对齐，任何改动需同时改列（复审条件）。
 - 归一化与距离：pgvector 用 cosine 距离（`vector_cosine_ops` 索引），入库前是否归一化按供应商建议处理，写进 4.2.2 实现约定。
 
@@ -36,7 +36,7 @@
 1. **1536 维原生可选**：v3 支持通过 `dimensions` 指定 1536，正好对齐已落库的列，零改库。
 2. **中文强**：企业文档以中文为主，通义系对中文检索质量好，优于多数英文优先模型。
 3. **国内低延迟 + 免运维**：服务器在腾讯云国内，调阿里云百炼是境内互通，稳定性远好于境外 API（直接呼应 ADR-001 对海外链路的顾虑）；SaaS 接口无需自建 GPU/向量服务（呼应 ADR-001 不造轮子）。
-4. **OpenAI 兼容**：适配成本几乎为零，和现有 Moonshot 调用风格一致。
+4. **OpenAI 兼容 + 同供应商**：适配成本几乎为零，与对话模型 Qwen 同为百炼 OpenAI 兼容接口，`lib/llm` 里只差 model 名。
 
 ---
 
