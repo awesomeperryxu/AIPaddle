@@ -220,6 +220,7 @@
 | 2026-07-20 | 权限模型拍板（ADR-007，冲刺 D1·D-2）：RBAC+按操作(action)鉴权+默认拒绝+多角色并集；4 角色（Admin/Developer/User/Auditor）×全模块角色-权限矩阵（兼容 test-data `ROLE_MATRIX`）；**按 PRD 补齐统一上架审核流程**：Agent/Skill/Workflow·Chatflow 三资产共用 draft→pending→published 状态机，部门级 Admin/Auditor 单审，**企业级仅 Admin 创建、Admin 必审 + 可指派业务部门 AIBP 协同双签**（AIBP 部门自动路由待切片 5）；执行=API 入口 `requirePermission()`（落地 3.4），单一来源 `lib/auth/permissions.ts`；跨租户 `tenant:manage` 平台超管暂缓阶段 6；Auditor 不可 chat | ADR-007 |
 | 2026-07-20 | 数据层设计拍板（ADR-008，冲刺 D1·D-3）：四层单向依赖（组件→API/Action→`lib/data/*`→Supabase 客户端）；组件禁直连 mock/supabase，`lib/data/*` 唯一碰库+首参 `ctx`+`server-only`；浏览器薄封装 `lib/api/client.ts` 只打 `/api/*`；Repository 模式包 mock 逐页切（配合 3.5，全切完删 mock-data.ts）；命名对齐现状 `lib/supabase/`（service 客户端=`lib/supabase/admin.ts`）；铁律写入 CLAUDE.md | ADR-008 |
 | 2026-07-20 | 线上部署验证（B 道，D1-B 后）：aipaddle.net 登录/会话✅、`/console` iframe 门户✅、DashboardShell 侧边栏✅、`/api/agents` 返真实 DB 数据✅、**租户隔离实测通过**（orgA 见自己 agent，orgB 返空）；发现 4 缺陷入排期：#72 登录卡「登录中...」/ #73 侧边栏二级菜单不切换视图 / #74 监控指标+侧栏用户仍 mock / #75 agents-admin 未接 /api/agents | Issues #72-75 |
+| 2026-07-20 | D1-E 集成任务显式化（E道D1职责=合并/修红/部署，冲刺表原未排编号）：用 GitHub 侧原子合并集成绿灯 PR、合并后复核 main CI 绿、确认自动部署与线上正常；E道纪律=不产新功能，合并前检查无 MERGE_HEAD/锁避免撞车 | Issue #77 |
 
 ## 当前状态小结（2026-07-20 · 第 5 次更新）
 
