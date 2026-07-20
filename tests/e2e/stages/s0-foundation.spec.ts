@@ -16,7 +16,9 @@ test.describe('S0-AUTH 认证 @stage0', () => {
     await page.getByLabel(/邮箱/).fill(email);
     await page.getByLabel(/^密码/).fill('E2e!Register_2026');
     await page.getByRole('button', { name: /注册/ }).click();
-    await expect(page.getByText(/注册成功|验证邮件|欢迎/)).toBeVisible();
+    // 应用行为：注册成功后自动登录并跳转控制台（非弹「注册成功」提示）。
+    // 稳健判据：离开 /register 即视为注册成功。
+    await expect(page).not.toHaveURL(/\/register/, { timeout: 15_000 });
   });
 
   test('S0-AUTH-02 重复注册被拒绝', async ({ page }) => {
@@ -123,7 +125,8 @@ test.describe('S0-PRM 权限校验 @stage0', () => {
     await page.goto('/agents-admin');
     await expect(page.getByRole('button', { name: /创建 Agent/ })).toHaveCount(0);
     await page.goto('/security');
-    await expect(page.getByText(/待审核/)).toBeVisible();
+    // 用精确 tab 角色定位，避免同时匹配统计卡的 <p>待审核</p>（strict 模式歧义）
+    await expect(page.getByRole('tab', { name: '待审核' })).toBeVisible();
   });
 });
 

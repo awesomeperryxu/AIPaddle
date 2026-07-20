@@ -96,13 +96,13 @@
 |---|------|------|---------|
 | 3.1 | 数据库就绪，建核心表 | ✅ | 迁移 0001/0002 已落库（18 表），seed 两租户五账号，test-data 已对齐；PR#51 CI 绿，待验收 |
 | 3.2 | 注册/登录/退出（用现成认证方案，不自己写） | 🔄 | Supabase Auth 注册/登录/退出 + 中间件守卫；修复 /auth/callback 路由断链；PR#51 CI 绿。**⚠️ 线上验证（2026-07-20）发现登录按钮偶发卡「登录中...」不跳转（会话其实已建立）→ Issue #72** 待修 |
-| 3.3 | 租户上下文中间件（每个请求解析出 user + org） | 🔄 | `lib/context.ts` `getRequestContext()`已实现（commit 267043b7）；L2 权限矩阵 19 条 + L3 API 集成 9 条全绿（35条/35条）；Issue #57 进行中；**待验收**：两个不同租户账号互相看不到数据 → 亲手验收通过后关闭 #57 |
-| 3.4 | 权限校验中间件（API 级，不只靠菜单隐藏） | 🔄 | `lib/auth/permissions.ts`（ADR-007矩阵）+ `POST /api/agents` 403门已实现（commit 75df1797）；单元测试覆盖全角色×action矩阵；Issue #58 进行中；**待验收**：User 角色 POST /api/agents → 确认 403 → 关闭 #58 |
-| 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | 🔄 | `lib/data/agents.ts`（listAgents/createAgent 含 DB→Agent 映射）+ `lib/api/client.ts`（apiFetch）+ GET /api/agents 已实现；**DashboardShell 完整外壳**（侧边栏+多视图路由）已从 feat/3.5-app-shell 合并入 main（commit f58a31e8）；Issue #61 进行中。**⚠️ 线上验证（2026-07-20，B道）**：侧边栏渲染✅、`/api/agents` 返真实数据✅、**租户隔离实测通过**（orgB 看不到 orgA agent）；但发现 3 缺陷——点二级菜单不切换视图(#73)、监控指标与侧栏用户仍 mock(#74)、agents-admin 未消费 /api/agents(#75) |
+| 3.3 | 租户上下文中间件（每个请求解析出 user + org） | 🔄 | `lib/context.ts` `getRequestContext()`已实现（commit 267043b7）；L2 权限矩阵 19 条 + L3 API 集成 9 条全绿（35条/35条）；Issue #57 进行中；**✅ 自动化已验证**（S0-ISO 隔离专项 UI+API 两层全绿，PR #79）；**待你亲手走查**：两租户账号互相看不到数据 → 通过后关闭 #57 |
+| 3.4 | 权限校验中间件（API 级，不只靠菜单隐藏） | 🔄 | `lib/auth/permissions.ts`（ADR-007矩阵）+ `POST /api/agents` 403门已实现（commit 75df1797）；单元测试覆盖全角色×action矩阵；Issue #58 进行中；**✅ 自动化已验证**（S0-PRM-02：User POST /api/agents → 403，PR #79）；**待你亲手走查**后关闭 #58 |
+| 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | 🔄 | `lib/data/agents.ts`（listAgents/createAgent 含 DB→Agent 映射）+ `lib/api/client.ts`（apiFetch）+ GET /api/agents 已实现；**DashboardShell 完整外壳**（侧边栏+多视图路由）已从 feat/3.5-app-shell 合并入 main（commit f58a31e8）；Issue #61 进行中。**⚠️ 线上验证（2026-07-20，B道）**：侧边栏渲染✅、`/api/agents` 返真实数据✅、**租户隔离实测通过**（orgB 看不到 orgA agent）；但发现 3 缺陷——点二级菜单不切换视图(#73)、监控指标与侧栏用户仍 mock(#74)、agents-admin 未消费 /api/agents(#75)。**✅ 已修（PR #79）**：侧边栏组织名接真实 org（#74 组织名部分）、新增 `/api/agents/[id]`；**遗留**：#73 菜单切换、#74 监控指标 mock、#75 agents-admin 切真实数据（3.5 收尾） |
 | 3.6 | 部署到服务器验收（依赖 0.7） | ⬜ | 代码已就绪（main 最新）；**待做**：配 `DEPLOY_SSH_KEY` Secret 后自动部署，或手动 rsync；线上打开侧边栏+登出确认正常 → 关闭 Issue #59 |
-| 3.7 | 第一批自动化测试（认证与权限的关键路径）+ 租户隔离专项脚本（TESTING.md L5①） | 🔄 | **已完成**：L2 权限矩阵 19 条（`tests/unit/permissions.test.ts`）+ L3 API 集成 9 条（`tests/unit/api-agents.test.ts`），35条CI全绿；**待做**：租户隔离专项（L5①，需 Supabase 本地栈 `supabase start`），隔离验收前不开 Phase 4 → Issue #60 |
+| 3.7 | 第一批自动化测试（认证与权限的关键路径）+ 租户隔离专项脚本（TESTING.md L5①） | ✅ | L2 权限矩阵 19 条 + L3 API 集成 9 条（35条 CI 全绿）；**✅ 租户隔离专项 S0-ISO 已全绿（2026-07-20，PR #79）**：UI 层（B 租户看不到 A org 名/数据）+ API 层（越权读/写/ID 猜测均 404）；**完整 @stage0 12 条全绿**（AUTH 7 + ISO 2 + PRM 2 + DAL 1，含修复 flaky login/注册/选择器）→ Issue #60 |
 
-**⚠️ 检测关口 3**：3.3 和 3.4 的租户隔离必须专门测试——这是企业级产品的生命线，出问题就是事故。
+**⚠️ 检测关口 3**：3.3 和 3.4 的租户隔离必须专门测试——这是企业级产品的生命线，出问题就是事故。**✅ 自动化已过（2026-07-20）**：S0-ISO 隔离专项 UI+API 两层全绿、完整 @stage0 12/12 绿；**待用户亲手走查 3.3/3.4/3.5（#57/#58/#61）后正式关闭关口、解禁 Phase 4**。
 
 ---
 
