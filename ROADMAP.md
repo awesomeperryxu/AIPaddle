@@ -95,10 +95,10 @@
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
 | 3.1 | 数据库就绪，建核心表 | ✅ | 迁移 0001/0002 已落库（18 表），seed 两租户五账号，test-data 已对齐；PR#51 CI 绿，待验收 |
-| 3.2 | 注册/登录/退出（用现成认证方案，不自己写） | ✅ | Supabase Auth 注册/登录/退出 + 中间件守卫；修复 /auth/callback 路由断链；PR#51 CI 绿，待亲手验收 S0-AUTH |
+| 3.2 | 注册/登录/退出（用现成认证方案，不自己写） | 🔄 | Supabase Auth 注册/登录/退出 + 中间件守卫；修复 /auth/callback 路由断链；PR#51 CI 绿。**⚠️ 线上验证（2026-07-20）发现登录按钮偶发卡「登录中...」不跳转（会话其实已建立）→ Issue #72** 待修 |
 | 3.3 | 租户上下文中间件（每个请求解析出 user + org） | 🔄 | `lib/context.ts` `getRequestContext()`已实现（commit 267043b7）；L2 权限矩阵 19 条 + L3 API 集成 9 条全绿（35条/35条）；Issue #57 进行中；**待验收**：两个不同租户账号互相看不到数据 → 亲手验收通过后关闭 #57 |
 | 3.4 | 权限校验中间件（API 级，不只靠菜单隐藏） | 🔄 | `lib/auth/permissions.ts`（ADR-007矩阵）+ `POST /api/agents` 403门已实现（commit 75df1797）；单元测试覆盖全角色×action矩阵；Issue #58 进行中；**待验收**：User 角色 POST /api/agents → 确认 403 → 关闭 #58 |
-| 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | 🔄 | `lib/data/agents.ts`（listAgents/createAgent 含 DB→Agent 映射）+ `lib/api/client.ts`（apiFetch）+ GET /api/agents 已实现；**DashboardShell 完整外壳**（侧边栏+多视图路由）已从 feat/3.5-app-shell 合并入 main（commit f58a31e8）；Issue #61 进行中；**待验收**：部署到服务器后打开系统确认侧边栏可用、agents-admin 显示真实数据 |
+| 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | 🔄 | `lib/data/agents.ts`（listAgents/createAgent 含 DB→Agent 映射）+ `lib/api/client.ts`（apiFetch）+ GET /api/agents 已实现；**DashboardShell 完整外壳**（侧边栏+多视图路由）已从 feat/3.5-app-shell 合并入 main（commit f58a31e8）；Issue #61 进行中。**⚠️ 线上验证（2026-07-20，B道）**：侧边栏渲染✅、`/api/agents` 返真实数据✅、**租户隔离实测通过**（orgB 看不到 orgA agent）；但发现 3 缺陷——点二级菜单不切换视图(#73)、监控指标与侧栏用户仍 mock(#74)、agents-admin 未消费 /api/agents(#75) |
 | 3.6 | 部署到服务器验收（依赖 0.7） | ⬜ | 代码已就绪（main 最新）；**待做**：配 `DEPLOY_SSH_KEY` Secret 后自动部署，或手动 rsync；线上打开侧边栏+登出确认正常 → 关闭 Issue #59 |
 | 3.7 | 第一批自动化测试（认证与权限的关键路径）+ 租户隔离专项脚本（TESTING.md L5①） | 🔄 | **已完成**：L2 权限矩阵 19 条（`tests/unit/permissions.test.ts`）+ L3 API 集成 9 条（`tests/unit/api-agents.test.ts`），35条CI全绿；**待做**：租户隔离专项（L5①，需 Supabase 本地栈 `supabase start`），隔离验收前不开 Phase 4 → Issue #60 |
 
@@ -116,7 +116,7 @@
 
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
-| 4.1.1 | Agent CRUD API + 页面接通（列表/创建/编辑/删除） | ⬜ | 刷新后数据仍在；跨租户不可见 |
+| 4.1.1 | Agent CRUD API + 页面接通（列表/创建/编辑/删除） | ⬜ | 刷新后数据仍在；跨租户不可见。含把 agents-admin 视图接入 `/api/agents`（#75，API + 租户隔离已就绪，前端待接） |
 | 4.1.2 | 状态机：草稿 → 待审核 → 已发布 → 停用（含校验规则） | ⬜ | 非法流转被拒绝并有提示 |
 | 4.1.3 | 审核流程接入安全管理模块（审批提交、留痕） | ⬜ | 审批记录可查 |
 | 4.1.4 | Agent 调用：接通真实大模型 API | ⬜ | 数字员工页面能真实对话，回答与 Agent 配置相符 |
@@ -219,6 +219,8 @@
 | 2026-07-20 | 认证与租户隔离拍板（ADR-002，冲刺 D1·D-1）：认证=Supabase Auth+`@supabase/ssr` 服务端会话（首版邮箱密码）；租户上下文=`org_id`+`roles` 进 JWT claim，全链路请求契约 `{userId,orgId,roles}`（只由服务端从可信会话推导，禁信前端入参）；**RLS 关键决策**=请求级客户端（带用户 token，RLS 生效，第二层）vs 服务级客户端（`service_role` 锁死 `lib/db/admin.ts` 单文件，仅系统级操作）严格分工，禁 service_role 应答用户请求，靠"单文件封装+ESLint 禁读密钥+CI+CodeReview"四道约束落地双层防护；migration `current_org_id()` 改为读 JWT claim+回退查表（A 道随 3.3 落地） | ADR-002 |
 | 2026-07-20 | 权限模型拍板（ADR-007，冲刺 D1·D-2）：RBAC+按操作(action)鉴权+默认拒绝+多角色并集；4 角色（Admin/Developer/User/Auditor）×全模块角色-权限矩阵（兼容 test-data `ROLE_MATRIX`）；**按 PRD 补齐统一上架审核流程**：Agent/Skill/Workflow·Chatflow 三资产共用 draft→pending→published 状态机，部门级 Admin/Auditor 单审，**企业级仅 Admin 创建、Admin 必审 + 可指派业务部门 AIBP 协同双签**（AIBP 部门自动路由待切片 5）；执行=API 入口 `requirePermission()`（落地 3.4），单一来源 `lib/auth/permissions.ts`；跨租户 `tenant:manage` 平台超管暂缓阶段 6；Auditor 不可 chat | ADR-007 |
 | 2026-07-20 | 数据层设计拍板（ADR-008，冲刺 D1·D-3）：四层单向依赖（组件→API/Action→`lib/data/*`→Supabase 客户端）；组件禁直连 mock/supabase，`lib/data/*` 唯一碰库+首参 `ctx`+`server-only`；浏览器薄封装 `lib/api/client.ts` 只打 `/api/*`；Repository 模式包 mock 逐页切（配合 3.5，全切完删 mock-data.ts）；命名对齐现状 `lib/supabase/`（service 客户端=`lib/supabase/admin.ts`）；铁律写入 CLAUDE.md | ADR-008 |
+| 2026-07-20 | 线上部署验证（B 道，D1-B 后）：aipaddle.net 登录/会话✅、`/console` iframe 门户✅、DashboardShell 侧边栏✅、`/api/agents` 返真实 DB 数据✅、**租户隔离实测通过**（orgA 见自己 agent，orgB 返空）；发现 4 缺陷入排期：#72 登录卡「登录中...」/ #73 侧边栏二级菜单不切换视图 / #74 监控指标+侧栏用户仍 mock / #75 agents-admin 未接 /api/agents | Issues #72-75 |
+| 2026-07-20 | D1-E 集成任务显式化（E道D1职责=合并/修红/部署，冲刺表原未排编号）：用 GitHub 侧原子合并集成绿灯 PR、合并后复核 main CI 绿、确认自动部署与线上正常；E道纪律=不产新功能，合并前检查无 MERGE_HEAD/锁避免撞车 | Issue #77 |
 
 ## 当前状态小结（2026-07-20 · 第 5 次更新）
 
