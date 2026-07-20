@@ -1,74 +1,69 @@
 import 'server-only'
+import type { Agent } from '@/lib/mock-data'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
 
-export type AgentRow = {
+// 数据层（ADR-008）：唯一访问 agents 表的地方，首参 ctx，用请求级客户端（RLS 生效）。
+// DB 行 → 视图用的 Agent 形状映射。
+type Row = {
   id: string
   name: string
   description: string | null
   department: string | null
-  status: 'draft' | 'pending' | 'published' | 'offline'
-  usage_scenarios: string[]
-  metrics_calls: number
-  metrics_success: number
-  metrics_avg_ms: number
-  created_at: string
-  updated_at: string
+  status: Agent['status']
+  metrics_calls: number | null
+  metrics_success: number | null
+  created_at: string | null
+  config: { model?: string } | null
 }
 
-/** 当前租户的 Agent 总数（不含软删除） */
-export async function getAgentCount(ctx: RequestContext): Promise<number> {
-  const supabase = await createClient()
-  const { count, error } = await supabase
-    .from('agents')
-    .select('id', { count: 'exact', head: true })
-    .is('deleted_at', null)
-  if (error) throw error
-  return count ?? 0
+const COLS = 'id,name,description,department,status,metrics_calls,metrics_success,created_at,config'
+
+function mapRow(r: Row): Agent {
+  const calls = r.metrics_calls ?? 0
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description ?? '',
+    department: r.department ?? '',
+    status: r.status,
+    calls,
+    successRate: calls > 0 ? Math.round(((r.metrics_success ?? 0) / calls) * 1000) / 10 : 0,
+    tokenUsage: 0,
+    createdAt: (r.created_at ?? '').slice(0, 10),
+    model: r.config?.model ?? '—',
+    avatar: '🤖',
+  }
 }
 
-/** 分页列表（RLS 自动过滤当前租户） */
-export async function listAgents(
-  ctx: RequestContext,
-  opts: { page?: number; pageSize?: number; status?: AgentRow['status'] } = {}
-): Promise<{ agents: AgentRow[]; total: number }> {
-  const { page = 1, pageSize = 20, status } = opts
-  const from = (page - 1) * pageSize
-  const to = from + pageSize - 1
-
-  const supabase = await createClient()
-  let query = supabase
-    .from('agents')
-    .select(
-      'id,name,description,department,status,usage_scenarios,metrics_calls,metrics_success,metrics_avg_ms,created_at,updated_at',
-      { count: 'exact' }
-    )
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false })
-    .range(from, to)
-
-  if (status) query = query.eq('status', status)
-
-  const { data, count, error } = await query
-  if (error) throw error
-  return { agents: (data ?? []) as AgentRow[], total: count ?? 0 }
-}
-
-/** 单条 Agent（当前租户，RLS 自动隔离） */
-export async function getAgent(
-  ctx: RequestContext,
-  id: string
-): Promise<AgentRow | null> {
+export async function listAgents(_ctx: RequestContext): Promise<Agent[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('agents')
-    .select(
-      'id,name,description,department,status,usage_scenarios,metrics_calls,metrics_success,metrics_avg_ms,created_at,updated_at'
-    )
-    .eq('id', id)
+    .select(COLS)
     .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return (data as Row[] | null ?? []).map(mapRow)
+}
+
+export async function createAgent(
+  ctx: RequestContext,
+  input: { name: string; department?: string; description?: string },
+): Promise<Agent> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('agents')
+    .insert({
+      org_id: ctx.orgId,
+      created_by: ctx.userId,
+      name: input.name,
+      department: input.department ?? null,
+      description: input.description ?? null,
+      status: 'draft',
+    })
+    .select(COLS)
     .single()
-  if (error?.code === 'PGRST116') return null // not found
-  if (error) throw error
-  return data as AgentRow
+  if (error) throw new Error(error.message)
+  return mapRow(data as Row)
 }

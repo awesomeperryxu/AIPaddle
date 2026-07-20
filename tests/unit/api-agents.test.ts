@@ -13,8 +13,8 @@ import type { RequestContext } from '@/lib/context'
 // ─── Mock 所有 server-side 依赖 ───────────────────────────────────────────────
 vi.mock('@/lib/context', () => ({ getRequestContext: vi.fn() }))
 vi.mock('@/lib/data/agents', () => ({
-  listAgents: vi.fn().mockResolvedValue({ agents: [], total: 0 }),
-  getAgent: vi.fn(),
+  listAgents: vi.fn().mockResolvedValue([]),
+  createAgent: vi.fn(),
 }))
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockResolvedValue({
@@ -33,8 +33,10 @@ vi.mock('@/lib/supabase/server', () => ({
 
 import { getRequestContext } from '@/lib/context'
 import { GET, POST } from '@/app/api/agents/route'
+import { listAgents } from '@/lib/data/agents'
 
 const mockCtx = vi.mocked(getRequestContext)
+const mockListAgents = vi.mocked(listAgents)
 
 const adminCtx: RequestContext = { userId: 'u1', orgId: 'org1', roles: ['Admin'] }
 const devCtx: RequestContext   = { userId: 'u2', orgId: 'org1', roles: ['Developer'] }
@@ -58,6 +60,7 @@ describe('GET /api/agents', () => {
 
   it('已登录（任意角色）→ 200 + agents 数组', async () => {
     mockCtx.mockResolvedValueOnce(userCtx)
+    mockListAgents.mockResolvedValueOnce([])
     const res = await GET(makeReq())
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -66,6 +69,7 @@ describe('GET /api/agents', () => {
 
   it('Admin 也可查询列表', async () => {
     mockCtx.mockResolvedValueOnce(adminCtx)
+    mockListAgents.mockResolvedValueOnce([])
     const res = await GET(makeReq())
     expect(res.status).toBe(200)
   })
