@@ -35,7 +35,7 @@ jobs:
           cp -f .env.local /tmp/aipaddle.env.bak 2>/dev/null || true
 
           # 用 Actions 临时 token 拉取私有仓库最新 main（一次性 URL，不写入 remote）
-          git fetch "https://x-access-token:${GH_PAT}@github.com/HELLOPERRYXU/AIPaddle.git" main
+          git fetch "https://x-access-token:${GH_PAT}@github.com/awesomeperryxu/AIPaddle.git" main
           git reset --hard FETCH_HEAD
 
           # 恢复/校验 .env.local

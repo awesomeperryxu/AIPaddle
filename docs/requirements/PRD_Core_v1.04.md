@@ -1308,7 +1308,7 @@ Tenant 1:N Member (一个租户可以有多个成员)
 ## 9. 参考资料
 
 ### 9.1 项目信息
-- **GitHub**: https://github.com/HELLOPERRYXU/AIPaddle
+- **GitHub**: https://github.com/awesomeperryxu/AIPaddle
 - **实现审计**: `../IMPLEMENTATION_AUDIT.md`
 
 ### 9.2 技术文档
