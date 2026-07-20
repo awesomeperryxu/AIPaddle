@@ -132,7 +132,7 @@
 | 4.2.1 | 文档上传（先只支持 PDF）+ 存储 | ✅ | **已完成（2026-07-20，A道，PR#83）**：Storage 私有桶 kb-documents + lib/data/documents+knowledge + /api/documents(GET/POST/DELETE)；上传201→列表→删除200 全验证；附 migration 0003 修全表软删 RLS |
 | 4.2.2 | 解析/切块/向量化入库 | ✅ | **已完成(2026-07-20,A道)**:unpdf解析→切块→DashScope v4嵌入(1536)→chunks表 |
 | 4.2.3 | Agent 关联知识库，问答带引用（RAG） | 🔄 | **本地完成待批量合(2026-07-21,A道,feat/slice2-knowledge)**:pgvector检索(migration0004)+qwen带引用+拒答;金标准7/7=100% |
-| 4.2.4 | **办公文件处理·通道①**（ADR-006 高优先级）：对话框上传 → AI 总结/改写/生成 docx·xlsx·pdf → 下载；解析管线与 4.2.2 共用 | ⬜ | 三类样例文件处理正确；生成文件可正常打开；处理留审计 |
+| 4.2.4 | **办公文件处理·通道①**（ADR-006）：上传→AI处理→生成 docx·xlsx·pdf→下载 | 🔄 | **本地完成待合(2026-07-21,A道)**:3格式均生成有效文件+审计;PDF中文字体待接 |
 
 ### 切片 3：Skill Hub 持久化 ⬜
 
