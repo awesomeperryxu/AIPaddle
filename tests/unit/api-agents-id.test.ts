@@ -18,11 +18,12 @@ vi.mock('@/lib/data/agents', () => ({
 }))
 
 import { getRequestContext } from '@/lib/context'
-import { deleteAgent } from '@/lib/data/agents'
-import { DELETE } from '@/app/api/agents/[id]/route'
+import { deleteAgent, updateAgent } from '@/lib/data/agents'
+import { DELETE, PATCH } from '@/app/api/agents/[id]/route'
 
 const mockCtx = vi.mocked(getRequestContext)
 const mockDelete = vi.mocked(deleteAgent)
+const mockUpdate = vi.mocked(updateAgent)
 
 const adminCtx: RequestContext = { userId: 'u1', orgId: 'org1', roles: ['Admin'] }
 const userCtx: RequestContext = { userId: 'u3', orgId: 'org1', roles: ['User'] }
@@ -32,6 +33,13 @@ function call(id = ID) {
   return DELETE(new Request(`http://localhost/api/agents/${id}`, { method: 'DELETE' }), {
     params: Promise.resolve({ id }),
   })
+}
+
+function callPatch(body: unknown, id = ID) {
+  return PATCH(
+    new Request(`http://localhost/api/agents/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    { params: Promise.resolve({ id }) },
+  )
 }
 
 describe('DELETE /api/agents/[id]', () => {
@@ -64,6 +72,44 @@ describe('DELETE /api/agents/[id]', () => {
     mockCtx.mockResolvedValueOnce(adminCtx)
     mockDelete.mockResolvedValueOnce(false)
     const res = await call()
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('PATCH /api/agents/[id]', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('未登录 → 401', async () => {
+    mockCtx.mockResolvedValueOnce(null)
+    const res = await callPatch({ name: '改名' })
+    expect(res.status).toBe(401)
+    expect(mockUpdate).not.toHaveBeenCalled()
+  })
+
+  it('无权限角色（User）→ 403，且不触碰数据层', async () => {
+    mockCtx.mockResolvedValueOnce(userCtx)
+    const res = await callPatch({ name: '改名' })
+    expect(res.status).toBe(403)
+    expect(mockUpdate).not.toHaveBeenCalled()
+  })
+
+  it('Admin 更新存在的 Agent → 200 { agent }', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockUpdate.mockResolvedValueOnce({ id: ID, name: '新名', department: '研发', description: '' } as never)
+    const res = await callPatch({ name: '新名', department: '研发' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).agent.name).toBe('新名')
+    expect(mockUpdate).toHaveBeenCalledWith(adminCtx, ID, {
+      name: '新名',
+      department: '研发',
+      description: undefined,
+    })
+  })
+
+  it('目标不存在 / 跨租户（updateAgent=null）→ 404', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockUpdate.mockResolvedValueOnce(null)
+    const res = await callPatch({ name: '改名' })
     expect(res.status).toBe(404)
   })
 })

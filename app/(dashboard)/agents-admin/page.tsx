@@ -13,6 +13,7 @@ export default async function Page() {
       agents={agents}
       canCreate={can(ctx, 'agent:create')}
       canDelete={can(ctx, 'agent:delete')}
+      canEdit={can(ctx, 'agent:update')}
     />
   )
 }
