@@ -1,58 +1,46 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense } from 'react'
+import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { useSearchParams } from 'next/navigation'
+import { register } from '../actions'
 
-export default function RegisterPage() {
-  const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
+const ERR_MAP: Record<string, string> = {
+  email_format: '邮箱格式不正确',
+  password_short: '密码至少 8 位',
+  exists: '该邮箱已注册',
+  service: '注册服务暂不可用，请稍后重试',
+}
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (password.length < 8) {
-      setError('密码至少 8 位')
-      return
-    }
-    setLoading(true)
-    setError(null)
+function SubmitButton() {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
+    >
+      {pending ? '注册中...' : '注册'}
+    </button>
+  )
+}
 
-    const supabase = createClient()
-    const { error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: displayName },
-        emailRedirectTo: `${location.origin}/auth/callback`,
-      },
-    })
+function RegisterInner() {
+  const searchParams = useSearchParams()
+  const error = ERR_MAP[searchParams.get('error') ?? '']
+  const registered = searchParams.get('registered') === '1'
 
-    if (authError) {
-      setError(authError.message)
-      setLoading(false)
-      return
-    }
-
-    // Supabase 默认发验证邮件；如果项目关闭了 email confirm 则直接跳转
-    setDone(true)
-    setLoading(false)
-    // 等 1s 后跳 dashboard（关闭 email confirm 时 session 已自动建立）
-    setTimeout(() => router.push('/dashboard'), 1000)
-  }
-
-  if (done) {
+  if (registered) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0f0f0f] px-4">
         <div className="text-center space-y-3">
           <div className="text-4xl">✉️</div>
           <p className="text-white font-medium">注册成功！</p>
-          <p className="text-white/40 text-sm">正在跳转，或请查收验证邮件...</p>
+          <p className="text-white/40 text-sm">请查收验证邮件完成激活，然后登录。</p>
+          <Link href="/login" className="inline-block text-indigo-400 hover:text-indigo-300 text-sm transition">
+            去登录
+          </Link>
         </div>
       </div>
     )
@@ -75,54 +63,47 @@ export default function RegisterPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form action={register} noValidate className="space-y-4">
             <div>
-              <label className="block text-xs text-white/50 mb-1.5">显示名称</label>
+              <label htmlFor="displayName" className="block text-xs text-white/50 mb-1.5">显示名称</label>
               <input
+                id="displayName"
+                name="displayName"
                 type="text"
                 autoComplete="name"
-                required
-                value={displayName}
-                onChange={e => setDisplayName(e.target.value)}
                 placeholder="你的名字"
                 className="w-full rounded-lg border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-white/50 mb-1.5">邮箱</label>
+              <label htmlFor="email" className="block text-xs text-white/50 mb-1.5">邮箱</label>
               <input
+                id="email"
+                name="email"
                 type="email"
                 autoComplete="email"
                 required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
                 placeholder="you@company.com"
                 className="w-full rounded-lg border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-white/50 mb-1.5">密码（至少 8 位）</label>
+              <label htmlFor="password" className="block text-xs text-white/50 mb-1.5">密码（至少 8 位）</label>
               <input
+                id="password"
+                name="password"
                 type="password"
                 autoComplete="new-password"
                 required
                 minLength={8}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full rounded-lg border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition"
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
-            >
-              {loading ? '注册中...' : '注册'}
-            </button>
+            <SubmitButton />
           </form>
 
           <p className="mt-6 text-center text-xs text-white/30">
@@ -134,5 +115,13 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0f0f0f]" />}>
+      <RegisterInner />
+    </Suspense>
   )
 }

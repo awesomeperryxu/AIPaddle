@@ -1,12 +1,22 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { mockAgents, Agent } from '@/lib/mock-data';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import type { Agent } from '@/lib/mock-data';
+import { apiFetch } from '@/lib/api/client';
 import {
   Bot,
   Plus,
@@ -80,12 +90,44 @@ const usageScenarios = [
   },
 ];
 
-export function AgentsAdminView() {
+export function AgentsAdminView({
+  agents = [],
+  canCreate = false,
+}: {
+  agents?: Agent[];
+  canCreate?: boolean;
+}) {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [activeTab, setActiveTab] = useState('all');
 
-  const filteredAgents = mockAgents.filter(agent => {
+  // 创建 Agent 弹窗
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', department: '', description: '' });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  async function handleCreate() {
+    if (!form.name.trim()) {
+      setCreateError('名称不能为空');
+      return;
+    }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      await apiFetch('/api/agents', { method: 'POST', body: JSON.stringify(form) });
+      setCreateOpen(false);
+      setForm({ name: '', department: '', description: '' });
+      router.refresh(); // 重新从服务端拉取列表，刷新后数据仍在
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : '创建失败');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  const filteredAgents = agents.filter(agent => {
     const matchesSearch = agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       agent.department.toLowerCase().includes(searchTerm.toLowerCase());
     if (activeTab === 'all') return matchesSearch;
@@ -93,10 +135,10 @@ export function AgentsAdminView() {
   });
 
   const stats = {
-    total: mockAgents.length,
-    published: mockAgents.filter(a => a.status === 'published').length,
-    pending: mockAgents.filter(a => a.status === 'pending').length,
-    draft: mockAgents.filter(a => a.status === 'draft').length,
+    total: agents.length,
+    published: agents.filter(a => a.status === 'published').length,
+    pending: agents.filter(a => a.status === 'pending').length,
+    draft: agents.filter(a => a.status === 'draft').length,
   };
 
   return (
@@ -109,11 +151,49 @@ export function AgentsAdminView() {
             <h1 className="text-xl font-semibold text-foreground">Agent 管理</h1>
             <p className="text-sm text-muted-foreground mt-0.5">创建、配置和管理 AI Agent</p>
           </div>
-          <Button className="gap-2 shadow-sm">
-            <Plus className="h-4 w-4" />
-            创建 Agent
-          </Button>
+          {canCreate && (
+            <Button className="gap-2 shadow-sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              创建 Agent
+            </Button>
+          )}
         </div>
+
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>创建 Agent</DialogTitle>
+            </DialogHeader>
+            {createError && (
+              <p className="text-sm text-red-500">{createError}</p>
+            )}
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="agent-name">名称</Label>
+                <Input
+                  id="agent-name"
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  placeholder="Agent 名称"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="agent-dept">部门</Label>
+                <Input
+                  id="agent-dept"
+                  value={form.department}
+                  onChange={e => setForm({ ...form, department: e.target.value })}
+                  placeholder="所属部门"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleCreate} disabled={creating}>
+                {creating ? '创建中...' : '创建'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-4 gap-3 mb-5">

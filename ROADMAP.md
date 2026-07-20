@@ -49,9 +49,9 @@
 | 0.4 | CLAUDE.md 入库 | 🔄 | 本次生成，放仓库根目录 |
 | 0.5 | ROADMAP.md 入库（本文件） | 🔄 | 放仓库根目录 |
 | 0.6 | 建立 GitHub Issues 工作流 | 🔄 | Issue 模板已入库；标签体系已定义（`type:ui/logic/api/infra/slice-acceptance` + `flag:tenant-data/rag`，见 TESTING_WORKFLOW.md §1）；待做：在 GitHub 上创建这些标签、把阶段 2-3 任务批量建成 Issue |
-| 0.7 | 服务器部署链路（43.173.99.218，Ubuntu） | 🔄 待验收 | 已全新部署 main → `/opt/aipaddle`（PM2 托管 3000 + 开机自启）+ Nginx 反代到 `https://aipaddle.net`（复用证书）；旧 Vite 原型已清除；Issue #52。待用户亲验放行改 ✅ |
-| 0.8 | 自动化部署（GitHub Actions：push main → 自动部署到服务器 + 部署后冒烟检查） | ⬜ | 推一次代码，线上自动更新 |
-| 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **✅ 0.9a(D1-C-1) Playwright 已装+首跑**：装 chromium、加 `test:e2e`/`test:smoke` 脚本，原型冒烟 6 条全绿（P-GLB-01/02/04、P-DSH-01、P-AGT-02、P-WF-01；P-AGT-01/03、P-WF-02 等为人工记录型，不做自动化）。**待做**：0.9b 装 Vitest+RTL、0.9c 启用 CI 测试步骤 + 开 main 分支保护 |
+| 0.7 | 服务器部署链路（43.173.99.218，Ubuntu） | ✅ | 已全新部署 main → `/opt/aipaddle`（PM2 托管 3000 + 开机自启）+ Nginx 反代到 `https://aipaddle.net`；用户隐私窗口登录验收通过（2026-07-20）；Issue #52 已关闭 |
+| 0.8 | 自动化部署（GitHub Actions：push main → 自动部署到服务器 + 部署后冒烟检查） | 🔄 | `.github/workflows/deploy.yml` 已入库，git-pull 方案（并发保护 + 6次冒烟retry）（2026-07-20，commit 2cca51e1）；Issue #55 进行中；**待做**：在 GitHub Settings → Secrets 添加 `DEPLOY_SSH_KEY`（ed25519 部署私钥）后 push main 即自动部署 |
+| 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **✅ 0.9a(D1-C-1) Playwright 已装+首跑**：装 chromium、加 `test:e2e`/`test:smoke` 脚本，原型冒烟 6 条全绿（P-GLB-01/02/04、P-DSH-01、P-AGT-02、P-WF-01；P-AGT-01/03、P-WF-02 等为人工记录型，不做自动化）。**✅ 0.9b(D1-C-2) Vitest+RTL 已装+启用 CI**：`vitest.config.ts`（jsdom）+ `tests/unit/setup.ts`，加 `test`/`test:watch` 脚本，样例 7 条全绿（cn 工具 4 + Button 组件 3），ci.yml 已取消注释单元测试步骤。**待做**：0.9c 开 main 分支保护 |
 
 ---
 
@@ -95,12 +95,12 @@
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
 | 3.1 | 数据库就绪，建核心表 | ✅ | 迁移 0001/0002 已落库（18 表），seed 两租户五账号，test-data 已对齐；PR#51 CI 绿，待验收 |
-| 3.2 | 注册/登录/退出（用现成认证方案，不自己写） | ✅ | Supabase Auth 注册/登录/退出 + 中间件守卫；修复 /auth/callback 路由断链；PR#51 CI 绿，待亲手验收 S0-AUTH |
-| 3.3 | 租户上下文中间件（每个请求解析出 user + org） | ⬜ | 两个不同租户账号互相看不到对方数据 |
-| 3.4 | 权限校验中间件（API 级，不只靠菜单隐藏） | ⬜ | 普通成员调管理员接口返回 403 |
-| 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | ⬜ | 删掉该页对 `mock-data.ts` 的引用，功能不变 |
-| 3.6 | 部署到服务器（依赖 0.7） | ⬜ | 线上地址可注册登录 |
-| 3.7 | 第一批自动化测试（认证与权限的关键路径）+ 租户隔离专项脚本（TESTING.md L5①） | ⬜ | CI 里跑通；隔离专项全绿（任何一条红 = P0，停下所有开发先修） |
+| 3.2 | 注册/登录/退出（用现成认证方案，不自己写） | 🔄 | Supabase Auth 注册/登录/退出 + 中间件守卫；修复 /auth/callback 路由断链；PR#51 CI 绿。**⚠️ 线上验证（2026-07-20）发现登录按钮偶发卡「登录中...」不跳转（会话其实已建立）→ Issue #72** 待修 |
+| 3.3 | 租户上下文中间件（每个请求解析出 user + org） | 🔄 | `lib/context.ts` `getRequestContext()`已实现（commit 267043b7）；L2 权限矩阵 19 条 + L3 API 集成 9 条全绿（35条/35条）；Issue #57 进行中；**待验收**：两个不同租户账号互相看不到数据 → 亲手验收通过后关闭 #57 |
+| 3.4 | 权限校验中间件（API 级，不只靠菜单隐藏） | 🔄 | `lib/auth/permissions.ts`（ADR-007矩阵）+ `POST /api/agents` 403门已实现（commit 75df1797）；单元测试覆盖全角色×action矩阵；Issue #58 进行中；**待验收**：User 角色 POST /api/agents → 确认 403 → 关闭 #58 |
+| 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | 🔄 | `lib/data/agents.ts`（listAgents/createAgent 含 DB→Agent 映射）+ `lib/api/client.ts`（apiFetch）+ GET /api/agents 已实现；**DashboardShell 完整外壳**（侧边栏+多视图路由）已从 feat/3.5-app-shell 合并入 main（commit f58a31e8）；Issue #61 进行中。**⚠️ 线上验证（2026-07-20，B道）**：侧边栏渲染✅、`/api/agents` 返真实数据✅、**租户隔离实测通过**（orgB 看不到 orgA agent）；但发现 3 缺陷——点二级菜单不切换视图(#73)、监控指标与侧栏用户仍 mock(#74)、agents-admin 未消费 /api/agents(#75) |
+| 3.6 | 部署到服务器验收（依赖 0.7） | ⬜ | 代码已就绪（main 最新）；**待做**：配 `DEPLOY_SSH_KEY` Secret 后自动部署，或手动 rsync；线上打开侧边栏+登出确认正常 → 关闭 Issue #59 |
+| 3.7 | 第一批自动化测试（认证与权限的关键路径）+ 租户隔离专项脚本（TESTING.md L5①） | 🔄 | **已完成**：L2 权限矩阵 19 条（`tests/unit/permissions.test.ts`）+ L3 API 集成 9 条（`tests/unit/api-agents.test.ts`），35条CI全绿；**待做**：租户隔离专项（L5①，需 Supabase 本地栈 `supabase start`），隔离验收前不开 Phase 4 → Issue #60 |
 
 **⚠️ 检测关口 3**：3.3 和 3.4 的租户隔离必须专门测试——这是企业级产品的生命线，出问题就是事故。
 
@@ -116,7 +116,7 @@
 
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
-| 4.1.1 | Agent CRUD API + 页面接通（列表/创建/编辑/删除） | ⬜ | 刷新后数据仍在；跨租户不可见 |
+| 4.1.1 | Agent CRUD API + 页面接通（列表/创建/编辑/删除） | ⬜ | 刷新后数据仍在；跨租户不可见。含把 agents-admin 视图接入 `/api/agents`（#75，API + 租户隔离已就绪，前端待接） |
 | 4.1.2 | 状态机：草稿 → 待审核 → 已发布 → 停用（含校验规则） | ⬜ | 非法流转被拒绝并有提示 |
 | 4.1.3 | 审核流程接入安全管理模块（审批提交、留痕） | ⬜ | 审批记录可查 |
 | 4.1.4 | Agent 调用：接通真实大模型 API | ⬜ | 数字员工页面能真实对话，回答与 Agent 配置相符 |
@@ -223,14 +223,19 @@
 | 2026-07-20 | 数据层设计拍板（ADR-008，冲刺 D1·D-3）：四层单向依赖（组件→API/Action→`lib/data/*`→Supabase 客户端）；组件禁直连 mock/supabase，`lib/data/*` 唯一碰库+首参 `ctx`+`server-only`；浏览器薄封装 `lib/api/client.ts` 只打 `/api/*`；Repository 模式包 mock 逐页切（配合 3.5，全切完删 mock-data.ts）；命名对齐现状 `lib/supabase/`（service 客户端=`lib/supabase/admin.ts`）；铁律写入 CLAUDE.md | ADR-008 |
 | 2026-07-20 | **LLM 换供应商：Kimi → 通义 Qwen（ADR-003 修订）**：查证 Kimi/DeepSeek 均无 embedding 接口，GLM 有但 1536 维/OpenAI 兼容未确认；改用**通义（百炼）一家全包**——对话 `qwen-plus` + 嵌入 `text-embedding-v3`，共用一把 `DASHSCOPE_API_KEY`、一份账单；环境变量 `MOONSHOT_API_KEY`→`DASHSCOPE_API_KEY`；PRD 技术索引/ADR-005/copilot 同步换名 | ADR-003 |
 | 2026-07-20 | 嵌入模型选型拍板（ADR-009）：**通义 text-embedding-v3 输出 1536 维**（OpenAI 兼容、中文强、国内低延迟、免运维），对齐 pgvector `vector(1536)`，与 LLM 同供应商同 Key；封装 `lib/llm/embedding.ts` 单点、Key 存服务器；建议 migration 给 `chunks` 补 `embedding_model/dim`（交 A 道）；已开通 DashScope Key，配 `.env.local`；解锁 4.2.2 向量化 | ADR-009 |
+| 2026-07-20 | 线上部署验证（B 道，D1-B 后）：aipaddle.net 登录/会话✅、`/console` iframe 门户✅、DashboardShell 侧边栏✅、`/api/agents` 返真实 DB 数据✅、**租户隔离实测通过**（orgA 见自己 agent，orgB 返空）；发现 4 缺陷入排期：#72 登录卡「登录中...」/ #73 侧边栏二级菜单不切换视图 / #74 监控指标+侧栏用户仍 mock / #75 agents-admin 未接 /api/agents | Issues #72-75 |
+| 2026-07-20 | D1-E 集成任务显式化（E道D1职责=合并/修红/部署，冲刺表原未排编号）：用 GitHub 侧原子合并集成绿灯 PR、合并后复核 main CI 绿、确认自动部署与线上正常；E道纪律=不产新功能，合并前检查无 MERGE_HEAD/锁避免撞车 | Issue #77 |
 
-## 当前状态小结（2026-07-18 · 第 3 次更新）
+## 当前状态小结（2026-07-20 · 第 5 次更新）
 
-- ✅ 已完成：前端原型（11 个模块 UI）、PRD v1.04、UI 规范、实现审计、工程质量脚本、**2.1 后端选型（ADR-001）**、**测试策略（docs/TESTING.md）**
-- 🔄 进行中：主控文件入库；0.6 Issue 工作流（模板已入库，标签与批量建卡待做）；2.2 认证与多租户（认证已定，隔离策略待设计）；2.6 轮子清单（认证/存储已定）；MVP 首个闭环场景待拍板（建议 Agent 管理）
-- ⬜ 下一步（按顺序）：
-  1. 注册 Supabase，创建项目（区域：新加坡或东京），拿到连接信息
-  2. 提交 `.github/` 下的 Issue 模板与 ci.yml 并 push，确认 CI 首跑绿灯
-  3. 0.6 收尾：建标签，把阶段 2-3 任务批量建成 Issue
-  4. 2.2 租户上下文与 RLS 隔离策略设计（ADR-002）
-  5. 0.9 测试基建（Vitest + Playwright）｜0.7 服务器部署链路（可并行）
+- ✅ **已完成**：前端原型（11 个模块 UI）、PRD v1.04、UI 规范、实现审计、全部 ADR（001~008）、数据库 18 张表+seed、认证闭环（注册/登录/退出/中间件守卫）、服务器部署链路（0.7）、Vitest+RTL+Playwright 测试基建（0.9a/0.9b）、`/console` 受保护控制台门户
+- 🔄 **代码已实现待线上验收**：
+  - **0.8** deploy.yml 已入库，待配 `DEPLOY_SSH_KEY` GitHub Secret
+  - **3.3** `getRequestContext()` + RLS 隔离，35条测试全绿，待两租户账号亲手验收
+  - **3.4** RBAC 权限矩阵 + 403 门，35条测试全绿，待 User 角色验 403
+  - **3.5** `lib/data/agents` + `lib/api/client` + DashboardShell 完整外壳，待部署到服务器验收
+  - **3.7** L2+L3 测试 35 条 CI 全绿，租户隔离 L5 专项待补
+- ⬜ **下一步（按顺序）**：
+  1. 配 GitHub Secret `DEPLOY_SSH_KEY` → 触发自动部署 → 验收 3.3/3.4/3.5/3.6
+  2. 补 3.7 租户隔离专项（`supabase start` 本地栈），全绿后关检测关口 3
+  3. 启动 Phase 4 切片 1：4.1.1 Agent CRUD API + 页面接通

@@ -33,10 +33,9 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # ── 以下步骤在 ROADMAP 0.9（测试基建）完成后取消注释 ──
-
-      # - name: Unit & integration tests
-      #   run: pnpm test
+      # ── ROADMAP 0.9b：单元/集成测试（L2/L3）──
+      - name: Unit & integration tests
+        run: pnpm test
 
   # e2e:
   #   # 仅在合并到 main 前跑冒烟集（ROADMAP 0.9 完成后启用）
