@@ -28,16 +28,15 @@ export async function login(formData: FormData): Promise<void> {
   redirect('/dashboard')
 }
 
-// register 保留 useActionState 形态：需要在"待邮箱确认"时渲染成功提示而非跳转。
-export type AuthState = { error?: string; ok?: boolean; needsConfirm?: boolean }
-
-export async function register(_prev: AuthState, formData: FormData): Promise<AuthState> {
+// register：与 login 同构，普通 form action + 服务端 redirect（可靠导航）。
+// 关闭邮箱确认 → signUp 直接建 session → 跳 /dashboard；开启确认 → 跳 /register?registered=1 提示查收邮件。
+export async function register(formData: FormData): Promise<void> {
   const email = String(formData.get('email') ?? '').trim()
   const password = String(formData.get('password') ?? '')
   const displayName = String(formData.get('displayName') ?? '').trim() || email.split('@')[0]
 
-  if (!EMAIL_RE.test(email)) return { error: '邮箱格式不正确' }
-  if (password.length < 8) return { error: '密码至少 8 位' }
+  if (!EMAIL_RE.test(email)) redirect('/register?error=email_format')
+  if (password.length < 8) redirect('/register?error=password_short')
 
   const supabase = await createClient()
   const origin = (await headers()).get('origin') ?? ''
@@ -51,11 +50,12 @@ export async function register(_prev: AuthState, formData: FormData): Promise<Au
   })
 
   if (error) {
-    if (/registered|already/i.test(error.message)) return { error: '该邮箱已注册' }
-    return { error: error.message }
+    if (/registered|already/i.test(error.message)) redirect('/register?error=exists')
+    redirect('/register?error=service')
   }
-  if (data.user && (data.user.identities?.length ?? 0) === 0) {
-    return { error: '该邮箱已注册' }
-  }
-  return { ok: true, needsConfirm: !data.session }
+  // 防枚举：邮箱已存在的已确认用户，signUp 仍返回 user 但 identities 为空
+  if (data.user && (data.user.identities?.length ?? 0) === 0) redirect('/register?error=exists')
+
+  if (data.session) redirect('/dashboard')
+  redirect('/register?registered=1')
 }

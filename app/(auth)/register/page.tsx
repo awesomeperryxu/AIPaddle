@@ -1,24 +1,37 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useActionState } from 'react'
+import { Suspense } from 'react'
+import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { register } from '../actions'
 
-export default function RegisterPage() {
-  const router = useRouter()
-  const [state, formAction, pending] = useActionState(register, {})
+const ERR_MAP: Record<string, string> = {
+  email_format: '邮箱格式不正确',
+  password_short: '密码至少 8 位',
+  exists: '该邮箱已注册',
+  service: '注册服务暂不可用，请稍后重试',
+}
 
-  // 关闭邮箱确认时已建 session → 直接进 dashboard；需确认时留在成功页
-  useEffect(() => {
-    if (state.ok && !state.needsConfirm) {
-      router.replace('/dashboard')
-      router.refresh()
-    }
-  }, [state.ok, state.needsConfirm, router])
+function SubmitButton() {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
+    >
+      {pending ? '注册中...' : '注册'}
+    </button>
+  )
+}
 
-  if (state.ok && state.needsConfirm) {
+function RegisterInner() {
+  const searchParams = useSearchParams()
+  const error = ERR_MAP[searchParams.get('error') ?? '']
+  const registered = searchParams.get('registered') === '1'
+
+  if (registered) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0f0f0f] px-4">
         <div className="text-center space-y-3">
@@ -44,13 +57,13 @@ export default function RegisterPage() {
         <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-8">
           <h2 className="text-lg font-medium text-white mb-6">注册账号</h2>
 
-          {state.error && (
+          {error && (
             <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-400">
-              {state.error}
+              {error}
             </div>
           )}
 
-          <form action={formAction} noValidate className="space-y-4">
+          <form action={register} noValidate className="space-y-4">
             <div>
               <label htmlFor="displayName" className="block text-xs text-white/50 mb-1.5">显示名称</label>
               <input
@@ -90,13 +103,7 @@ export default function RegisterPage() {
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={pending}
-              className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
-            >
-              {pending ? '注册中...' : '注册'}
-            </button>
+            <SubmitButton />
           </form>
 
           <p className="mt-6 text-center text-xs text-white/30">
@@ -108,5 +115,13 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0f0f0f]" />}>
+      <RegisterInner />
+    </Suspense>
   )
 }
