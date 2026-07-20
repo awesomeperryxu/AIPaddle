@@ -1,51 +1,61 @@
 name: Deploy
 
+# 0.8 自动化部署：push main → SSH 到服务器拉取最新 main、构建、PM2 重启，再冒烟检查
 on:
   push:
     branches: [main]
+  workflow_dispatch: {}
+
+# 同一时间只允许一个生产部署，避免多次 push 并发部署互相干扰
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      # 写入 SSH 私钥（内容来自 GitHub Secret SSH_PRIVATE_KEY）
-      - name: Setup SSH
+      - name: 准备部署密钥
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
 
-      # 把源码同步到服务器（排除 node_modules/.next/.env.local，不覆盖服务器上的密钥文件）
-      - name: Sync source to server
+      - name: SSH 部署到服务器
+        env:
+          GH_PAT: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          rsync -avz --delete \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='.next' \
-            --exclude='.env.local' \
-            --exclude='.env.*.local' \
-            ./ ubuntu@${{ secrets.SERVER_HOST }}:/opt/aipaddle/
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
+            ubuntu@43.173.99.218 "GH_PAT='${GH_PAT}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/aipaddle
+          export PATH="$HOME/.local/share/pnpm:$PATH"
 
-      # 服务器上安装依赖、构建、重启（--update-env 确保 .env.local 生效）
-      - name: Install, build and restart
-        run: |
-          ssh ubuntu@${{ secrets.SERVER_HOST }} bash -s <<'EOF'
-            set -e
-            cd /opt/aipaddle
-            pnpm install --frozen-lockfile
-            pnpm build
-            pm2 restart aipaddle --update-env
-            pm2 save
-          EOF
+          # 保留 .env（密钥只存服务器，不进 GitHub）
+          cp -f .env /tmp/aipaddle.env.bak 2>/dev/null || true
 
-      # 冒烟检查：确认 HTTP 200（跟 redirect，-L 自动跟随到 /login 页）
-      - name: Smoke check
+          # 用 Actions 临时 token 拉取私有仓库最新 main（一次性 URL，不写入 remote）
+          git fetch "https://x-access-token:${GH_PAT}@github.com/HELLOPERRYXU/AIPaddle.git" main
+          git reset --hard FETCH_HEAD
+
+          # 恢复/校验 .env
+          [ -f .env ] || cp -f /tmp/aipaddle.env.bak .env 2>/dev/null || true
+          [ -f .env ] || { echo "FATAL: /opt/aipaddle/.env 缺失，终止部署"; exit 1; }
+
+          pnpm install --frozen-lockfile
+          rm -rf .next
+          # build 失败则不重启（PM2 继续跑旧版本），部署整体失败
+          pnpm build
+          pm2 restart aipaddle --update-env
+          pm2 save
+          echo "部署完成: $(git log --oneline -1)"
+          REMOTE
+
+      - name: 冒烟检查（https://aipaddle.net/login 期望 200）
         run: |
-          sleep 8
-          curl -fsS -L --max-time 15 https://aipaddle.net/login -o /dev/null \
-            && echo "✅ 冒烟检查通过" \
-            || (echo "❌ 冒烟检查失败" && exit 1)
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://aipaddle.net/login || true)
+            if [ "$code" = "200" ]; then echo "冒烟通过 (HTTP $code)"; exit 0; fi
+            echo "第 $i 次: HTTP $code，10s 后重试…"; sleep 10
+          done
+          echo "冒烟失败：/login 未返回 200"; exit 1
