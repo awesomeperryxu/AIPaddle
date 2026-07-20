@@ -62,10 +62,10 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // 根路径：未登录 → /login，已登录 → 最新原型工作台
+  // 根路径：未登录 → /login，已登录 → 受保护的控制台门户
   if (pathname === '/') {
     const url = request.nextUrl.clone()
-    url.pathname = user ? '/prototype/AIPaddle.dc.html' : '/login'
+    url.pathname = user ? '/console' : '/login'
     return NextResponse.redirect(url)
   }
 
