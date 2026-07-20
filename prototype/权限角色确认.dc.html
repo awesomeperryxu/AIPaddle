@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>角色与页面权限矩阵 · 确认</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./licon.js"></script>
+<style>
+  body{margin:0;background:oklch(0.1 0.01 250);color:oklch(0.95 0.005 260);font-family:'Geist',-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color-scheme:dark}
+  a{color:oklch(0.65 0.2 250);text-decoration:none} a:hover{color:oklch(0.75 0.16 250);text-decoration:underline}
+  l-icon{display:inline-flex;flex:none;line-height:0}
+  input,textarea,button{font-family:inherit}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.28 0.015 250);border-radius:5px;border:2px solid oklch(0.1 0.01 250)}
+  [data-opt][data-active="1"]{background:oklch(0.65 0.2 250) !important;color:oklch(0.98 0 0) !important;border-color:oklch(0.65 0.2 250) !important}
+  @keyframes omfade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</helmet>
+<div data-screen-label="权限角色确认" style="max-width:1240px;margin:0 auto;padding:40px 32px 80px;display:flex;flex-direction:column;gap:28px">
+  <sc-if value="{{ toastShow }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:24px;right:24px;z-index:300;background:oklch(0.14 0.015 250);border:1px solid oklch(0.55 0.18 145 / 0.4);border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:omfade .2s"><l-icon name="check-circle-2" style="width:16px;height:16px;color:#22c55e"></l-icon><span style="font-size:13px;color:oklch(0.95 0.005 260)">{{ toast }}</span></div>
+  </sc-if>
+  <div>
+    <p style="margin:0 0 8px;font-size:12px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:oklch(0.65 0.2 250)">AIPaddle · 权限设计确认 · 2026-07-18</p>
+    <h1 style="margin:0;font-size:28px;font-weight:600;color:oklch(0.95 0.005 260)">角色划分 × 功能页面权限矩阵</h1>
+    <p style="margin:8px 0 0;font-size:14px;color:oklch(0.6 0.01 260);line-height:1.7">基于 PRD 2.8 / 2.10 与现有原型 17 个功能页整理的 RBAC 方案。矩阵单元格可直接点击调整（● 完全 → ◐ 受限 → — 无）。参考：<a href="./AIPaddle.dc.html">原型</a> · <a href="./PRD确认清单.dc.html">PRD 覆盖清单</a></p>
+    <div style="margin-top:16px;padding:14px 16px;border-radius:12px;background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.3);display:flex;gap:10px;align-items:flex-start">
+      <l-icon name="check-circle-2" style="width:18px;height:18px;color:#22c55e;margin-top:1px"></l-icon>
+      <div>
+        <p style="margin:0;font-size:14px;font-weight:600;color:#22c55e">已确认并写入 PRD 章节（2026-07-18）</p>
+        <p style="margin:4px 0 0;font-size:13px;color:oklch(0.6 0.01 260);line-height:1.7">P1 受限访客 · P2 部门创建 Agent 需 AI 管理员审批 · P3 财务全明细 · P4 暂不新增平台审计员 · P5 管理员角色双人复核；Skill 三级体系（企业强制 / 个人 / 审核上架）、WF·CF·Agent 部门共享模型、企业级 Multi-Agent 仅系统管理员、知识库穿透权限均已吸收。产出：<a href="./docs/requirements/PRD_权限与角色_v1.05.md">docs/requirements/PRD_权限与角色_v1.05.md</a> + <a href="./docs/requirements/permissions.config.json">permissions.config.json</a>（机器可读，供开发直接消费）</p>
+      </div>
+    </div>
+  </div>
+  <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px 20px">
+    <h3 style="margin:0 0 10px;font-size:15px;font-weight:600;color:oklch(0.95 0.005 260)">设计原则</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:13px;color:oklch(0.6 0.01 260);line-height:1.7">
+      <p style="margin:0">① <span style="color:oklch(0.95 0.005 260)">两层体系</span>：平台侧（运营方）与租户侧（企业内）完全隔离，平台角色不可见租户业务数据明细</p>
+      <p style="margin:0">② <span style="color:oklch(0.95 0.005 260)">RBAC + 数据范围</span>：功能权限（页面 × 操作）与数据范围（全部 / 本部门及下级 / 本部门 / 本人）正交</p>
+      <p style="margin:0">③ <span style="color:oklch(0.95 0.005 260)">最小权限默认</span>：新用户默认「普通员工」；提权走审批并记录审计</p>
+      <p style="margin:0">④ <span style="color:oklch(0.95 0.005 260)">全程审计</span>：角色/权限变更、导出、删除均审计留痕；管理员敏感操作强制 MFA</p>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;font-size:12px;color:oklch(0.6 0.01 260)">
+    <span style="font-weight:600;color:oklch(0.95 0.005 260)">图例</span>
+    <span style="display:flex;align-items:center;gap:6px"><span style="color:oklch(0.65 0.2 250);font-size:14px">●</span>完全（含创建/编辑/删除）</span>
+    <span style="display:flex;align-items:center;gap:6px"><span style="color:#eab308;font-size:14px">◐</span>受限（只读 / 限本部门或指定资源 / 需审批）</span>
+    <span style="display:flex;align-items:center;gap:6px"><span style="color:oklch(0.5 0.01 260);font-size:14px">—</span>无权限（导航不可见）</span>
+    <span style="margin-left:auto">点击单元格循环切换；首列超级管理员锁定</span>
+  </div>
+  <section>
+    <h2 style="margin:0 0 4px;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">一、平台侧角色（AIPaddle 运营方 · 3 类）</h2>
+    <p style="margin:0 0 12px;font-size:13px;color:oklch(0.6 0.01 260)">{{ platRoleLine }}</p>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr>
+          <th style="text-align:left;padding:10px 16px;font-size:12px;font-weight:500;color:oklch(0.6 0.01 260);border-bottom:1px solid oklch(0.25 0.015 250);min-width:200px">功能页面</th>
+          <sc-for list="{{ platHead }}" as="h" hint-placeholder-count="3"><th title="{{ h.desc }}" style="text-align:center;padding:10px 8px;font-size:12px;font-weight:600;color:oklch(0.95 0.005 260);border-bottom:1px solid oklch(0.25 0.015 250);min-width:88px">{{ h.name }}</th></sc-for>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ platRows }}" as="r" hint-placeholder-count="6">
+            <tr style-hover="background:oklch(0.2 0.015 250 / 0.3)">
+              <td style="padding:8px 16px;border-bottom:1px solid oklch(0.25 0.015 250);color:oklch(0.95 0.005 260)">{{ r.page }}<span style="font-size:11px;color:oklch(0.6 0.01 260);margin-left:8px">{{ r.hint }}</span></td>
+              <sc-for list="{{ r.cells }}" as="c">
+                <td style="padding:6px 8px;border-bottom:1px solid oklch(0.25 0.015 250);text-align:center">
+                  <button onClick="{{ c.cycle }}" title="{{ c.title }}" style="width:30px;height:26px;border:none;border-radius:6px;background:{{ c.bg }};color:{{ c.color }};font-size:13px;cursor:{{ c.cursor }};display:inline-flex;align-items:center;justify-content:center">{{ c.glyph }}</button>
+                </td>
+              </sc-for>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section>
+    <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">二、租户侧角色（企业内 · 9 类，与原型「角色权限」页一致）</h2>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+      <sc-for list="{{ tenRoleCards }}" as="rc" hint-placeholder-count="9">
+        <div style="padding:10px 12px;border-radius:10px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250)">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;font-weight:600;color:oklch(0.95 0.005 260)">{{ rc.name }}</span><span style="font-size:10px;padding:1px 7px;border-radius:999px;background:oklch(0.55 0.18 180 / 0.12);color:oklch(0.55 0.18 180)">{{ rc.scope }}</span></div>
+          <p style="margin:4px 0 0;font-size:12px;color:oklch(0.6 0.01 260);line-height:1.5">{{ rc.desc }}</p>
+        </div>
+      </sc-for>
+    </div>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr>
+          <th style="text-align:left;padding:10px 16px;font-size:12px;font-weight:500;color:oklch(0.6 0.01 260);border-bottom:1px solid oklch(0.25 0.015 250);min-width:170px">功能页面</th>
+          <sc-for list="{{ tenHead }}" as="h" hint-placeholder-count="9"><th title="{{ h.desc }}" style="text-align:center;padding:10px 4px;font-size:11px;font-weight:600;color:oklch(0.95 0.005 260);border-bottom:1px solid oklch(0.25 0.015 250);min-width:62px">{{ h.name }}</th></sc-for>
+        </tr></thead>
+        <tbody>
+          <sc-for list="{{ tenRows }}" as="r" hint-placeholder-count="13">
+            <tr style-hover="background:oklch(0.2 0.015 250 / 0.3)">
+              <td style="padding:8px 16px;border-bottom:1px solid oklch(0.25 0.015 250);color:oklch(0.95 0.005 260)">{{ r.page }}<span style="font-size:11px;color:oklch(0.6 0.01 260);margin-left:8px">{{ r.hint }}</span></td>
+              <sc-for list="{{ r.cells }}" as="c">
+                <td style="padding:6px 4px;border-bottom:1px solid oklch(0.25 0.015 250);text-align:center">
+                  <button onClick="{{ c.cycle }}" title="{{ c.title }}" style="width:28px;height:26px;border:none;border-radius:6px;background:{{ c.bg }};color:{{ c.color }};font-size:13px;cursor:{{ c.cursor }};display:inline-flex;align-items:center;justify-content:center">{{ c.glyph }}</button>
+                </td>
+              </sc-for>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin:8px 0 0;font-size:12px;color:oklch(0.6 0.01 260)">「受限」典型含义：AI 管理员对安全管理 = 只见自己提交的审核单；部门管理员对成员/知识库 = 限本部门及下级；普通员工对 Skill Hub = 仅浏览与申请安装；外包驻场对数字员工 = 仅指定客服 Agent 且禁止导出。</p>
+  </section>
+  <section>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">
+      <h2 style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">三、待你确认的问题</h2>
+      <span style="font-size:13px;color:oklch(0.6 0.01 260)">已确认 <span style="color:oklch(0.65 0.2 250);font-weight:600">{{ answered }}</span> / {{ total }} 项（选择与矩阵调整自动保存）</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="5">
+        <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px 20px">
+          <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
+            <span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:6px;background:oklch(0.65 0.2 250 / 0.12);color:oklch(0.65 0.2 250);flex:none">{{ q.id }}</span>
+            <div style="flex:1">
+              <p style="margin:0;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260);line-height:1.5">{{ q.title }}</p>
+              <p style="margin:4px 0 0;font-size:12px;color:oklch(0.6 0.01 260);line-height:1.6">{{ q.detail }}</p>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-left:44px">
+            <sc-for list="{{ q.options }}" as="o" hint-placeholder-count="3">
+              <button data-opt="1" data-active="{{ o.activeAttr }}" onClick="{{ o.pick }}" style="height:30px;padding:0 14px;font-size:13px;border-radius:999px;border:1px solid oklch(0.25 0.015 250);background:transparent;color:oklch(0.95 0.005 260);cursor:pointer;transition:all .12s" style-hover="border-color:oklch(0.65 0.2 250 / 0.6)">{{ o.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:16px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:16px 20px">
+      <p style="margin:0 0 8px;font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">补充说明（可选）</p>
+      <textarea placeholder="需要新增的角色、特殊数据范围、审批流要求……" value="{{ note }}" onInput="{{ setNote }}" style="width:100%;min-height:64px;padding:10px 12px;font-size:13px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250);border-radius:8px;color:oklch(0.95 0.005 260);outline:none;resize:vertical;box-sizing:border-box" style-focus="border-color:oklch(0.65 0.2 250)"></textarea>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+        <p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">确认完成后点击复制，把结果粘贴到对话发给我，我会生成 PRD「权限与角色」章节（Markdown，可直接提交仓库）。</p>
+        <button onClick="{{ copyResult }}" style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;font-size:14px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3);flex:none" style-hover="filter:brightness(1.12)"><l-icon name="copy" style="width:15px;height:15px"></l-icon>复制确认结果</button>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { over: {}, answers: {}, note: '', toast: '' };
+  componentDidMount() {
+    try {
+      const s = JSON.parse(localStorage.getItem('aipaddle-perm-confirm-v1') || '{}');
+      this.setState({ over: s.over || {}, answers: s.answers || {}, note: s.note || '' });
+    } catch (e) {}
+  }
+  componentWillUnmount() { clearTimeout(this._tt); }
+  persist() { try { localStorage.setItem('aipaddle-perm-confirm-v1', JSON.stringify({ over: this.state.over, answers: this.state.answers, note: this.state.note })); } catch (e) {} }
+  showToast(msg) { this.setState({ toast: msg }); clearTimeout(this._tt); this._tt = setTimeout(() => this.setState({ toast: '' }), 2600); }
+  defs() {
+    return {
+      platRoles: [
+        { name: '平台超管', desc: '平台超级管理员：租户开通/删除、系统设置、Key 与账单全量权限；敏感操作 MFA' },
+        { name: '平台运营', desc: '租户开通、配额调整、账单催缴、运营看板；Key 只读；无系统设置' },
+        { name: '安全审计', desc: 'MCP 审批、安全策略、跨租户审计日志；业务数据只读' }
+      ],
+      platPages: [
+        { page: '运营看板', hint: 'MRR/增长/成本', def: [2, 2, 1] },
+        { page: '租户管理（含全部多级页）', hint: '开通/配额/账单/模型/MCP', def: [2, 2, 1] },
+        { page: 'Key 管理', hint: '创建/吊销/限流', def: [2, 1, 0] },
+        { page: '账单管理（平台）', hint: '应收/账龄/催缴', def: [2, 2, 1] },
+        { page: '系统设置', hint: '安全策略/数据保留', def: [2, 0, 1] },
+        { page: '通知中心', hint: '', def: [2, 2, 2] }
+      ],
+      tenRoles: [
+        { name: '超管', full: '企业超级管理员', scope: '全部数据', desc: '企业内全量权限；矩阵锁定不可编辑' },
+        { name: '管理员', full: '企业管理员', scope: '全部数据', desc: '组织架构、人员、配额、账单与内部管理' },
+        { name: 'AI管理', full: 'AI 管理员', scope: '全部数据', desc: 'Agent / Skill / 知识库 / 工作流全生命周期与发布' },
+        { name: '安全', full: '安全管理员', scope: '全部数据', desc: '安全审核、MCP 审批、会话管理、审计导出' },
+        { name: '财务', full: '财务管理员', scope: '全部数据', desc: '账单、配额调整申请、成本分摊分析' },
+        { name: '部门', full: '部门管理员', scope: '本部门及下级', desc: '本部门人员、配额与资源；配额告警接收人' },
+        { name: '开发者', full: '开发者', scope: '本部门', desc: '创建/调试 Agent、Skill、工作流、知识库' },
+        { name: '员工', full: '普通员工', scope: '本人', desc: '使用数字员工、个人助理、知识库问答' },
+        { name: '外包', full: '外包驻场（自定义示例）', scope: '本人', desc: '仅指定客服 Agent；禁止导出与上传' }
+      ],
+      tenPages: [
+        { page: '监控', hint: '用量/成本明细', def: [2, 2, 2, 1, 1, 1, 1, 0, 0] },
+        { page: '个人助理', hint: '', def: [2, 2, 2, 2, 2, 2, 2, 2, 1] },
+        { page: 'Agent 管理', hint: '创建/发布/下线', def: [2, 1, 2, 1, 0, 1, 2, 0, 0] },
+        { page: '数字员工', hint: '对话使用', def: [2, 2, 2, 1, 1, 2, 2, 2, 1] },
+        { page: 'Skill Hub', hint: '市场/发布', def: [2, 1, 2, 1, 0, 1, 2, 1, 0] },
+        { page: '我的 Skill', hint: '个人级', def: [2, 2, 2, 2, 2, 2, 2, 2, 0] },
+        { page: '知识库管理', hint: '上传/向量化', def: [2, 1, 2, 1, 0, 1, 2, 0, 0] },
+        { page: '知识库问答', hint: '检索测试', def: [2, 2, 2, 2, 2, 2, 2, 2, 1] },
+        { page: '工作流管理', hint: '编排/发布', def: [2, 1, 2, 1, 0, 1, 2, 0, 0] },
+        { page: '安全管理', hint: '审核/审计', def: [2, 1, 1, 2, 0, 0, 0, 0, 0] },
+        { page: '成员管理', hint: '', def: [2, 2, 1, 1, 0, 1, 0, 0, 0] },
+        { page: '租户内部管理', hint: '组织/角色/SSO', def: [2, 2, 0, 1, 1, 1, 0, 0, 0] },
+        { page: '账单与配额（租户）', hint: '', def: [2, 2, 1, 0, 2, 1, 0, 0, 0] }
+      ],
+      questions: [
+        { id: 'P1', title: '「外包驻场」自定义角色是否写入正式 PRD？', detail: '当前作为自定义角色示例存在于原型（12 人，仅指定客服 Agent、禁止导出）。', options: ['保留', '移除', '改为通用「受限访客」角色'] },
+        { id: 'P2', title: '部门管理员可否在本部门创建 Agent？', detail: '当前默认「受限」＝可编辑本部门已有 Agent，但创建需 AI 管理员操作。', options: ['允许直接创建', '可创建但需 AI 管理员审批', '不允许（维持现状）'] },
+        { id: 'P3', title: '财务管理员的成本可见粒度？', detail: '影响监控成本明细页与账单页对该角色的展示深度。', options: ['仅账单总额', '含模型单价明细', '部门 + 模型全明细'] },
+        { id: 'P4', title: '是否新增平台侧「只读审计员」角色（监管/合规巡查场景）？', detail: '跨租户只读 + 审计导出，无任何写操作；金融/医药租户合规常见诉求。', options: ['需要', '暂不需要'] },
+        { id: 'P5', title: '角色与权限变更是否要求双人复核（四眼原则）？', detail: '变更由 A 提交、B 审批后生效，全程审计。', options: ['仅管理员角色变更需要', '全部变更需要', '不需要'] }
+      ]
+    };
+  }
+  lvCfg(lv) {
+    return [
+      { glyph: '—', color: 'oklch(0.5 0.01 260)', bg: 'oklch(0.2 0.015 250 / 0.35)', label: '无' },
+      { glyph: '◐', color: '#eab308', bg: 'rgba(234,179,8,0.12)', label: '受限' },
+      { glyph: '●', color: 'oklch(0.65 0.2 250)', bg: 'oklch(0.65 0.2 250 / 0.15)', label: '完全' }
+    ][lv];
+  }
+  buildRows(prefix, pages, roles) {
+    return pages.map((p, ri) => ({
+      page: p.page, hint: p.hint,
+      cells: p.def.map((defLv, ci) => {
+        const key = prefix + ':' + ri + ':' + ci;
+        const lv = this.state.over[key] != null ? this.state.over[key] : defLv;
+        const cfg = this.lvCfg(lv);
+        const locked = ci === 0;
+        return {
+          glyph: cfg.glyph, color: cfg.color, bg: cfg.bg,
+          cursor: locked ? 'not-allowed' : 'pointer',
+          title: locked ? '超级管理员权限锁定' : (roles[ci].name + ' × ' + p.page + '：' + cfg.label + '（点击切换）'),
+          cycle: () => {
+            if (locked) return;
+            const next = lv === 2 ? 1 : lv === 1 ? 0 : 2;
+            this.setState(s => ({ over: Object.assign({}, s.over, { [key]: next }) }));
+            setTimeout(() => this.persist(), 0);
+          }
+        };
+      })
+    }));
+  }
+  renderVals() {
+    const D = this.defs();
+    const answers = this.state.answers;
+    const lvName = ['无', '受限', '完全'];
+    return {
+      toast: this.state.toast, toastShow: !!this.state.toast,
+      platRoleLine: D.platRoles.map(r => r.name + '＝' + r.desc.split('；')[0]).join('　·　'),
+      platHead: D.platRoles, tenHead: D.tenRoles,
+      tenRoleCards: D.tenRoles.map(r => ({ name: r.full, scope: r.scope, desc: r.desc })),
+      platRows: this.buildRows('p', D.platPages, D.platRoles),
+      tenRows: this.buildRows('t', D.tenPages, D.tenRoles),
+      questions: D.questions.map(q => ({
+        id: q.id, title: q.title, detail: q.detail,
+        options: q.options.map(label => ({
+          label,
+          activeAttr: answers[q.id] === label ? '1' : '0',
+          pick: () => { this.setState(s => ({ answers: Object.assign({}, s.answers, { [q.id]: label }) })); setTimeout(() => this.persist(), 0); }
+        }))
+      })),
+      answered: D.questions.filter(q => answers[q.id]).length,
+      total: D.questions.length,
+      note: this.state.note,
+      setNote: (e) => { this.setState({ note: e.target.value }); setTimeout(() => this.persist(), 0); },
+      copyResult: () => {
+        const diffs = [];
+        const collect = (prefix, label, pages, roles) => {
+          pages.forEach((p, ri) => p.def.forEach((defLv, ci) => {
+            const key = prefix + ':' + ri + ':' + ci;
+            const lv = this.state.over[key];
+            if (lv != null && lv !== defLv) diffs.push('【' + label + '】' + p.page + ' × ' + roles[ci].name + '：' + lvName[defLv] + ' → ' + lvName[lv]);
+          }));
+        };
+        collect('p', '平台侧', D.platPages, D.platRoles);
+        collect('t', '租户侧', D.tenPages, D.tenRoles);
+        const lines = ['AIPaddle 角色权限划分 · 确认结果', ''];
+        D.questions.forEach(q => lines.push(q.id + ' ' + q.title + '\n→ ' + (answers[q.id] || '（未选择）')));
+        lines.push('');
+        lines.push(diffs.length ? '矩阵调整（相对默认方案）：\n' + diffs.join('\n') : '矩阵：按默认方案，无调整');
+        if (this.state.note.trim()) lines.push('补充说明：' + this.state.note.trim());
+        const text = lines.join('\n\n').replace(/\n\n\n/g, '\n\n');
+        const done = () => this.showToast('已复制，请粘贴到对话中发送');
+        try { navigator.clipboard.writeText(text).then(done, done); } catch (e) { done(); }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

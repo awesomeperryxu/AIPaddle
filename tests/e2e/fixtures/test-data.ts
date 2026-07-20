@@ -1,29 +1,32 @@
 /**
- * AIPaddle E2E 测试数据（唯一权威来源）
+ * AIPaddle E2E 测试数据
  * 依据：PRD_Core_v1.04 各模块数据模型与用户流程
- * 约定：切片 0 的 seed 脚本必须按本文件创建租户与账号，保证 E2E 与 seed 一致。
- * 测试域名统一用 @aipaddle-test.local，避免误发真实邮件。
+ * 约定（2026-07-19 用户拍板反转）：**seed 脚本（`supabase/seed.ts`）是租户与账号的权威来源**，
+ *   本文件的 TENANTS / USERS / BAD_CREDENTIALS 必须与 seed 实际创建的两租户五账号保持一致。
+ *   seed 默认密码统一为 AIPaddle@2026；账号为 Supabase Auth 已确认邮箱（email_confirm），不发真实邮件。
+ *   其余为功能尚未落库的测试夹具（Agent/Skill/Workflow/租户开通/成员邀请），用 @aipaddle-test.local 占位。
  */
 
-// ─── 租户（PRD 2.9）───────────────────────────────────────────
+// ─── 租户（与 seed 一致：aipaddle-demo / acme-corp）────────────
 export const TENANTS = {
-  orgA: { name: '示范科技有限公司', code: 'DEMO-TECH', industry: '制造', size: '中型', country: '中国', timezone: 'Asia/Shanghai' },
-  orgB: { name: '对照集团股份公司', code: 'CTRL-GROUP', industry: '金融', size: '大型', country: '中国', timezone: 'Asia/Shanghai' },
+  orgA: { name: 'AIPaddle Demo', code: 'aipaddle-demo', plan: 'pro' },
+  orgB: { name: 'Acme Corp',     code: 'acme-corp',     plan: 'standard' },
 } as const;
 
-// ─── 账号与角色（PRD 2.8：Admin/Developer/User/Auditor）────────
+// ─── 账号与角色（与 seed 一致；PRD 2.8：Admin/Developer/User/Auditor）────────
+const SEED_PASSWORD = 'AIPaddle@2026';
 export const USERS = {
-  adminA:   { email: 'admin.a@aipaddle-test.local',   password: 'E2e!AdminA_2026',   name: '陈雪',   role: 'Admin',     org: 'orgA', department: '信息技术部' },
-  devA:     { email: 'dev.a@aipaddle-test.local',     password: 'E2e!DevA_2026',     name: '李工',   role: 'Developer', org: 'orgA', department: '研发部' },
-  userA:    { email: 'user.a@aipaddle-test.local',    password: 'E2e!UserA_2026',    name: '王芳',   role: 'User',      org: 'orgA', department: '市场部' },
-  auditorA: { email: 'auditor.a@aipaddle-test.local', password: 'E2e!AuditorA_2026', name: '赵审',   role: 'Auditor',   org: 'orgA', department: '合规部' },
-  adminB:   { email: 'admin.b@aipaddle-test.local',   password: 'E2e!AdminB_2026',   name: '孙总',   role: 'Admin',     org: 'orgB', department: '总办' },
+  adminA:   { email: 'admin-demo@aipaddle.dev', password: SEED_PASSWORD, name: 'Demo 管理员', role: 'Admin',     org: 'orgA' },
+  devA:     { email: 'dev@aipaddle.dev',        password: SEED_PASSWORD, name: 'Demo 开发者', role: 'Developer', org: 'orgA' },
+  userA:    { email: 'user@aipaddle.dev',       password: SEED_PASSWORD, name: 'Demo 用户',   role: 'User',      org: 'orgA' },
+  auditorA: { email: 'auditor@aipaddle.dev',    password: SEED_PASSWORD, name: 'Demo 审计员', role: 'Auditor',   org: 'orgA' },
+  adminB:   { email: 'admin-acme@acme.dev',     password: SEED_PASSWORD, name: 'Acme 管理员', role: 'Admin',     org: 'orgB' },
 } as const;
 
 export const BAD_CREDENTIALS = [
-  { email: 'admin.a@aipaddle-test.local', password: 'wrong-password', expect: '密码错误' },
-  { email: 'nobody@aipaddle-test.local',  password: 'E2e!AdminA_2026', expect: '账号不存在或密码错误' },
-  { email: 'not-an-email',                password: 'x',               expect: '邮箱格式' },
+  { email: 'admin-demo@aipaddle.dev', password: 'wrong-password', expect: '密码错误' },
+  { email: 'nobody@aipaddle.dev',     password: SEED_PASSWORD,    expect: '账号不存在或密码错误' },
+  { email: 'not-an-email',            password: 'x',              expect: '邮箱格式' },
 ] as const;
 
 // ─── Agent（PRD 2.2.1 数据模型 + 4.1 流程）────────────────────
@@ -137,7 +140,7 @@ export const TENANT_ONBOARDING = {
     advanced:{ mcpEnabled: false, isolation: '逻辑隔离', notes: 'E2E 测试租户' },
   },
   invalid: [
-    { field: 'code',  value: 'DEMO-TECH', expectError: '编码已存在' },  // 与 orgA 冲突
+    { field: 'code',  value: 'aipaddle-demo', expectError: '编码已存在' },  // 与 orgA 冲突
     { field: 'email', value: 'not-email', expectError: '邮箱格式' },
     { field: 'tokenQuota', value: -1,     expectError: '配额必须为正数' },
   ],

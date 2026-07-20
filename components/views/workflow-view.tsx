@@ -389,9 +389,11 @@ export function WorkflowView() {
 
   // Calculate SVG path for connections
   const getConnectionPath = useCallback((source: WorkflowNode, target: WorkflowNode) => {
-    const sourceX = source.position.x + 100; // Center of node (assuming 200px width)
-    const sourceY = source.position.y + (source.type === 'start' || source.type === 'end' ? 18 : 50); // Bottom of node
-    const targetX = target.position.x + 100;
+    const nodeWidth = 240; // 设计规范节点宽度
+    const nodeHeight = 80; // 设计规范节点最小高度
+    const sourceX = source.position.x + nodeWidth / 2; // Center of node
+    const sourceY = source.position.y + nodeHeight; // Bottom of node
+    const targetX = target.position.x + nodeWidth / 2;
     const targetY = target.position.y; // Top of node
     
     const midY = (sourceY + targetY) / 2;
@@ -568,7 +570,8 @@ export function WorkflowView() {
               <div 
                 className="absolute inset-0"
                 style={{ 
-                  backgroundImage: 'radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)',
+                  backgroundColor: 'var(--canvas-bg, #F9FAFB)',
+                  backgroundImage: 'radial-gradient(circle, var(--canvas-dot-color, #D1D5DB) 1px, transparent 1px)',
                   backgroundSize: `${20 * zoomLevel / 100}px ${20 * zoomLevel / 100}px`,
                   backgroundPosition: `${canvasOffset.x}px ${canvasOffset.y}px`
                 }}
@@ -631,30 +634,62 @@ export function WorkflowView() {
                           setSelectedNode(node);
                         }}
                       >
-                        {/* Start/End nodes are smaller and rounded */}
+                        {/* Start/End nodes - 设计规范: 240px宽, 80px高, rounded-xl */}
                         {(node.type === 'start' || node.type === 'end') ? (
-                          <div className={`w-24 h-9 rounded-full ${config.color}/20 border-2 ${config.borderColor}/40 flex items-center justify-center gap-1.5 bg-card shadow-sm hover:shadow-md transition-shadow`}>
-                            <config.icon className={`h-3.5 w-3.5 ${config.color.replace('bg-', 'text-')}`} />
-                            <span className="text-xs font-medium text-foreground">{config.label}</span>
+                          <div 
+                            className="relative flex items-center gap-2 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden"
+                            style={{ width: 240, minHeight: 80 }}
+                          >
+                            {/* 左侧边框条 4px */}
+                            <div 
+                              className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
+                              style={{ backgroundColor: config.borderColor?.replace('/40', '') || config.color.replace('bg-', '#') }}
+                            />
+                            <div className="flex items-center gap-3 p-4 pl-5">
+                              <div 
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ backgroundColor: `${config.color.replace('bg-', '')}20` }}
+                              >
+                                <config.icon className={`h-4 w-4 ${config.color.replace('bg-', 'text-')}`} />
+                              </div>
+                              <span className="text-xs font-medium text-foreground">{config.label}</span>
+                            </div>
+                            {/* Connection handles */}
+                            {node.type === 'start' && (
+                              <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white border-2 border-border hover:border-primary transition-colors" />
+                            )}
+                            {node.type === 'end' && (
+                              <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white border-2 border-border hover:border-primary transition-colors" />
+                            )}
                           </div>
                         ) : (
-                          <div className={`w-52 bg-card rounded-lg border-2 ${config.borderColor}/40 shadow-sm hover:shadow-md transition-shadow overflow-hidden`}>
-                            <div className={`h-1.5 ${config.color}`} />
-                            <div className="p-3">
+                          <div 
+                            className="relative bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden"
+                            style={{ width: 240, minHeight: 80 }}
+                          >
+                            {/* 左侧边框条 4px */}
+                            <div 
+                              className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl"
+                              style={{ backgroundColor: config.borderColor?.replace('/40', '') || config.color.replace('bg-', '#') }}
+                            />
+                            <div className="p-3 pl-4">
                               <div className="flex items-center gap-2 mb-1">
-                                <div className={`w-6 h-6 rounded ${config.color}/20 flex items-center justify-center`}>
+                                <div 
+                                  className="w-6 h-6 rounded-lg flex items-center justify-center"
+                                  style={{ backgroundColor: `${config.color.replace('bg-', '')}20` }}
+                                >
                                   <config.icon className={`h-3.5 w-3.5 ${config.color.replace('bg-', 'text-')}`} />
                                 </div>
-                                <span className="text-sm font-medium text-foreground">{config.label}</span>
+                                <span className="text-xs font-medium text-foreground">{config.label}</span>
                               </div>
                               {node.description && (
-                                <p className="text-xs text-muted-foreground line-clamp-2 ml-8">{node.description}</p>
+                                <p className="text-[11px] text-muted-foreground line-clamp-2 ml-8">{node.description}</p>
                               )}
                             </div>
                             
                             {/* Connection handles */}
-                            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-card border-2 border-border hover:border-primary transition-colors" />
-                            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-card border-2 border-border hover:border-primary transition-colors" />
+                            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white border-2 border-border hover:border-primary transition-colors" />
+                            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white border-2 border-border hover:border-primary transition-colors" />
                           </div>
                         )}
                       </div>
@@ -665,18 +700,18 @@ export function WorkflowView() {
             </div>
           </div>
 
-          {/* Right Sidebar - Node Config */}
+          {/* Right Sidebar - Node Config - 设计规范: 380px */}
           {selectedNode && (
-            <div className="w-80 border-l border-border bg-card">
-              <div className="h-10 border-b border-border flex items-center justify-between px-3">
+            <div className="border-l border-gray-200 bg-white shadow-xl" style={{ width: 380 }}>
+              <div className="h-10 border-b border-gray-200 flex items-center justify-between px-3">
                 <span className="text-xs font-medium text-muted-foreground">节点配置</span>
                 <div className="flex items-center gap-1">
                   {selectedNode.type !== 'start' && (
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={handleDeleteNode}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={handleDeleteNode}>
                       <Trash className="h-4 w-4" />
                     </Button>
                   )}
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedNode(null)}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedNode(null)}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
@@ -710,7 +745,7 @@ export function WorkflowView() {
                             n.id === selectedNode.id ? { ...n, position: { ...n.position, x } } : n
                           ));
                         }}
-                        className="h-8 text-xs"
+                        className="h-7 text-xs"
                       />
                     </div>
                     <div className="space-y-1">
@@ -724,7 +759,7 @@ export function WorkflowView() {
                             n.id === selectedNode.id ? { ...n, position: { ...n.position, y } } : n
                           ));
                         }}
-                        className="h-8 text-xs"
+                        className="h-7 text-xs"
                       />
                     </div>
                   </div>
@@ -735,7 +770,7 @@ export function WorkflowView() {
                       <div className="space-y-2">
                         <Label className="text-xs">模型</Label>
                         <Select defaultValue="gpt-4">
-                          <SelectTrigger className="h-8 text-xs">
+                          <SelectTrigger className="h-7 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -769,7 +804,7 @@ export function WorkflowView() {
                       <div className="space-y-2">
                         <Label className="text-xs">知识库</Label>
                         <Select defaultValue="kb-1">
-                          <SelectTrigger className="h-8 text-xs">
+                          <SelectTrigger className="h-7 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -782,7 +817,7 @@ export function WorkflowView() {
                       <div className="space-y-2">
                         <Label className="text-xs">检索模式</Label>
                         <Select defaultValue="hybrid">
-                          <SelectTrigger className="h-8 text-xs">
+                          <SelectTrigger className="h-7 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -794,7 +829,7 @@ export function WorkflowView() {
                       </div>
                       <div className="space-y-2">
                         <Label className="text-xs">返回数量</Label>
-                        <Input type="number" defaultValue={5} className="h-8 text-xs" />
+                        <Input type="number" defaultValue={5} className="h-7 text-xs" />
                       </div>
                     </>
                   )}
@@ -830,7 +865,7 @@ export function WorkflowView() {
                       <div className="space-y-2">
                         <Label className="text-xs">编程语言</Label>
                         <Select defaultValue="python">
-                          <SelectTrigger className="h-8 text-xs">
+                          <SelectTrigger className="h-7 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -858,7 +893,7 @@ export function WorkflowView() {
                       <div className="space-y-2">
                         <Label className="text-xs">请求方法</Label>
                         <Select defaultValue="GET">
-                          <SelectTrigger className="h-8 text-xs">
+                          <SelectTrigger className="h-7 text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

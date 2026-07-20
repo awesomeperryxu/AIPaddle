@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./licon.js"></script>
+<style>
+  body{margin:0;background:oklch(0.1 0.01 250);color:oklch(0.95 0.005 260);font-family:'Geist',-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color-scheme:dark}
+  a{color:oklch(0.65 0.2 250);text-decoration:none} a:hover{color:oklch(0.75 0.16 250)}
+  l-icon{display:inline-flex;flex:none;line-height:0} l-icon svg{width:100%;height:100%}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.28 0.015 250);border-radius:5px;border:2px solid oklch(0.1 0.01 250)}
+  [data-trow]:hover{background:oklch(0.2 0.015 250 / 0.3)}
+</style>
+</helmet>
+<div data-screen-label="运营看板" style="display:flex;flex-direction:column;gap:24px">
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <h1 style="margin:0;font-size:20px;font-weight:600;color:oklch(0.95 0.005 260)">运营看板</h1>
+      <p style="margin:2px 0 0;font-size:14px;color:oklch(0.6 0.01 260)">平台 SaaS 运营数据总览（平台运营方视角）</p>
+    </div>
+    <button style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;font-size:13px;color:oklch(0.95 0.005 260);background:transparent;border:1px solid oklch(0.25 0.015 250);border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="clock" style="width:15px;height:15px"></l-icon>近 12 个月</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+      <p style="margin:0;font-size:13px;color:oklch(0.6 0.01 260)">月度经常性收入 MRR</p>
+      <p style="margin:6px 0 0;font-size:26px;font-weight:600;color:oklch(0.95 0.005 260)">¥{{ mrr }}</p>
+      <p style="margin:6px 0 0;font-size:12px;color:#22c55e">{{ mrrDelta }} vs 上月</p>
+    </div>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+      <p style="margin:0;font-size:13px;color:oklch(0.6 0.01 260)">活跃租户</p>
+      <p style="margin:6px 0 0;font-size:26px;font-weight:600;color:oklch(0.95 0.005 260)">{{ activeTenants }}</p>
+      <p style="margin:6px 0 0;font-size:12px;color:#22c55e">{{ tenantsDelta }} 本月净增</p>
+    </div>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+      <p style="margin:0;font-size:13px;color:oklch(0.6 0.01 260)">近 30 天平台 Token</p>
+      <p style="margin:6px 0 0;font-size:26px;font-weight:600;color:oklch(0.95 0.005 260)">{{ tokens30d }}</p>
+      <p style="margin:6px 0 0;font-size:12px;color:#22c55e">{{ tokensDelta }} vs 上期</p>
+    </div>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+      <p style="margin:0;font-size:13px;color:oklch(0.6 0.01 260)">逾期应收</p>
+      <p style="margin:6px 0 0;font-size:26px;font-weight:600;color:oklch(0.55 0.22 25)">¥{{ overdueSum }}</p>
+      <p style="margin:6px 0 0;font-size:12px;color:oklch(0.6 0.01 260)">ARPU ¥{{ arpu }}</p>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+      <h3 style="margin:0;font-size:14px;font-weight:600;color:oklch(0.95 0.005 260)">收入趋势（MRR）</h3>
+      <p style="margin:2px 0 12px;font-size:12px;color:oklch(0.6 0.01 260)">近 12 个月，单位 ¥</p>
+      <div style="position:relative;height:200px">
+        <div style="position:absolute;left:0;right:0;top:0;border-top:1px dashed oklch(0.25 0.015 250)"></div>
+        <div style="position:absolute;left:0;right:0;top:50%;border-top:1px dashed oklch(0.25 0.015 250)"></div>
+        <div style="position:absolute;left:0;right:0;bottom:0;border-top:1px dashed oklch(0.25 0.015 250)"></div>
+        <svg viewBox="0 0 720 200" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible">
+          <defs><linearGradient id="mrrG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stop-color="oklch(0.65 0.2 250)" stop-opacity="0.3"></stop><stop offset="95%" stop-color="oklch(0.65 0.2 250)" stop-opacity="0"></stop></linearGradient></defs>
+          <path d="{{ mrrArea }}" fill="url(#mrrG)"></path>
+          <path d="{{ mrrPath }}" fill="none" stroke="oklch(0.65 0.2 250)" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+        </svg>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px">
+        <sc-for list="{{ mrrLabels }}" as="l" hint-placeholder-count="12"><span style="font-size:11px;color:oklch(0.6 0.01 260)">{{ l.m }}</span></sc-for>
+      </div>
+    </div>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+      <h3 style="margin:0;font-size:14px;font-weight:600;color:oklch(0.95 0.005 260)">租户增长</h3>
+      <p style="margin:2px 0 12px;font-size:12px;color:oklch(0.6 0.01 260)">近 6 个月 新增 vs 流失</p>
+      <div style="display:flex;align-items:flex-end;gap:10px;height:150px">
+        <sc-for list="{{ growth }}" as="g" hint-placeholder-count="6">
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">
+            <div style="width:100%;display:flex;gap:3px;align-items:flex-end;height:100%;justify-content:center">
+              <div title="新增" style="width:12px;height:{{ g.addH }}%;background:oklch(0.65 0.2 250);border-radius:3px 3px 0 0"></div>
+              <div title="流失" style="width:12px;height:{{ g.churnH }}%;background:oklch(0.55 0.22 25);border-radius:3px 3px 0 0"></div>
+            </div>
+            <span style="font-size:11px;color:oklch(0.6 0.01 260)">{{ g.m }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:12px">
+        <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:oklch(0.6 0.01 260)"><span style="width:8px;height:8px;border-radius:2px;background:oklch(0.65 0.2 250)"></span>新增</span>
+        <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:oklch(0.6 0.01 260)"><span style="width:8px;height:8px;border-radius:2px;background:oklch(0.55 0.22 25)"></span>流失</span>
+      </div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+      <h3 style="margin:0 0 12px;font-size:14px;font-weight:600;color:oklch(0.95 0.005 260)">租户消耗排行（本月）</h3>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ topTenants }}" as="t" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="width:20px;font-size:12px;color:oklch(0.6 0.01 260);flex:none">{{ t.rank }}</span>
+            <span style="width:140px;font-size:13px;color:oklch(0.95 0.005 260);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none">{{ t.name }}</span>
+            <div style="flex:1;height:6px;background:oklch(0.2 0.015 250);border-radius:999px"><div style="height:100%;width:{{ t.pct }}%;background:{{ t.barColor }};border-radius:999px"></div></div>
+            <span style="width:64px;font-size:12px;color:oklch(0.6 0.01 260);text-align:right;flex:none">{{ t.tokenM }}M</span>
+            <span style="width:64px;font-size:12px;color:oklch(0.95 0.005 260);text-align:right;flex:none">¥{{ t.bill }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <p style="margin:12px 0 0;font-size:12px;color:oklch(0.65 0.18 80)">⚠ 云帆物流已超配额 8%（超量 1.5 倍计费），智慧零售连续 2 期逾期</p>
+    </div>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+      <h3 style="margin:0 0 12px;font-size:14px;font-weight:600;color:oklch(0.95 0.005 260)">模型成本结构（本月）</h3>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <sc-for list="{{ modelCost }}" as="mc" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="width:120px;font-size:13px;color:oklch(0.95 0.005 260);flex:none">{{ mc.model }}</span>
+            <div style="flex:1;height:6px;background:oklch(0.2 0.015 250);border-radius:999px"><div style="height:100%;width:{{ mc.pct }}%;background:oklch(0.55 0.18 180);border-radius:999px"></div></div>
+            <span style="width:70px;font-size:12px;color:oklch(0.6 0.01 260);text-align:right;flex:none">¥{{ mc.cost }}</span>
+            <span style="width:36px;font-size:12px;color:oklch(0.95 0.005 260);text-align:right;flex:none">{{ mc.pct }}%</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="margin:0;font-size:14px;font-weight:600;color:oklch(0.95 0.005 260);display:flex;align-items:center;gap:8px"><l-icon name="alert-triangle" style="width:16px;height:16px;color:oklch(0.55 0.22 25)"></l-icon>运营风险与待办</h3>
+      <a href="./AIPaddle.dc.html#tenants" style="font-size:13px">去租户管理处理 →</a>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <sc-for list="{{ alerts }}" as="al" hint-placeholder-count="4">
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:12px;border-radius:8px;background:{{ al.bg }};border:1px solid {{ al.border }}">
+          <span style="width:6px;height:6px;border-radius:999px;background:{{ al.dot }};margin-top:6px;flex:none"></span>
+          <div style="flex:1;min-width:0">
+            <p style="margin:0;font-size:13px;font-weight:500;color:oklch(0.95 0.005 260)">{{ al.title }}</p>
+            <p style="margin:2px 0 0;font-size:12px;color:oklch(0.6 0.01 260)">{{ al.detail }}</p>
+          </div>
+          <span style="font-size:11px;color:oklch(0.6 0.01 260);flex:none">{{ al.time }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { D: null, D2: null };
+  componentDidMount() {
+    Promise.all([import('./data.js'), import('./data2.js')]).then(([D, D2]) => this.setState({ D, D2 })).catch(e => console.error('data load', e));
+  }
+  renderVals() {
+    const { D, D2 } = this.state;
+    const k = D2 ? D2.saasKpis : { mrr: 0, mrrDelta: '', activeTenants: 0, tenantsDelta: '', tokens30d: '', tokensDelta: '', arpu: 0, overdueSum: 0 };
+    let mrrPath = '', mrrArea = '', mrrLabels = [];
+    if (D2) {
+      const pts = D2.mrrTrend.map((p, i) => [i * (720 / 11), 200 - p.v / 7000 * 180]);
+      mrrPath = 'M' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L');
+      mrrArea = mrrPath + ' L720,200 L0,200 Z';
+      mrrLabels = D2.mrrTrend.map(p => ({ m: p.m.replace('2025-', '').replace('2026-', '') }));
+    }
+    const tenants = D ? D.tenants.slice().sort((a, b) => b.tokenUsage - a.tokenUsage) : [];
+    const maxTok = tenants.length ? tenants[0].tokenUsage : 1;
+    return {
+      mrr: k.mrr.toLocaleString('en-US'), mrrDelta: k.mrrDelta,
+      activeTenants: k.activeTenants, tenantsDelta: k.tenantsDelta,
+      tokens30d: k.tokens30d, tokensDelta: k.tokensDelta,
+      arpu: k.arpu.toLocaleString('en-US'), overdueSum: k.overdueSum.toLocaleString('en-US'),
+      mrrPath, mrrArea, mrrLabels,
+      growth: D2 ? D2.tenantGrowth.map(g => ({ m: g.m + '月', addH: g.add / 2 * 80 + 4, churnH: g.churn / 2 * 80 + 2 })) : [],
+      topTenants: tenants.map((t, i) => ({
+        rank: i + 1, name: t.name,
+        pct: Math.min(100, Math.round(t.tokenUsage / maxTok * 100)),
+        barColor: t.tokenUsage > t.tokenQuota ? 'oklch(0.55 0.22 25)' : 'oklch(0.65 0.2 250)',
+        tokenM: (t.tokenUsage / 1000000).toFixed(2),
+        bill: t.monthlyBill.toLocaleString('en-US')
+      })),
+      modelCost: D2 ? D2.modelCost.map(m => Object.assign({}, m, { cost: m.cost.toLocaleString('en-US') })) : [],
+      alerts: D2 ? D2.opsAlerts.map(a => ({
+        title: a.title, detail: a.detail, time: a.time,
+        dot: a.level === 'high' ? 'oklch(0.55 0.22 25)' : 'oklch(0.65 0.18 80)',
+        bg: a.level === 'high' ? 'oklch(0.55 0.22 25 / 0.05)' : 'oklch(0.65 0.18 80 / 0.05)',
+        border: a.level === 'high' ? 'oklch(0.55 0.22 25 / 0.2)' : 'oklch(0.65 0.18 80 / 0.2)'
+      })) : []
+    };
+  }
+}
+</script>
+</body>
+</html>

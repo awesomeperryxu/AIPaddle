@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./licon.js"></script>
+<style>
+  body{margin:0;background:oklch(0.1 0.01 250);color:oklch(0.95 0.005 260);font-family:'Geist',-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color-scheme:dark}
+  a{color:oklch(0.65 0.2 250);text-decoration:none} a:hover{color:oklch(0.75 0.16 250)}
+  l-icon{display:inline-flex;flex:none;line-height:0} l-icon svg{width:100%;height:100%}
+  input,button{font-family:inherit}
+  input::placeholder{color:oklch(0.6 0.01 260 / 0.7)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:oklch(0.28 0.015 250);border-radius:5px;border:2px solid oklch(0.1 0.01 250)}
+  [data-mrow]:hover{background:oklch(0.2 0.015 250 / 0.3)}
+</style>
+</helmet>
+<div data-screen-label="成员管理" style="display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <h1 style="margin:0;font-size:20px;font-weight:600;color:oklch(0.95 0.005 260)">成员管理</h1>
+      <p style="margin:2px 0 0;font-size:14px;color:oklch(0.6 0.01 260)">管理组织成员和权限</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;font-size:14px;font-weight:500;background:transparent;color:oklch(0.95 0.005 260);border:1px solid oklch(0.25 0.015 250);border-radius:8px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="upload" style="width:16px;height:16px"></l-icon>批量导入</button>
+      <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;font-size:14px;font-weight:500;background:oklch(0.65 0.2 250);color:oklch(0.98 0 0);border:none;border-radius:8px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3)" style-hover="filter:brightness(1.12)"><l-icon name="plus" style="width:16px;height:16px"></l-icon>添加成员</button>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+      <div style="width:36px;height:36px;border-radius:8px;background:oklch(0.65 0.2 250 / 0.1);display:flex;align-items:center;justify-content:center"><l-icon name="users" style="width:16px;height:16px;color:oklch(0.65 0.2 250)"></l-icon></div>
+      <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">7</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">总成员数</p></div>
+    </div>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+      <div style="width:36px;height:36px;border-radius:8px;background:rgba(34,197,94,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="user-check" style="width:16px;height:16px;color:#22c55e"></l-icon></div>
+      <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">{{ nActive }}</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">活跃成员</p></div>
+    </div>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+      <div style="width:36px;height:36px;border-radius:8px;background:rgba(59,130,246,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="zap" style="width:16px;height:16px;color:#3b82f6"></l-icon></div>
+      <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">2</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">AI 工程师</p></div>
+    </div>
+    <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:12px;display:flex;align-items:center;gap:12px">
+      <div style="width:36px;height:36px;border-radius:8px;background:rgba(249,115,22,0.1);display:flex;align-items:center;justify-content:center"><l-icon name="shield" style="width:16px;height:16px;color:#f97316"></l-icon></div>
+      <div><p style="margin:0;font-size:18px;font-weight:600;color:oklch(0.95 0.005 260)">2</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">管理角色</p></div>
+    </div>
+  </div>
+  <div style="position:relative">
+    <l-icon name="search" style="width:16px;height:16px;color:oklch(0.6 0.01 260);position:absolute;left:12px;top:50%;transform:translateY(-50%)"></l-icon>
+    <input placeholder="搜索成员..." value="{{ search }}" onInput="{{ setSearch }}" style="width:100%;height:38px;font-size:14px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:0 12px 0 36px;color:oklch(0.95 0.005 260);outline:none" style-focus="border-color:oklch(0.65 0.2 250)">
+  </div>
+  <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;overflow:visible">
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:12px 16px;font-size:13px;font-weight:500;color:oklch(0.6 0.01 260);border-bottom:1px solid oklch(0.25 0.015 250)">成员</th>
+          <th style="text-align:left;padding:12px 16px;font-size:13px;font-weight:500;color:oklch(0.6 0.01 260);border-bottom:1px solid oklch(0.25 0.015 250)">部门</th>
+          <th style="text-align:left;padding:12px 16px;font-size:13px;font-weight:500;color:oklch(0.6 0.01 260);border-bottom:1px solid oklch(0.25 0.015 250)">角色</th>
+          <th style="text-align:left;padding:12px 16px;font-size:13px;font-weight:500;color:oklch(0.6 0.01 260);border-bottom:1px solid oklch(0.25 0.015 250)">状态</th>
+          <th style="text-align:left;padding:12px 16px;font-size:13px;font-weight:500;color:oklch(0.6 0.01 260);border-bottom:1px solid oklch(0.25 0.015 250)">最后登录</th>
+          <th style="text-align:right;padding:12px 16px;font-size:13px;font-weight:500;color:oklch(0.6 0.01 260);border-bottom:1px solid oklch(0.25 0.015 250)">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <sc-for list="{{ list }}" as="m" hint-placeholder-count="5">
+          <tr data-mrow="1">
+            <td style="padding:10px 16px;border-bottom:1px solid oklch(0.25 0.015 250)">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div style="width:32px;height:32px;border-radius:999px;background:linear-gradient(135deg,oklch(0.65 0.2 250 / 0.2),oklch(0.55 0.18 180 / 0.2));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:oklch(0.95 0.005 260);flex:none">{{ m.initial }}</div>
+                <div><p style="margin:0;font-weight:500;color:oklch(0.95 0.005 260)">{{ m.name }}</p><p style="margin:0;font-size:12px;color:oklch(0.6 0.01 260)">{{ m.email }}</p></div>
+              </div>
+            </td>
+            <td style="padding:10px 16px;border-bottom:1px solid oklch(0.25 0.015 250);color:oklch(0.95 0.005 260)">{{ m.department }}</td>
+            <td style="padding:10px 16px;border-bottom:1px solid oklch(0.25 0.015 250)"><span style="font-size:12px;padding:3px 10px;border-radius:999px;background:{{ m.roleBg }};color:{{ m.roleColor }}">{{ m.roleLabel }}</span></td>
+            <td style="padding:10px 16px;border-bottom:1px solid oklch(0.25 0.015 250)"><span style="font-size:12px;padding:3px 10px;border-radius:999px;background:{{ m.statusBg }};color:{{ m.statusColor }}">{{ m.statusLabel }}</span></td>
+            <td style="padding:10px 16px;border-bottom:1px solid oklch(0.25 0.015 250);color:oklch(0.6 0.01 260)">{{ m.lastLogin }}</td>
+            <td style="padding:10px 16px;border-bottom:1px solid oklch(0.25 0.015 250);text-align:right">
+              <div style="position:relative;display:inline-block">
+                <button onClick="{{ m.toggleMenu }}" style="width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:none;background:none;border-radius:6px;cursor:pointer" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="more-horizontal" style="width:16px;height:16px;color:oklch(0.95 0.005 260)"></l-icon></button>
+                <sc-if value="{{ m.menuOpen }}" hint-placeholder-val="{{ false }}">
+                  <div style="position:absolute;right:0;top:calc(100% + 4px);z-index:50;width:150px;background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:8px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,0.5);text-align:left">
+                    <button onClick="{{ m.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="settings" style="width:15px;height:15px"></l-icon>编辑</button>
+                    <button onClick="{{ m.closeMenu }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:oklch(0.95 0.005 260);font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)"><l-icon name="shield" style="width:15px;height:15px"></l-icon>权限设置</button>
+                    <div style="height:1px;background:oklch(0.25 0.015 250);margin:4px 0"></div>
+                    <button onClick="{{ m.toggleActive }}" style="width:100%;display:flex;align-items:center;gap:8px;padding:7px 8px;border:none;background:none;border-radius:5px;color:{{ m.toggleColor }};font-size:13px;cursor:pointer;text-align:left" style-hover="background:oklch(0.2 0.015 250)">{{ m.toggleLabel }}</button>
+                  </div>
+                </sc-if>
+              </div>
+            </td>
+          </tr>
+        </sc-for>
+      </tbody>
+    </table>
+  </div>
+  <div style="background:oklch(0.14 0.015 250);border:1px solid oklch(0.25 0.015 250);border-radius:12px;padding:20px">
+    <h3 style="margin:0;font-size:16px;font-weight:600;color:oklch(0.95 0.005 260)">组织结构</h3>
+    <p style="margin:2px 0 16px;font-size:13px;color:oklch(0.6 0.01 260)">按部门查看成员分布</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      <sc-for list="{{ depts }}" as="d" hint-placeholder-count="6">
+        <div style="padding:16px;border-radius:8px;background:oklch(0.2 0.015 250 / 0.3);border:1px solid oklch(0.25 0.015 250)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:14px;font-weight:500;color:oklch(0.95 0.005 260)">{{ d.name }}</span>
+            <span style="font-size:12px;padding:2px 8px;border:1px solid oklch(0.25 0.015 250);border-radius:999px;color:oklch(0.95 0.005 260)">{{ d.count }} 人</span>
+          </div>
+          <div style="display:flex">
+            <sc-for list="{{ d.people }}" as="p" hint-placeholder-count="2">
+              <div style="width:32px;height:32px;border-radius:999px;background:linear-gradient(135deg,oklch(0.65 0.2 250 / 0.25),oklch(0.55 0.18 180 / 0.25));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:oklch(0.95 0.005 260);border:2px solid oklch(0.14 0.015 250);margin-left:-8px">{{ p.initial }}</div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { D: null, search: '', menuId: null, statusOverride: {} };
+  componentDidMount() {
+    import('./data.js').then(m => this.setState({ D: m })).catch(e => console.error('data load', e));
+    this._doc = () => { if (this.state.menuId) this.setState({ menuId: null }); };
+    document.addEventListener('click', this._doc);
+  }
+  componentWillUnmount() { document.removeEventListener('click', this._doc); }
+  renderVals() {
+    const D = this.state.D;
+    const term = this.state.search.toLowerCase();
+    const roleCfg = {
+      employee: { label: '员工', bg: 'oklch(0.2 0.015 250)', color: 'oklch(0.6 0.01 260)' },
+      ai_engineer: { label: 'AI 工程师', bg: 'rgba(59,130,246,0.1)', color: '#3b82f6' },
+      security: { label: '安全人员', bg: 'rgba(249,115,22,0.1)', color: '#f97316' },
+      admin: { label: '管理员', bg: 'oklch(0.65 0.2 250 / 0.1)', color: 'oklch(0.65 0.2 250)' }
+    };
+    const all = D ? D.members.map(m => Object.assign({}, m, { status: this.state.statusOverride[m.id] || m.status })) : [];
+    const filtered = all.filter(m => m.name.toLowerCase().includes(term) || m.email.toLowerCase().includes(term) || m.department.toLowerCase().includes(term));
+    const list = filtered.map(m => {
+      const rc = roleCfg[m.role];
+      const active = m.status === 'active';
+      return Object.assign({}, m, {
+        initial: m.name[0],
+        roleLabel: rc.label, roleBg: rc.bg, roleColor: rc.color,
+        statusLabel: active ? '正常' : '已禁用',
+        statusBg: active ? 'rgba(34,197,94,0.1)' : 'oklch(0.55 0.22 25 / 0.1)',
+        statusColor: active ? '#22c55e' : 'oklch(0.55 0.22 25)',
+        menuOpen: this.state.menuId === m.id,
+        toggleLabel: active ? '禁用账号' : '启用账号',
+        toggleColor: active ? 'oklch(0.55 0.22 25)' : '#22c55e',
+        toggleMenu: (e) => { e.stopPropagation(); this.setState(s => ({ menuId: s.menuId === m.id ? null : m.id })); },
+        closeMenu: (e) => { e.stopPropagation(); this.setState({ menuId: null }); },
+        toggleActive: (e) => { e.stopPropagation(); this.setState(s => ({ statusOverride: Object.assign({}, s.statusOverride, { [m.id]: active ? 'disabled' : 'active' }), menuId: null })); }
+      });
+    });
+    const depts = ['IT部', '财务部', '客服部', '人力资源部', '销售部', '安全部'].map(name => {
+      const people = all.filter(m => m.department === name);
+      return { name, count: people.length, people: people.slice(0, 4).map(p => ({ initial: p.name[0] })) };
+    });
+    return {
+      search: this.state.search,
+      setSearch: (e) => this.setState({ search: e.target.value }),
+      nActive: all.filter(m => m.status === 'active').length,
+      list, depts
+    };
+  }
+}
+</script>
+</body>
+</html>

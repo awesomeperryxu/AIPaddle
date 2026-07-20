@@ -49,9 +49,9 @@
 | 0.4 | CLAUDE.md 入库 | 🔄 | 本次生成，放仓库根目录 |
 | 0.5 | ROADMAP.md 入库（本文件） | 🔄 | 放仓库根目录 |
 | 0.6 | 建立 GitHub Issues 工作流 | 🔄 | Issue 模板已入库；标签体系已定义（`type:ui/logic/api/infra/slice-acceptance` + `flag:tenant-data/rag`，见 TESTING_WORKFLOW.md §1）；待做：在 GitHub 上创建这些标签、把阶段 2-3 任务批量建成 Issue |
-| 0.7 | 服务器部署链路（43.173.99.218，Ubuntu） | ⬜ | 服务器装好 Node/pnpm + 进程管理（PM2 或 Docker）+ Nginx 反代；`pnpm build && pnpm start` 在服务器可访问 |
+| 0.7 | 服务器部署链路（43.173.99.218，Ubuntu） | 🔄 待验收 | 已全新部署 main → `/opt/aipaddle`（PM2 托管 3000 + 开机自启）+ Nginx 反代到 `https://aipaddle.net`（复用证书）；旧 Vite 原型已清除；Issue #52。待用户亲验放行改 ✅ |
 | 0.8 | 自动化部署（GitHub Actions：push main → 自动部署到服务器 + 部署后冒烟检查） | ⬜ | 推一次代码，线上自动更新 |
-| 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **E2E 冒烟集代码已入库**（`playwright.config.ts` + `tests/e2e/smoke.spec.ts`，实现 TC-00 的 7 条自动化用例）；待做：`pnpm add -D @playwright/test` 装依赖并首跑、装 Vitest、启用 CI 测试步骤、开分支保护 |
+| 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **✅ 0.9a(D1-C-1) Playwright 已装+首跑**：装 chromium、加 `test:e2e`/`test:smoke` 脚本，原型冒烟 6 条全绿（P-GLB-01/02/04、P-DSH-01、P-AGT-02、P-WF-01；P-AGT-01/03、P-WF-02 等为人工记录型，不做自动化）。**待做**：0.9b 装 Vitest+RTL、0.9c 启用 CI 测试步骤 + 开 main 分支保护 |
 
 ---
 
@@ -76,10 +76,10 @@
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
 | 2.1 | 后端形态选型 | ✅ | **已决策（2026-07-18）**：Next.js API Routes 单体 + Supabase 云托管（Postgres/Auth/Storage/pgvector），区域选新加坡或东京；浏览器永不直连 Supabase。详见 `docs/adr/ADR-001-backend-architecture.md` |
-| 2.2 | 认证与多租户方案：登录方式、租户上下文如何传递、`org_id` 隔离策略 | 🔄 | 认证已定 Supabase Auth（ADR-001）；待补：租户上下文传递方式 + RLS 策略设计，ADR + 时序图 |
-| 2.3 | 权限模型：角色定义（参照 PRD 成员/租户模块），API 级校验方案 | ⬜ | 角色-权限矩阵表 |
-| 2.4 | 数据模型设计：核心表 + ERD | ✅ | **v1.0 已确认（2026-07-18）**：16 张表，C1 文本部门 / C2 统一中间表 / C3 分表 / C4 多角色 / C5 1536 维 / C6 全表软删除；migration 已产出 `supabase/migrations/0001_initial_schema.sql`（含 RLS/索引/审计防篡改）。**待办：应用到 Supabase 项目（依赖 SUP 注册）** |
-| 2.5 | 统一 API 客户端与数据层设计（替换组件直接消费 mock 的现状） | ⬜ | 约定写入 CLAUDE.md：组件只经数据层取数 |
+| 2.2 | 认证与多租户方案：登录方式、租户上下文如何传递、`org_id` 隔离策略 | ✅ | **ADR-002 已拍板（2026-07-20）**：认证=Supabase Auth+服务端会话；上下文=`org_id` 进 JWT claim，请求契约 `{userId,orgId,roles}`；RLS 关键决策=请求级客户端（RLS 生效）vs 服务级客户端（锁死 `lib/db/admin.ts` 单文件）严格分工，禁 service_role 应答用户请求；含 3 张时序图 + migration `current_org_id()` 改法。详见 `docs/adr/ADR-002-tenant-context-rls.md` |
+| 2.3 | 权限模型：角色定义（参照 PRD 成员/租户模块），API 级校验方案 | ✅ | **ADR-007 已拍板（2026-07-20）**：RBAC + 按操作(action)鉴权 + 默认拒绝 + 多角色并集；4 角色×全模块权限矩阵（兼容 `ROLE_MATRIX` 契约）；**PRD 角色映射 + 统一上架审核流程**（Agent/Skill/Workflow·Chatflow 三资产共用 draft→pending→published 状态机；部门级 Admin/Auditor 单审，**企业级仅 Admin 创建、Admin 必审 + 可指派 AIBP 协同双签**）；执行=API 入口 `requirePermission()`（3.4），单一来源 `lib/auth/permissions.ts`；跨租户平台超管暂缓阶段 6。详见 `docs/adr/ADR-007-rbac-permission-model.md` |
+| 2.4 | 数据模型设计：核心表 + ERD | ✅ | **v1.0 已确认（2026-07-18）**：16 张表，C1 文本部门 / C2 统一中间表 / C3 分表 / C4 多角色 / C5 1536 维 / C6 全表软删除；migration 已产出 `supabase/migrations/0001_initial_schema.sql`（含 RLS/索引/审计防篡改）。**已应用到 Supabase 项目**（2026-07-19，0001+0002 迁移落库，18 表就绪）|
+| 2.5 | 统一 API 客户端与数据层设计（替换组件直接消费 mock 的现状） | ✅ | **ADR-008 已拍板（2026-07-20）**：四层单向依赖（组件→API/Action→`lib/data/*`→Supabase 客户端）；组件禁直连 mock/supabase；`lib/data/*` 唯一碰库、首参 `ctx`、`server-only`；Repository 模式包 mock 逐页切（配合 3.5）；命名对齐现状 `lib/supabase/`。铁律已写入 CLAUDE.md。详见 `docs/adr/ADR-008-data-access-layer.md` |
 | 2.6 | 「不自己造的轮子」清单 | ✅ | 认证 = Supabase Auth、存储 = Supabase Storage、向量库 = pgvector（ADR-001）；模型网关 = 首版不引入，直连 Moonshot（ADR-003）；支付 = 阶段 6 再选 |
 | 2.8 | Vibe Coding 执行架构（ADR-005） | ✅ | **已拍板（2026-07-18，范围收缩版）**：仅限对话创建 Skill/Workflow/Agent 资产，无通用软件开发能力 → **无需沙盒、无独立执行服务、服务器不部署 Claude Code**，回归单体；四道防线替代隔离；Code 节点首版禁用；Copilot 任务并入切片 1/3/4（4.1.6/4.3.3/4.4.5）；PRD 升 v1.07 增 2.11 章 |
 | 2.7 | 大模型接入方案 | ✅ | **ADR-003 已拍板（2026-07-18）**：默认 Kimi 2.5（Moonshot API，OpenAI 兼容），Agent 级 config.model 可调配，Key 只存服务器环境变量，call_logs 记用量；**遗留：嵌入模型选型（切片 2 前锁定，约束 1536 维）** |
@@ -94,8 +94,8 @@
 
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
-| 3.1 | 数据库就绪，建核心表 | ⬜ | 建表 SQL 执行成功，能手工插查数据 |
-| 3.2 | 注册/登录/退出（用现成认证方案，不自己写） | ⬜ | 亲手注册→退出→登录全程无报错 |
+| 3.1 | 数据库就绪，建核心表 | ✅ | 迁移 0001/0002 已落库（18 表），seed 两租户五账号，test-data 已对齐；PR#51 CI 绿，待验收 |
+| 3.2 | 注册/登录/退出（用现成认证方案，不自己写） | ✅ | Supabase Auth 注册/登录/退出 + 中间件守卫；修复 /auth/callback 路由断链；PR#51 CI 绿，待亲手验收 S0-AUTH |
 | 3.3 | 租户上下文中间件（每个请求解析出 user + org） | ⬜ | 两个不同租户账号互相看不到对方数据 |
 | 3.4 | 权限校验中间件（API 级，不只靠菜单隐藏） | ⬜ | 普通成员调管理员接口返回 403 |
 | 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | ⬜ | 删掉该页对 `mock-data.ts` 的引用，功能不变 |
@@ -199,6 +199,8 @@
 
 ---
 
+> **⚡ 冲刺模式（2026-07-19 用户强制拍板）**：全部开发任务压入 D1-D3 三天，5 条 CLI 并行道（A 数据/B 部署与Skill/C 测试与工作流/D 设计与租户/E 集成），测试以天为单位每晚打包执行（日结包①②③）。串行硬约束以红字标注于进度 Excel「任务清单」末列与「三天全量冲刺」表。冲刺期间批次关口压缩为两个：D2 早隔离专项（唯一硬闸）+ D3 晚终验收。**风险留档**：本计划移除批次缓冲，工程估算约 120-180 小时 vs 3×5 道理论容量，实际完成度取决于并行效率与修红速度；用户测试（5.2-4）与阶段 7 不在冲刺范围。
+
 ## 决策日志
 
 | 日期 | 决策 | 记录 |
@@ -214,6 +216,9 @@
 | 2026-07-18 | 办公文件处理拍板（ADR-006，高优先级基础能力）：三通道——上传处理下载（并入切片2）、企业云盘 MCP 含企微微盘（并入切片3）、浏览器授权直读写（二期）；AI 只调内置文件工具，延续无沙盒模型；PRD 升 v1.08 增 2.12 章 | ADR-006 / PRD v1.08 |
 | 2026-07-18 | Copilot 交互场景规范拍板：意图识别跳转（右对话左画布）、画布下方澄清面板（勾选回填）、Dify DSL 硬约束（AI 产物与手工同构）；PRD 升 v1.09，ADR-005 增交互协议，新增用例 CP-07~10 | ADR-005 / PRD v1.09 |
 | 2026-07-18 | 阶段性 E2E 套件入库：PRD 全量功能的 Playwright 可执行规格（S0-S5，含两租户五账号、状态机矩阵、金标准问答等具体测试数据），以 `E2E_STAGE` 环境变量按切片逐步启用；测试数据文件是 seed 脚本的契约 | tests/e2e/ |
+| 2026-07-20 | 认证与租户隔离拍板（ADR-002，冲刺 D1·D-1）：认证=Supabase Auth+`@supabase/ssr` 服务端会话（首版邮箱密码）；租户上下文=`org_id`+`roles` 进 JWT claim，全链路请求契约 `{userId,orgId,roles}`（只由服务端从可信会话推导，禁信前端入参）；**RLS 关键决策**=请求级客户端（带用户 token，RLS 生效，第二层）vs 服务级客户端（`service_role` 锁死 `lib/db/admin.ts` 单文件，仅系统级操作）严格分工，禁 service_role 应答用户请求，靠"单文件封装+ESLint 禁读密钥+CI+CodeReview"四道约束落地双层防护；migration `current_org_id()` 改为读 JWT claim+回退查表（A 道随 3.3 落地） | ADR-002 |
+| 2026-07-20 | 权限模型拍板（ADR-007，冲刺 D1·D-2）：RBAC+按操作(action)鉴权+默认拒绝+多角色并集；4 角色（Admin/Developer/User/Auditor）×全模块角色-权限矩阵（兼容 test-data `ROLE_MATRIX`）；**按 PRD 补齐统一上架审核流程**：Agent/Skill/Workflow·Chatflow 三资产共用 draft→pending→published 状态机，部门级 Admin/Auditor 单审，**企业级仅 Admin 创建、Admin 必审 + 可指派业务部门 AIBP 协同双签**（AIBP 部门自动路由待切片 5）；执行=API 入口 `requirePermission()`（落地 3.4），单一来源 `lib/auth/permissions.ts`；跨租户 `tenant:manage` 平台超管暂缓阶段 6；Auditor 不可 chat | ADR-007 |
+| 2026-07-20 | 数据层设计拍板（ADR-008，冲刺 D1·D-3）：四层单向依赖（组件→API/Action→`lib/data/*`→Supabase 客户端）；组件禁直连 mock/supabase，`lib/data/*` 唯一碰库+首参 `ctx`+`server-only`；浏览器薄封装 `lib/api/client.ts` 只打 `/api/*`；Repository 模式包 mock 逐页切（配合 3.5，全切完删 mock-data.ts）；命名对齐现状 `lib/supabase/`（service 客户端=`lib/supabase/admin.ts`）；铁律写入 CLAUDE.md | ADR-008 |
 
 ## 当前状态小结（2026-07-18 · 第 3 次更新）
 
