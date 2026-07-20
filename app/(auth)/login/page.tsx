@@ -1,26 +1,34 @@
 'use client'
 
-import { Suspense, useEffect } from 'react'
-import { useActionState } from 'react'
+import { Suspense } from 'react'
+import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { login } from '../actions'
 
-function LoginForm() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const callbackError =
-    searchParams.get('error') === 'callback_failed' ? '认证回调失败，请重试' : null
-  const [state, formAction, pending] = useActionState(login, {})
-  const error = state.error ?? callbackError
+const ERR_MAP: Record<string, string> = {
+  email_format: '邮箱格式不正确',
+  need_password: '请输入密码',
+  invalid_credentials: '账号不存在或密码错误',
+  callback_failed: '认证回调失败，请重试',
+}
 
-  // 认证在服务端完成（cookie 已写）；成功后客户端导航到 dashboard
-  useEffect(() => {
-    if (state.ok) {
-      router.replace('/dashboard')
-      router.refresh()
-    }
-  }, [state.ok, router])
+function SubmitButton() {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
+    >
+      {pending ? '登录中...' : '登录'}
+    </button>
+  )
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams()
+  const error = ERR_MAP[searchParams.get('error') ?? '']
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-8">
@@ -32,7 +40,7 @@ function LoginForm() {
         </div>
       )}
 
-      <form action={formAction} noValidate className="space-y-4">
+      <form action={login} noValidate className="space-y-4">
         <div>
           <label htmlFor="email" className="block text-xs text-white/50 mb-1.5">邮箱</label>
           <input
@@ -59,13 +67,7 @@ function LoginForm() {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={pending}
-          className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
-        >
-          {pending ? '登录中...' : '登录'}
-        </button>
+        <SubmitButton />
       </form>
 
       <p className="mt-6 text-center text-xs text-white/30">
