@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getRequestContext } from '@/lib/context'
+import { getAgentCount } from '@/lib/data/agents'
 
 async function signOut() {
   'use server'
@@ -15,6 +17,9 @@ export default async function DashboardPage() {
   if (!user) redirect('/login')
 
   const displayName = user.user_metadata?.display_name ?? user.email
+
+  const ctx = await getRequestContext()
+  const agentCount = ctx ? await getAgentCount(ctx).catch(() => 0) : 0
 
   return (
     <div className="min-h-screen bg-[#0f0f0f] px-6 py-10">
@@ -60,9 +65,9 @@ export default async function DashboardPage() {
         {/* 状态卡片组 */}
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Agent', value: '—', desc: '暂无数据' },
-            { label: 'Skill', value: '—', desc: '暂无数据' },
-            { label: '知识库', value: '—', desc: '暂无数据' },
+            { label: 'Agent', value: agentCount > 0 ? String(agentCount) : '0', desc: 'Agent 总数' },
+            { label: 'Skill', value: '—', desc: '暂未开放' },
+            { label: '知识库', value: '—', desc: '暂未开放' },
           ].map(card => (
             <div
               key={card.label}
@@ -76,7 +81,7 @@ export default async function DashboardPage() {
         </div>
 
         <p className="text-center text-xs text-white/20 pt-4">
-          阶段 3 进行中 · 认证系统已就绪
+          阶段 3 进行中 · 数据层已接通
         </p>
       </div>
     </div>

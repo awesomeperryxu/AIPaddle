@@ -1,6 +1,21 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { createClient } from '@/lib/supabase/server'
+import { listAgents } from '@/lib/data/agents'
+
+// GET /api/agents —— 列表查询（分页）。任何登录用户均可读，RLS 自动过滤当前租户。
+export async function GET(request: Request) {
+  const ctx = await getRequestContext()
+  if (!ctx) return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
+
+  const url = new URL(request.url)
+  const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10))
+  const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get('pageSize') ?? '20', 10)))
+  const status = url.searchParams.get('status') as 'draft' | 'pending' | 'published' | 'offline' | null
+
+  const { agents, total } = await listAgents(ctx, { page, pageSize, ...(status ? { status } : {}) })
+  return Response.json({ agents, total, page, pageSize })
+}
 
 // POST /api/agents —— 创建 Agent。API 级权限校验（ADR-007）：仅 Admin/Developer 可创建，
 // User/Auditor → 403（默认拒绝）。租户隔离由请求级客户端 + RLS 兜底（org_id=ctx.orgId）。
