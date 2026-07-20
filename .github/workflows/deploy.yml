@@ -1,0 +1,51 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # 写入 SSH 私钥（内容来自 GitHub Secret SSH_PRIVATE_KEY）
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      # 把源码同步到服务器（排除 node_modules/.next/.env.local，不覆盖服务器上的密钥文件）
+      - name: Sync source to server
+        run: |
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='.env.local' \
+            --exclude='.env.*.local' \
+            ./ ubuntu@${{ secrets.SERVER_HOST }}:/opt/aipaddle/
+
+      # 服务器上安装依赖、构建、重启（--update-env 确保 .env.local 生效）
+      - name: Install, build and restart
+        run: |
+          ssh ubuntu@${{ secrets.SERVER_HOST }} bash -s <<'EOF'
+            set -e
+            cd /opt/aipaddle
+            pnpm install --frozen-lockfile
+            pnpm build
+            pm2 restart aipaddle --update-env
+            pm2 save
+          EOF
+
+      # 冒烟检查：确认 HTTP 200（跟 redirect，-L 自动跟随到 /login 页）
+      - name: Smoke check
+        run: |
+          sleep 8
+          curl -fsS -L --max-time 15 https://aipaddle.net/login -o /dev/null \
+            && echo "✅ 冒烟检查通过" \
+            || (echo "❌ 冒烟检查失败" && exit 1)

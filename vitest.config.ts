@@ -21,6 +21,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./', import.meta.url)),
+      // 'server-only' 在 Node/jsdom 环境无意义，测试时 stub 掉
+      'server-only': fileURLToPath(new URL('./tests/unit/__mocks__/server-only.ts', import.meta.url)),
     },
   },
 })
