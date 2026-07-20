@@ -36,6 +36,41 @@ export async function replaceChunks(
   return rows.length
 }
 
+export type MatchedChunk = {
+  id: string
+  documentId: string
+  content: string
+  metadata: Record<string, unknown>
+  similarity: number
+}
+
+/** 向量检索（4.2.3）：调 match_chunks RPC，请求级客户端 → RLS 只返回本租户块。 */
+export async function searchChunks(
+  _ctx: RequestContext,
+  queryEmbedding: number[],
+  topK = 5,
+): Promise<MatchedChunk[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('match_chunks', {
+    query_embedding: `[${queryEmbedding.join(',')}]`,
+    match_count: topK,
+  })
+  if (error) throw new Error(error.message)
+  return ((data as {
+    id: string
+    document_id: string
+    content: string
+    metadata: Record<string, unknown>
+    similarity: number
+  }[] | null) ?? []).map((r) => ({
+    id: r.id,
+    documentId: r.document_id,
+    content: r.content,
+    metadata: r.metadata ?? {},
+    similarity: r.similarity,
+  }))
+}
+
 /** 某文档的内容块数（校验向量化结果用）。 */
 export async function countChunks(_ctx: RequestContext, documentId: string): Promise<number> {
   const supabase = await createClient()
