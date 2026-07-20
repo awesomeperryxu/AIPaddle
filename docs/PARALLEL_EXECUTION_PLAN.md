@@ -106,11 +106,12 @@
 ## 6. 协调铁律
 
 1. **每道独立 git worktree**（`git worktree add ../wt-<lane> -b feat/<lane>-xxx origin/main`）；node_modules 各装（不能软链，turbopack 拒绝）。
-2. **小 PR、勤合并**：一个任务一个 PR，CI 绿 + S0-ISO 绿即合。集成是唯一串行点，越勤越不痛。
+2. 🔴 **先本地开发，按「通道 × 阶段/切片」批量 PR**（2026-07-21 反转旧"小 PR 勤合并"）：每任务先本地 commit + 跑本地测试（L1+相关 L2/L3/e2e），**攒够一个切片/阶段再一次 PR**（一分支多 commit），CI 绿 + S0-ISO 绿即合。**克制 GitHub API 频率**——旧账号 HELLOPERRYXU 因短时间大量 PR/合并/push 被封，新账号 awesomeperryxu 风控更严。
 3. **E 道是合并/集成 owner**：负责保持 main 绿、S0-ISO 绿、路由/外壳/permissions 整合冲突的裁决。
 4. **A 道是 schema owner**：见 X3。
-5. **完成即三处同步**（ROADMAP + 进度 Excel + 关 GitHub Issue）。
-6. DB 直连方式（跑迁移/RLS 排查）见 memory：从 Crab 走 IPv4 Session Pooler（ap-southeast-2）。
+5. **完成即三处同步**（ROADMAP + 进度 Excel + Issue）——**状态回填也攒进批次，别单独秒推**。
+6. DB 直连方式（跑迁移/RLS 排查）见 memory：从 Crab 走 IPv4 Session Pooler（ap-southeast-2），不经 GitHub。
+7. 仓库 = `github.com/awesomeperryxu/AIPaddle`（旧号已封弃用）。
 
 ---
 

@@ -60,6 +60,23 @@ export async function downloadDocumentBytes(storagePath: string): Promise<ArrayB
   return data.arrayBuffer()
 }
 
+/** 取一批文档的文件名（RAG 引用用）。请求级 RLS 只返回本租户的。 */
+export async function getDocumentFilenames(
+  _ctx: RequestContext,
+  ids: string[],
+): Promise<Record<string, string>> {
+  if (ids.length === 0) return {}
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('documents')
+    .select('id,filename')
+    .in('id', ids)
+  if (error) throw new Error(error.message)
+  const map: Record<string, string> = {}
+  for (const d of (data as { id: string; filename: string }[] | null) ?? []) map[d.id] = d.filename
+  return map
+}
+
 /** 更新文档状态（uploading/parsing/active/error）。 */
 export async function setDocumentStatus(
   _ctx: RequestContext,
