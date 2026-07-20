@@ -10,6 +10,7 @@ const ERR_MAP: Record<string, string> = {
   email_format: '邮箱格式不正确',
   need_password: '请输入密码',
   invalid_credentials: '账号不存在或密码错误',
+  service: '登录服务暂不可用，请稍后重试或联系管理员',
   callback_failed: '认证回调失败，请重试',
 }
 

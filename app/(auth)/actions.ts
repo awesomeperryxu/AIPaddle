@@ -19,8 +19,11 @@ export async function login(formData: FormData): Promise<void> {
 
   const supabase = await createClient()
   const { error } = await supabase.auth.signInWithPassword({ email, password })
-  // Supabase 对「密码错误」与「账号不存在」返回同一错误（防枚举），文案统一
-  if (error) redirect('/login?error=invalid_credentials')
+  if (error) {
+    // 400=凭证错误（防枚举，账号不存在与密码错误同文案）；其余（422 provider 关闭 / 429 限流等）
+    // 不该误报成"密码错误"，单独提示服务问题，便于暴露配置故障
+    redirect(error.status === 400 ? '/login?error=invalid_credentials' : '/login?error=service')
+  }
 
   redirect('/dashboard')
 }
