@@ -82,7 +82,7 @@
 | 2.5 | 统一 API 客户端与数据层设计（替换组件直接消费 mock 的现状） | ✅ | **ADR-008 已拍板（2026-07-20）**：四层单向依赖（组件→API/Action→`lib/data/*`→Supabase 客户端）；组件禁直连 mock/supabase；`lib/data/*` 唯一碰库、首参 `ctx`、`server-only`；Repository 模式包 mock 逐页切（配合 3.5）；命名对齐现状 `lib/supabase/`。铁律已写入 CLAUDE.md。详见 `docs/adr/ADR-008-data-access-layer.md` |
 | 2.6 | 「不自己造的轮子」清单 | ✅ | 认证 = Supabase Auth、存储 = Supabase Storage、向量库 = pgvector（ADR-001）；模型网关 = 首版不引入，直连 Moonshot（ADR-003）；支付 = 阶段 6 再选 |
 | 2.8 | Vibe Coding 执行架构（ADR-005） | ✅ | **已拍板（2026-07-18，范围收缩版）**：仅限对话创建 Skill/Workflow/Agent 资产，无通用软件开发能力 → **无需沙盒、无独立执行服务、服务器不部署 Claude Code**，回归单体；四道防线替代隔离；Code 节点首版禁用；Copilot 任务并入切片 1/3/4（4.1.6/4.3.3/4.4.5）；PRD 升 v1.07 增 2.11 章 |
-| 2.7 | 大模型接入方案 | ✅ | **ADR-003 已拍板（2026-07-18）**：默认 Kimi 2.5（Moonshot API，OpenAI 兼容），Agent 级 config.model 可调配，Key 只存服务器环境变量，call_logs 记用量；**遗留：嵌入模型选型（切片 2 前锁定，约束 1536 维）** |
+| 2.7 | 大模型接入方案 | ✅ | **ADR-003 已拍板并于 2026-07-20 修订：默认 LLM Kimi → 通义 Qwen（qwen-plus）**；Agent 级 config.model 可调配，Key（`DASHSCOPE_API_KEY`）只存服务器环境变量，call_logs 记用量。**嵌入模型结案 → ADR-009**：通义 `text-embedding-v3 @1536 维`，与对话**同供应商同一把 Key**（一家全包），对齐 pgvector `vector(1536)`；解锁 4.2.2。换模原因：Kimi/DeepSeek 均无 embedding 接口，通义 chat+embedding 一家覆盖 |
 
 **⚠️ 检测关口 2**：2.1-2.4 的每份 ADR 你必须真的看懂并拍板，这是后面验收 AI 代码的基础。
 
@@ -125,6 +125,8 @@
 
 ### 切片 2：知识库闭环（审计建议第 3 条前半）⬜
 
+> 📐 **前置设计已就绪（2026-07-20，D 道）**：`docs/design/knowledge-base-spec.md` —— 上传/存储桶布局、切块参数默认值、通义 v3 向量化、RAG 检索+引用+删除失效、数据层接口，地基（3.3/3.5）就绪后照此施工。
+
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
 | 4.2.1 | 文档上传（先只支持 PDF）+ 存储 | ⬜ | 上传后列表可见、可删除 |
@@ -158,7 +160,7 @@
 
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
-| 4.5.1 | 成员邀请/编辑/禁用/角色变更 | ⬜ | 被禁用成员立即无法登录 |
+| 4.5.1 | 成员邀请/编辑/禁用/角色变更 | ⬜ | 被禁用成员立即无法登录（前置：mock 角色已对齐 ADR-007 四角色 Admin/Developer/User/Auditor，`members-view` + `mock-data.ts` 已改，切真实数据时形状即匹配）|
 | 4.5.2 | 租户创建/编辑/停用 + 配额基础 | ⬜ | 停用租户的成员无法访问 |
 
 **⚠️ 检测关口 4（每周）**：本周能演示什么新东西？答不上来 = 任务切大了，砍半。
@@ -219,6 +221,8 @@
 | 2026-07-20 | 认证与租户隔离拍板（ADR-002，冲刺 D1·D-1）：认证=Supabase Auth+`@supabase/ssr` 服务端会话（首版邮箱密码）；租户上下文=`org_id`+`roles` 进 JWT claim，全链路请求契约 `{userId,orgId,roles}`（只由服务端从可信会话推导，禁信前端入参）；**RLS 关键决策**=请求级客户端（带用户 token，RLS 生效，第二层）vs 服务级客户端（`service_role` 锁死 `lib/db/admin.ts` 单文件，仅系统级操作）严格分工，禁 service_role 应答用户请求，靠"单文件封装+ESLint 禁读密钥+CI+CodeReview"四道约束落地双层防护；migration `current_org_id()` 改为读 JWT claim+回退查表（A 道随 3.3 落地） | ADR-002 |
 | 2026-07-20 | 权限模型拍板（ADR-007，冲刺 D1·D-2）：RBAC+按操作(action)鉴权+默认拒绝+多角色并集；4 角色（Admin/Developer/User/Auditor）×全模块角色-权限矩阵（兼容 test-data `ROLE_MATRIX`）；**按 PRD 补齐统一上架审核流程**：Agent/Skill/Workflow·Chatflow 三资产共用 draft→pending→published 状态机，部门级 Admin/Auditor 单审，**企业级仅 Admin 创建、Admin 必审 + 可指派业务部门 AIBP 协同双签**（AIBP 部门自动路由待切片 5）；执行=API 入口 `requirePermission()`（落地 3.4），单一来源 `lib/auth/permissions.ts`；跨租户 `tenant:manage` 平台超管暂缓阶段 6；Auditor 不可 chat | ADR-007 |
 | 2026-07-20 | 数据层设计拍板（ADR-008，冲刺 D1·D-3）：四层单向依赖（组件→API/Action→`lib/data/*`→Supabase 客户端）；组件禁直连 mock/supabase，`lib/data/*` 唯一碰库+首参 `ctx`+`server-only`；浏览器薄封装 `lib/api/client.ts` 只打 `/api/*`；Repository 模式包 mock 逐页切（配合 3.5，全切完删 mock-data.ts）；命名对齐现状 `lib/supabase/`（service 客户端=`lib/supabase/admin.ts`）；铁律写入 CLAUDE.md | ADR-008 |
+| 2026-07-20 | **LLM 换供应商：Kimi → 通义 Qwen（ADR-003 修订）**：查证 Kimi/DeepSeek 均无 embedding 接口，GLM 有但 1536 维/OpenAI 兼容未确认；改用**通义（百炼）一家全包**——对话 `qwen-plus` + 嵌入 `text-embedding-v3`，共用一把 `DASHSCOPE_API_KEY`、一份账单；环境变量 `MOONSHOT_API_KEY`→`DASHSCOPE_API_KEY`；PRD 技术索引/ADR-005/copilot 同步换名 | ADR-003 |
+| 2026-07-20 | 嵌入模型选型拍板（ADR-009）：**通义 text-embedding-v3 输出 1536 维**（OpenAI 兼容、中文强、国内低延迟、免运维），对齐 pgvector `vector(1536)`，与 LLM 同供应商同 Key；封装 `lib/llm/embedding.ts` 单点、Key 存服务器；建议 migration 给 `chunks` 补 `embedding_model/dim`（交 A 道）；已开通 DashScope Key，配 `.env.local`；解锁 4.2.2 向量化 | ADR-009 |
 | 2026-07-20 | 线上部署验证（B 道，D1-B 后）：aipaddle.net 登录/会话✅、`/console` iframe 门户✅、DashboardShell 侧边栏✅、`/api/agents` 返真实 DB 数据✅、**租户隔离实测通过**（orgA 见自己 agent，orgB 返空）；发现 4 缺陷入排期：#72 登录卡「登录中...」/ #73 侧边栏二级菜单不切换视图 / #74 监控指标+侧栏用户仍 mock / #75 agents-admin 未接 /api/agents | Issues #72-75 |
 | 2026-07-20 | D1-E 集成任务显式化（E道D1职责=合并/修红/部署，冲刺表原未排编号）：用 GitHub 侧原子合并集成绿灯 PR、合并后复核 main CI 绿、确认自动部署与线上正常；E道纪律=不产新功能，合并前检查无 MERGE_HEAD/锁避免撞车 | Issue #77 |
 

@@ -2,7 +2,7 @@
 
 - 状态：**已采纳**（2026-07-18，Perry 拍板；范围由用户明确收缩）
 - 取代：`docs/design/VibeCoding-执行架构确认页.html` 中的原 Q1-Q7 方案（页面保留为决策存档）
-- 关联：ADR-001（单体）、ADR-003（Kimi 2.5）、ADR-004（MCP 治理）、PRD v1.07 §2.11
+- 关联：ADR-001（单体）、ADR-003（通义 Qwen）、ADR-004（MCP 治理）、PRD v1.07 §2.11
 
 ## 范围定义（用户拍板的边界）
 
@@ -34,7 +34,7 @@
 
 ## 技术方案
 
-- **生成引擎**：Next.js 后端内的 LLM tool-calling 循环，直调 Kimi 2.5（ADR-003 通路复用）。工具集为平台内部函数：
+- **生成引擎**：Next.js 后端内的 LLM tool-calling 循环，直调通义 Qwen（ADR-003 通路复用）。工具集为平台内部函数：
   `create_skill_draft / update_workflow_graph / validate_graph / create_agent_draft / test_run_draft / list_my_mcp_servers / list_my_skills`
 - **产品形态**：编辑器内嵌 **Copilot 面板**——Skill 创建页、Workflow/Chatflow 画布、Agent 配置页各带"AI 帮我建"侧栏（描述需求 → 生成草稿 → 画布/表单实时可见 → 用户改/AI 迭代 → 提交审核）；个人助理支持"帮我建一个 XX Agent"直达入口。
 - **test_run_draft**：草稿态资产的试运行走既有引擎（Agent 对话/Workflow 执行/Skill 调用测试），权限按发起用户本人计算。
