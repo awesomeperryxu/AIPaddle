@@ -74,7 +74,7 @@ export interface Member {
   name: string;
   email: string;
   department: string;
-  role: 'employee' | 'ai_engineer' | 'security' | 'admin';
+  role: 'Admin' | 'Developer' | 'User' | 'Auditor';   // ADR-007：与 user_roles 表 + test-data ROLE_MATRIX 对齐
   status: 'active' | 'disabled';
   lastLogin: string;
 }
@@ -434,13 +434,13 @@ export const mockUsageMetrics: UsageMetrics[] = [
 
 // Mock Members
 export const mockMembers: Member[] = [
-  { id: 'user-001', name: '张明', email: 'zhangming@company.com', department: 'IT部', role: 'ai_engineer', status: 'active', lastLogin: '2024-03-12 16:30' },
-  { id: 'user-002', name: '李华', email: 'lihua@company.com', department: '财务部', role: 'employee', status: 'active', lastLogin: '2024-03-12 15:45' },
-  { id: 'user-003', name: '王芳', email: 'wangfang@company.com', department: '客服部', role: 'employee', status: 'active', lastLogin: '2024-03-12 14:20' },
-  { id: 'user-004', name: '赵强', email: 'zhaoqiang@company.com', department: '安全部', role: 'security', status: 'active', lastLogin: '2024-03-12 16:00' },
-  { id: 'user-005', name: '陈雪', email: 'chenxue@company.com', department: '人力资源部', role: 'admin', status: 'active', lastLogin: '2024-03-12 10:30' },
-  { id: 'user-006', name: '刘洋', email: 'liuyang@company.com', department: '销售部', role: 'employee', status: 'active', lastLogin: '2024-03-11 18:00' },
-  { id: 'user-007', name: '周明', email: 'zhouming@company.com', department: 'IT部', role: 'ai_engineer', status: 'disabled', lastLogin: '2024-02-28 09:00' },
+  { id: 'user-001', name: '张明', email: 'zhangming@company.com', department: 'IT部', role: 'Developer', status: 'active', lastLogin: '2024-03-12 16:30' },
+  { id: 'user-002', name: '李华', email: 'lihua@company.com', department: '财务部', role: 'User', status: 'active', lastLogin: '2024-03-12 15:45' },
+  { id: 'user-003', name: '王芳', email: 'wangfang@company.com', department: '客服部', role: 'User', status: 'active', lastLogin: '2024-03-12 14:20' },
+  { id: 'user-004', name: '赵强', email: 'zhaoqiang@company.com', department: '安全部', role: 'Auditor', status: 'active', lastLogin: '2024-03-12 16:00' },
+  { id: 'user-005', name: '陈雪', email: 'chenxue@company.com', department: '人力资源部', role: 'Admin', status: 'active', lastLogin: '2024-03-12 10:30' },
+  { id: 'user-006', name: '刘洋', email: 'liuyang@company.com', department: '销售部', role: 'User', status: 'active', lastLogin: '2024-03-11 18:00' },
+  { id: 'user-007', name: '周明', email: 'zhouming@company.com', department: 'IT部', role: 'Developer', status: 'disabled', lastLogin: '2024-02-28 09:00' },
 ];
 
 // Dashboard Stats

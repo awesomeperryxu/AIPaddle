@@ -33,11 +33,12 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 
+// ADR-007 四角色：Admin/Developer/User/Auditor
 const roleConfig = {
-  employee: { label: '员工', className: 'bg-muted text-muted-foreground' },
-  ai_engineer: { label: 'AI 工程师', className: 'bg-blue-500/10 text-blue-500' },
-  security: { label: '安全人员', className: 'bg-orange-500/10 text-orange-500' },
-  admin: { label: '管理员', className: 'bg-primary/10 text-primary' }
+  User: { label: '普通用户', className: 'bg-muted text-muted-foreground' },
+  Developer: { label: '开发者', className: 'bg-blue-500/10 text-blue-500' },
+  Auditor: { label: '审计员', className: 'bg-orange-500/10 text-orange-500' },
+  Admin: { label: '管理员', className: 'bg-primary/10 text-primary' }
 };
 
 const statusConfig = {
@@ -109,8 +110,8 @@ export function MembersView() {
                 <Zap className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">{mockMembers.filter(m => m.role === 'ai_engineer').length}</p>
-                <p className="text-xs text-muted-foreground">AI 工程师</p>
+                <p className="text-lg font-semibold text-foreground">{mockMembers.filter(m => m.role === 'Developer').length}</p>
+                <p className="text-xs text-muted-foreground">开发者</p>
               </div>
             </div>
           </CardContent>
@@ -122,8 +123,8 @@ export function MembersView() {
                 <Shield className="h-4 w-4 text-orange-500" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">{mockMembers.filter(m => m.role === 'admin' || m.role === 'security').length}</p>
-                <p className="text-xs text-muted-foreground">管理角色</p>
+                <p className="text-lg font-semibold text-foreground">{mockMembers.filter(m => m.role === 'Admin' || m.role === 'Auditor').length}</p>
+                <p className="text-xs text-muted-foreground">管理/审计角色</p>
               </div>
             </div>
           </CardContent>
