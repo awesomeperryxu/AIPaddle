@@ -50,7 +50,7 @@
 | 0.5 | ROADMAP.md 入库（本文件） | 🔄 | 放仓库根目录 |
 | 0.6 | 建立 GitHub Issues 工作流 | 🔄 | Issue 模板已入库；标签体系已定义（`type:ui/logic/api/infra/slice-acceptance` + `flag:tenant-data/rag`，见 TESTING_WORKFLOW.md §1）；待做：在 GitHub 上创建这些标签、把阶段 2-3 任务批量建成 Issue |
 | 0.7 | 服务器部署链路（43.173.99.218，Ubuntu） | ✅ | 已全新部署 main → `/opt/aipaddle`（PM2 托管 3000 + 开机自启）+ Nginx 反代到 `https://aipaddle.net`；用户隐私窗口登录验收通过（2026-07-20）；Issue #52 已关闭 |
-| 0.8 | 自动化部署（GitHub Actions：push main → 自动部署到服务器 + 部署后冒烟检查） | ⬜ | 推一次代码，线上自动更新 |
+| 0.8 | 自动化部署（GitHub Actions：push main → 自动部署到服务器 + 部署后冒烟检查） | 🔄 | `.github/workflows/deploy.yml` 已入库（2026-07-20）；**待做**：在 GitHub Settings → Secrets 添加 `SERVER_HOST`=`43.173.99.218` 和 `SSH_PRIVATE_KEY`=`lighthouse.pem` 内容，添加后 push main 即自动部署 |
 | 0.9 | 测试基建：装 Vitest + React Testing Library + Playwright；`pnpm test` / `pnpm test:e2e` 可用；启用 ci.yml 中注释掉的测试步骤 | 🔄 | **✅ 0.9a(D1-C-1) Playwright 已装+首跑**：装 chromium、加 `test:e2e`/`test:smoke` 脚本，原型冒烟 6 条全绿（P-GLB-01/02/04、P-DSH-01、P-AGT-02、P-WF-01；P-AGT-01/03、P-WF-02 等为人工记录型，不做自动化）。**✅ 0.9b(D1-C-2) Vitest+RTL 已装+启用 CI**：`vitest.config.ts`（jsdom）+ `tests/unit/setup.ts`，加 `test`/`test:watch` 脚本，样例 7 条全绿（cn 工具 4 + Button 组件 3），ci.yml 已取消注释单元测试步骤。**待做**：0.9c 开 main 分支保护 |
 
 ---
@@ -96,8 +96,8 @@
 |---|------|------|---------|
 | 3.1 | 数据库就绪，建核心表 | ✅ | 迁移 0001/0002 已落库（18 表），seed 两租户五账号，test-data 已对齐；PR#51 CI 绿，待验收 |
 | 3.2 | 注册/登录/退出（用现成认证方案，不自己写） | ✅ | Supabase Auth 注册/登录/退出 + 中间件守卫；修复 /auth/callback 路由断链；PR#51 CI 绿，待亲手验收 S0-AUTH |
-| 3.3 | 租户上下文中间件（每个请求解析出 user + org） | ⬜ | 两个不同租户账号互相看不到对方数据 |
-| 3.4 | 权限校验中间件（API 级，不只靠菜单隐藏） | ⬜ | 普通成员调管理员接口返回 403 |
+| 3.3 | 租户上下文中间件（每个请求解析出 user + org） | 🔄 | `lib/context.ts` `getRequestContext()` 已实现（2026-07-20，commit 267043b7）；权限矩阵 L2 单元测试 19 条全绿；**待做**：用户用两个不同租户账号亲手验收跨租户隔离 → 通过后关闭 Issue #57 |
+| 3.4 | 权限校验中间件（API 级，不只靠菜单隐藏） | 🔄 | `lib/auth/permissions.ts` + `POST /api/agents` 403 门已实现（2026-07-20，commit 75df1797）；19 条权限矩阵单元测试全绿；**待做**：用 User 角色调 POST /api/agents 确认返回 403 → 通过后关闭 Issue #58 |
 | 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | ⬜ | 删掉该页对 `mock-data.ts` 的引用，功能不变 |
 | 3.6 | 部署到服务器（依赖 0.7） | ⬜ | 线上地址可注册登录 |
 | 3.7 | 第一批自动化测试（认证与权限的关键路径）+ 租户隔离专项脚本（TESTING.md L5①） | ⬜ | CI 里跑通；隔离专项全绿（任何一条红 = P0，停下所有开发先修） |
