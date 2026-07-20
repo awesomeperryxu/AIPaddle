@@ -98,7 +98,7 @@
 | 3.2 | 注册/登录/退出（用现成认证方案，不自己写） | ✅ | Supabase Auth 注册/登录/退出 + 中间件守卫；修复 /auth/callback 路由断链；PR#51 CI 绿，待亲手验收 S0-AUTH |
 | 3.3 | 租户上下文中间件（每个请求解析出 user + org） | 🔄 | `lib/context.ts` `getRequestContext()` 已实现（2026-07-20，commit 267043b7）；权限矩阵 L2 单元测试 19 条全绿；**待做**：用户用两个不同租户账号亲手验收跨租户隔离 → 通过后关闭 Issue #57 |
 | 3.4 | 权限校验中间件（API 级，不只靠菜单隐藏） | 🔄 | `lib/auth/permissions.ts` + `POST /api/agents` 403 门已实现（2026-07-20，commit 75df1797）；19 条权限矩阵单元测试全绿；**待做**：用 User 角色调 POST /api/agents 确认返回 403 → 通过后关闭 Issue #58 |
-| 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | ⬜ | 删掉该页对 `mock-data.ts` 的引用，功能不变 |
+| 3.5 | 统一 API 客户端 + 数据层，第一个页面（如 Dashboard）从 mock 切换到真实 API | 🔄 | `lib/data/agents.ts`（getAgentCount/listAgents/getAgent）+ `lib/api/client.ts` + GET /api/agents 已实现（2026-07-20，commit 166bc437）；Dashboard 状态卡片接入真实 Agent 计数；**待做**：部署到服务器后用户确认 Dashboard 能显示真实数据 → 关闭 Issue #61 |
 | 3.6 | 部署到服务器（依赖 0.7） | ⬜ | 线上地址可注册登录 |
 | 3.7 | 第一批自动化测试（认证与权限的关键路径）+ 租户隔离专项脚本（TESTING.md L5①） | ⬜ | CI 里跑通；隔离专项全绿（任何一条红 = P0，停下所有开发先修） |
 
