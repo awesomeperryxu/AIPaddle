@@ -407,7 +407,20 @@ export function WorkflowView() {
     setAppsLoaded(true);
   }, [mapItemToApp]);
 
-  useEffect(() => { void reloadApps(); }, [reloadApps]);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/workflows');
+        if (res.ok && active) {
+          const { workflows } = await res.json();
+          setApps((workflows ?? []).map(mapItemToApp));
+        }
+      } catch { /* 忽略：保持已有列表 */ }
+      if (active) setAppsLoaded(true);
+    })();
+    return () => { active = false; };
+  }, [mapItemToApp]);
 
   // 编辑器状态 ↔ 后端 graph 互转
   const buildGraph = useCallback(() => ({
