@@ -21,7 +21,8 @@ import {
   BarChart3,
   LogOut,
   Moon,
-  Sun
+  Sun,
+  Server
 } from 'lucide-react';
 import { useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -91,6 +92,7 @@ const navSections: NavSection[] = [
     defaultOpen: false,
     items: [
       { title: '安全管理', icon: <Shield className="h-4 w-4" />, href: 'security', badge: 3 },
+      { title: 'MCP 管理', icon: <Server className="h-4 w-4" />, href: 'mcp' },
       { title: '成员管理', icon: <Users className="h-4 w-4" />, href: 'members' },
     ]
   },

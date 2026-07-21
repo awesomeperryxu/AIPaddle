@@ -9,6 +9,7 @@ const TITLES: Record<string, string> = {
   'agents-admin': 'Agent 管理',
   'skill-hub': 'Skill Hub',
   security: '安全管理',
+  mcp: 'MCP 管理',
   workflows: '工作流管理',
   assistant: '个人助理',
   agents: '数字员工',
