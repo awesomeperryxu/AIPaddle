@@ -197,6 +197,8 @@ export function KnowledgeAdminView({
             return (
               <Card
                 key={kb.id}
+                data-testid="kb-card"
+                data-kb-name={kb.name}
                 className={`bg-card border-border cursor-pointer transition-all hover:border-primary/50 ${
                   selectedKB?.id === kb.id ? 'border-primary ring-1 ring-primary' : ''
                 }`}
@@ -306,31 +308,42 @@ export function KnowledgeAdminView({
 
               {/* Documents */}
               <div className="space-y-3">
-                <h4 className="text-sm font-medium text-foreground">文档（{kbDocs.length}）</h4>
+                <h4 className="text-sm font-medium text-foreground">最近文档</h4>
                 <div className="space-y-2">
                   {kbDocs.length === 0 && (
                     <p className="text-xs text-muted-foreground">暂无文档，点下方「上传文档」添加</p>
                   )}
                   {kbDocs.map((doc) => (
-                    <div key={doc.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                      <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      key={doc.id}
+                      data-testid="kb-doc-row"
+                      data-filename={doc.filename}
+                      className="flex items-center justify-between p-2 rounded-lg bg-muted/30"
+                    >
+                      <span className="flex items-center gap-2 min-w-0 text-sm text-foreground">
                         <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <span className="text-sm text-foreground truncate">{doc.filename}</span>
-                        {doc.status !== 'active' && (
-                          <Badge variant="outline" className="text-[10px] shrink-0">{doc.status}</Badge>
-                        )}
-                      </div>
-                      {canManage && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 shrink-0"
-                          onClick={() => handleDeleteDoc(doc.id)}
-                          disabled={busy}
-                        >
-                          <XCircle className="h-3 w-3" />
+                        <span className="truncate">{doc.filename}</span>
+                        <Badge variant="outline" className="text-[10px] shrink-0" data-testid="kb-doc-status">
+                          {doc.status}
+                        </Badge>
+                      </span>
+                      <span className="flex items-center gap-1 shrink-0">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="查看文档">
+                          <Eye className="h-3 w-3" />
                         </Button>
-                      )}
+                        {canManage && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            aria-label="删除文档"
+                            onClick={() => handleDeleteDoc(doc.id)}
+                            disabled={busy}
+                          >
+                            <XCircle className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -347,26 +360,34 @@ export function KnowledgeAdminView({
               </div>
 
               {/* Actions */}
-              {canManage && (
-                <div className="space-y-2">
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="application/pdf"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleUpload(f);
-                      e.currentTarget.value = '';
-                    }}
-                  />
-                  <Button className="w-full" onClick={() => fileRef.current?.click()} disabled={busy}>
-                    <Upload className="h-4 w-4 mr-2" />
-                    {busy ? '处理中…' : '上传文档（PDF）'}
+              <div className="space-y-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="application/pdf"
+                  aria-label="上传文件"
+                  data-testid="kb-upload-input"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUpload(f);
+                    e.currentTarget.value = '';
+                  }}
+                />
+                <div className="flex gap-2">
+                  {canManage && (
+                    <Button className="flex-1" onClick={() => fileRef.current?.click()} disabled={busy}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      {busy ? '处理中…' : '上传文档'}
+                    </Button>
+                  )}
+                  <Button variant="outline" className={canManage ? '' : 'flex-1'}>
+                    <Eye className="h-4 w-4 mr-2" />
+                    测试召回
                   </Button>
-                  {msg && <p className="text-xs text-center text-muted-foreground">{msg}</p>}
                 </div>
-              )}
+                {msg && <p className="text-xs text-center text-muted-foreground" data-testid="kb-upload-msg">{msg}</p>}
+              </div>
             </CardContent>
           </Card>
 

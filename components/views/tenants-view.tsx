@@ -22,8 +22,12 @@ import {
   DollarSign,
   MoreHorizontal,
   Settings,
-  Key,
+  Gauge,
+  Receipt,
+  Cpu,
+  ShieldCheck,
   Ban,
+  Trash2,
   Eye
 } from 'lucide-react';
 import {
@@ -143,7 +147,7 @@ export function TenantsView() {
                 <DollarSign className="h-5 w-5 text-green-500" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">${totalRevenue.toLocaleString()}</p>
+                <p className="text-lg font-semibold text-foreground">¥{totalRevenue.toLocaleString()}</p>
                 <p className="text-xs text-muted-foreground">本月收入</p>
               </div>
             </div>
@@ -215,7 +219,7 @@ export function TenantsView() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-foreground font-medium">${tenant.monthlyBill.toLocaleString()}</TableCell>
+                  <TableCell className="text-foreground font-medium">¥{tenant.monthlyBill.toLocaleString()}</TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -230,16 +234,32 @@ export function TenantsView() {
                         </DropdownMenuItem>
                         <DropdownMenuItem>
                           <Settings className="h-4 w-4 mr-2" />
-                          编辑配置
+                          编辑信息
                         </DropdownMenuItem>
                         <DropdownMenuItem>
-                          <Key className="h-4 w-4 mr-2" />
-                          重置 Key
+                          <Gauge className="h-4 w-4 mr-2" />
+                          配额管理
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Receipt className="h-4 w-4 mr-2" />
+                          账单管理
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <Cpu className="h-4 w-4 mr-2" />
+                          模型配置
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          <ShieldCheck className="h-4 w-4 mr-2" />
+                          MCP 审批
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">
+                        <DropdownMenuItem>
                           <Ban className="h-4 w-4 mr-2" />
                           停用企业
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive">
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          删除租户
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

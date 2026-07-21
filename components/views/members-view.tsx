@@ -19,11 +19,12 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+// 显示标签对齐原型（员工/AI 工程师/安全人员/管理员）；后端角色键保持 ADR-007 体系不变
 const roleConfig: Record<Member['role'], { label: string; className: string }> = {
-  User:      { label: '普通用户', className: 'bg-muted text-muted-foreground' },
-  Developer: { label: '开发者',   className: 'bg-blue-500/10 text-blue-500' },
-  Auditor:   { label: '审计员',   className: 'bg-orange-500/10 text-orange-500' },
-  Admin:     { label: '管理员',   className: 'bg-primary/10 text-primary' },
+  User:      { label: '员工',      className: 'bg-muted text-muted-foreground' },
+  Developer: { label: 'AI 工程师', className: 'bg-blue-500/10 text-blue-500' },
+  Auditor:   { label: '安全人员',  className: 'bg-orange-500/10 text-orange-500' },
+  Admin:     { label: '管理员',    className: 'bg-primary/10 text-primary' },
 };
 
 const statusConfig: Record<'active' | 'disabled', { label: string; className: string }> = {
@@ -127,7 +128,7 @@ export function MembersView() {
               </div>
               <div>
                 <p className="text-lg font-semibold text-foreground">{members.filter(m => m.role === 'Developer').length}</p>
-                <p className="text-xs text-muted-foreground">开发者</p>
+                <p className="text-xs text-muted-foreground">AI 工程师</p>
               </div>
             </div>
           </CardContent>
@@ -140,7 +141,7 @@ export function MembersView() {
               </div>
               <div>
                 <p className="text-lg font-semibold text-foreground">{members.filter(m => m.role === 'Admin' || m.role === 'Auditor').length}</p>
-                <p className="text-xs text-muted-foreground">管理/审计角色</p>
+                <p className="text-xs text-muted-foreground">管理角色</p>
               </div>
             </div>
           </CardContent>
