@@ -2,6 +2,9 @@ import { test as setup } from '@playwright/test'
 import fs from 'node:fs'
 import { login, USER_KEYS, storageStatePath, AUTH_DIR } from './helpers'
 
+// 无 SEED_PASSWORD（无凭据环境）时跳过登录态生成，避免误红。
+setup.skip(!process.env.SEED_PASSWORD, '需 SEED_PASSWORD + 种子账号')
+
 // 全局登录态 setup（E道0.9）：为每个种子角色预登录一次并存盘 storageState，
 // 供业务用例 test.use({ storageState: storageStatePath('adminA') }) 复用，免重复登录。
 // 前置：先跑 `pnpm seed:e2e` 确保账号存在且密码=SEED_PASSWORD。
