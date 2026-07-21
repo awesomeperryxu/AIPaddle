@@ -23,7 +23,7 @@ _Last updated: 2026-07-21_
 | 4.1.2 | 状态机：草稿→待审核→已发布→停用（含校验规则） | B | 🔄 待验收 | 状态机 `lib/agents/status.ts`（5 条合法流转）+ 数据层 `transitionAgent`（原子条件更新）+ `POST /api/agents/[id]/transition`（按动作分权限、非法流转 409）+ UI 按状态+权限渲染动作 + 12 测试；本地绿，待用户同意提批次 |
 | 4.1.3 | 审核流程接入安全管理模块（审批提交、留痕） | B | 🔄 待验收 | 流转联动写 `security_reviews`（submit 建 pending / approve·reject 裁决）+ `audit_logs` 留痕（不可篡改）；`lib/data/reviews.ts`+`audit.ts`；security 页接 `listReviews` 真实数据、SecurityView 接 reviews prop（空回落 mock）；+4 审批留痕测试；本地绿 |
 | 4.1.4 | Agent 调用：接通真实大模型 API（通义 Qwen） | B | 🔄 待验收 | `POST /api/agents/[id]/chat`：加载 Agent config→注入 systemPrompt→调 `lib/ai.chat`(qwen-plus)；数字员工页(AgentsView)接线真实对话；服务端丢弃前端 system 防注入；7 测试 + 实测通义返回与配置相符 |
-| 4.1.5 | 调用日志落库与展示 | — | ⬜ | 日志数=实际调用次数 |
+| 4.1.5 | 调用日志落库与展示 | B | 🔄 待验收 | chat 每次调用落 `call_logs`（真实 token/延迟/成败，`chatWithUsage`）+ `lib/data/call-logs.ts`(record/list/count) + `GET /api/agents/[id]/logs`(audit:read) + agents-admin 详情展示真实调用数与最近调用；3 测试 |
 | 4.1.6 | Agent Copilot 最简版（ADR-005） | — | ⬜ | 生成物过 Schema 校验、AI 不能触发发布、留审计 |
 
 ## 阶段 0/3 收尾（独立跟进，不阻塞切片）

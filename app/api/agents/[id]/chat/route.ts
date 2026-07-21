@@ -1,7 +1,8 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { getAgentForChat } from '@/lib/data/agents'
-import { chat, type ChatMessage } from '@/lib/ai'
+import { recordCall } from '@/lib/data/call-logs'
+import { chatWithUsage, type ChatMessage } from '@/lib/ai'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
@@ -41,14 +42,32 @@ export async function POST(req: Request, { params }: Ctx) {
   const systemPrompt =
     agent.systemPrompt?.trim() || `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`
 
+  const startedAt = Date.now()
   try {
-    const reply = await chat([{ role: 'system', content: systemPrompt }, ...history], {
-      model: agent.model,
-      temperature: agent.temperature,
+    const { content, tokensIn, tokensOut, model } = await chatWithUsage(
+      [{ role: 'system', content: systemPrompt }, ...history],
+      { model: agent.model, temperature: agent.temperature },
+    )
+    // 4.1.5：落调用日志（成功）
+    await recordCall(ctx, {
+      agentId: agent.id,
+      model,
+      tokensIn,
+      tokensOut,
+      latencyMs: Date.now() - startedAt,
+      success: true,
     })
-    return Response.json({ reply, agent: { id: agent.id, name: agent.name, model: agent.model } })
+    return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model } })
   } catch (e) {
     console.error('[chat] LLM 调用失败:', e)
+    // 4.1.5：落调用日志（失败）
+    await recordCall(ctx, {
+      agentId: agent.id,
+      model: agent.model,
+      latencyMs: Date.now() - startedAt,
+      success: false,
+      errorCode: 'llm_error',
+    })
     return Response.json({ error: { code: 'llm_error', message: '大模型调用失败，请稍后重试' } }, { status: 502 })
   }
 }

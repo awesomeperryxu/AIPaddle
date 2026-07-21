@@ -111,6 +111,24 @@ export function AgentsAdminView({
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [activeTab, setActiveTab] = useState('all');
 
+  // 调用日志（4.1.5）：选中 Agent 时拉取真实日志
+  type CallLogItem = { id: string; model: string | null; tokensIn: number; tokensOut: number; success: boolean; createdAt: string };
+  const [logs, setLogs] = useState<CallLogItem[]>([]);
+  const [logCount, setLogCount] = useState<number | null>(null);
+
+  async function selectForDetail(agent: Agent) {
+    setSelectedAgent(agent);
+    setLogs([]);
+    setLogCount(null);
+    try {
+      const res = await apiFetch<{ logs: CallLogItem[]; count: number }>(`/api/agents/${agent.id}/logs`);
+      setLogs(res.logs);
+      setLogCount(res.count);
+    } catch {
+      // 无 audit:read 权限或空 → 静默
+    }
+  }
+
   // 创建 Agent 弹窗
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: '', department: '', description: '' });
@@ -414,7 +432,7 @@ export function AgentsAdminView({
               className={`bg-card border-border cursor-pointer transition-all hover:shadow-md ${
                 selectedAgent?.id === agent.id ? 'ring-2 ring-primary shadow-md' : 'shadow-sm'
               }`}
-              onClick={() => setSelectedAgent(agent)}
+              onClick={() => selectForDetail(agent)}
             >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
@@ -536,8 +554,8 @@ export function AgentsAdminView({
               {/* Quick Stats */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2.5 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground mb-0.5">总调用量</p>
-                  <p className="text-base font-semibold text-foreground">{selectedAgent.calls.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground mb-0.5">总调用量{logCount !== null ? '（实时）' : ''}</p>
+                  <p className="text-base font-semibold text-foreground">{(logCount ?? selectedAgent.calls).toLocaleString()}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-muted/50">
                   <p className="text-xs text-muted-foreground mb-0.5">成功率</p>
@@ -552,6 +570,24 @@ export function AgentsAdminView({
                   <p className="text-base font-semibold text-foreground">{selectedAgent.createdAt}</p>
                 </div>
               </div>
+
+              {/* 调用日志（4.1.5，真实） */}
+              {logs.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">最近调用</p>
+                  <div className="space-y-1">
+                    {logs.slice(0, 5).map(log => (
+                      <div key={log.id} className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg bg-muted/40">
+                        <span className="flex items-center gap-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${log.success ? 'bg-success' : 'bg-destructive'}`} />
+                          <span className="text-muted-foreground">{log.model ?? '—'}</span>
+                        </span>
+                        <span className="text-muted-foreground">↑{log.tokensIn} ↓{log.tokensOut} tokens</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
