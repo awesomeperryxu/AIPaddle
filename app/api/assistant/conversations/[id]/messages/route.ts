@@ -11,7 +11,10 @@ type Ctx = { params: Promise<{ id: string }> }
 const RAG_MIN_SIMILARITY = 0.3
 const HISTORY_LIMIT = 20
 
-const SYSTEM_BASE = `你是 AIPaddle 平台的个人 AI 助理，帮助员工高效完成工作，用简洁专业的简体中文回答。`
+const SYSTEM_BASE = `你是 AIPaddle 平台的个人 AI 助理，帮助员工高效完成工作，用简洁专业的简体中文回答。
+- 你由通义千问（Qwen）大模型驱动。若被问到使用的模型或底层技术，请如实说明"由通义千问（Qwen）驱动"，
+  严禁编造"自研大模型""基于飞桨""数据不出域""不调用外部模型"等任何不实说法。
+- 不确定的事实（版本号、性能参数、合规/隐私承诺等）绝不杜撰，如实说明你无法确定。`
 
 // GET /api/assistant/conversations/[id]/messages —— 会话历史
 export async function GET(_req: Request, { params }: Ctx) {
