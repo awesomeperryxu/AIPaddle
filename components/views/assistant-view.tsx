@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +32,7 @@ export function AssistantView() {
   const [streamText, setStreamText] = useState('');
   const [streamCitations, setStreamCitations] = useState<Citation[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const loadConversations = useCallback(async () => {
     try {
@@ -92,6 +94,7 @@ export function AssistantView() {
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '', full = '', cites: Citation[] = [];
+      let redirect: { target: string; description: string } | null = null;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -104,11 +107,16 @@ export function AssistantView() {
           const obj = JSON.parse(line.slice(5).trim());
           if (obj.type === 'citations') { cites = obj.citations; setStreamCitations(cites); }
           else if (obj.type === 'delta') { full += obj.text; setStreamText(full); }
+          else if (obj.type === 'redirect') { redirect = { target: obj.target, description: obj.description }; }
           else if (obj.type === 'error') throw new Error(obj.message);
         }
       }
       setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: full, citations: cites }]);
       loadConversations();
+      // 切片2：识别为创建意图 → 整页跳转创建页并预填描述
+      if (redirect) {
+        setTimeout(() => router.push(`${redirect!.target}?assistant=${encodeURIComponent(redirect!.description)}`), 700);
+      }
     } catch (e) {
       setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : '发送失败'}`, citations: [] }]);
     } finally {
