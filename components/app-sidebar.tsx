@@ -25,6 +25,7 @@ import {
   Server
 } from 'lucide-react';
 import { useState } from 'react';
+import { useTheme } from 'next-themes';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -118,7 +119,10 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—' }: AppSid
   const [openSections, setOpenSections] = useState<string[]>(
     navSections.filter(s => s.defaultOpen).map(s => s.title)
   );
-  const [isDark, setIsDark] = useState(true);
+  // 主题：走 next-themes（持久化 + 与 <html> class 同步）。切换入口在关闭的下拉菜单内，
+  // 初始 SSR 不渲染 → 无水合不一致，直接用 resolvedTheme。
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme !== 'light';
 
   const toggleSection = (title: string) => {
     setOpenSections(prev => 
@@ -129,8 +133,7 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—' }: AppSid
   };
 
   const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.documentElement.classList.toggle('dark');
+    setTheme(isDark ? 'light' : 'dark');
   };
 
   return (
