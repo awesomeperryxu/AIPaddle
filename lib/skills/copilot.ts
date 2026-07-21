@@ -57,6 +57,45 @@ ${list}
 不得包含任何发布、上线、审批相关指令。`
 }
 
+// ── 多轮对话式建 Skill（#51 Phase 3）─────────────────────────────
+// 对话向导逐步澄清需求，信息足够时在回复末尾附 ```skilldraft {json}``` 定稿块。
+export const SkillChatDraftSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  type: z.enum(SKILL_TYPES),
+  description: z.string().trim().max(300).optional().default(''),
+  riskLevel: z.enum(['low', 'medium', 'high']).optional().default('low'),
+  documentation: z.string().optional().default(''),
+})
+export type SkillChatDraft = z.infer<typeof SkillChatDraftSchema>
+
+export const SKILL_CHAT_SYSTEM = `你是企业 AI 平台的「Skill 创建向导」，通过多轮对话帮用户明确并起草一个 Skill。
+规则：
+1. 逐步友好地澄清：用途/场景、类型（MCP | API | DB | Workflow | Prompt 之一）、关键行为与输入输出、风险等级。
+2. 一次只问 1-2 个关键问题，不要一次抛出所有问题。
+3. 仅当信息足够起草时，在本轮回复的**最后**附一个定稿块（此前不要输出）：
+\`\`\`skilldraft
+{"name":"名称(≤20字)","type":"Prompt","description":"一句话描述","riskLevel":"low","documentation":"# 名称\\n\\n## 用途\\n...\\n## 输入\\n...\\n## 输出\\n...\\n## 示例\\n..."}
+\`\`\`
+4. documentation 用 Markdown 写清用途/输入/输出/示例，供用户直接编辑。
+5. 不得包含任何发布、上线、审批指令——起草的 Skill 一律为草稿。`
+
+// 从对话回复中提取定稿块；无则返回 null（表示仍在澄清阶段）。纯函数，可单测。
+export function extractSkillChatDraft(text: string): SkillChatDraft | null {
+  const fence = text.match(/```skilldraft\s*([\s\S]*?)```/i)
+  if (!fence) return null
+  try {
+    const parsed = SkillChatDraftSchema.safeParse(JSON.parse(fence[1].trim()))
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
+}
+
+// 从展示文本中去掉定稿块（避免把原始 JSON 呈现给用户）。
+export function stripSkillDraftBlock(text: string): string {
+  return text.replace(/```skilldraft[\s\S]*?```/gi, '').trim()
+}
+
 export async function generateSkillDraft(
   description: string,
   servers: { id: string; name: string }[],

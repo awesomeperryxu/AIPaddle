@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api/client';
 import {
   Plus, Save, Send, Loader2, ShieldCheck, Building2, User, Rocket, FileText, Search,
+  Bot, Sparkles, Wand2,
 } from 'lucide-react';
 
 // 轻量 Markdown 编辑器（用到 window，禁 SSR）
@@ -236,6 +237,168 @@ export function MySkillsWorkspaceView({
             </>
           )}
         </div>
+
+        {/* 第三栏：AI 对话窗（多轮引导建 Skill，样式对齐个人助理）*/}
+        {canCreate && (
+          <SkillCopilotChat
+            onCreated={async (id) => { const all = await refresh(); selectSkill(id, all); }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+type ChatMsg = { id: string; role: 'user' | 'assistant'; content: string };
+type Draft = { name: string; type: SkillType; description: string; riskLevel: string; documentation: string };
+
+// 去掉 AI 回复里的定稿 JSON 块，只展示自然语言
+function sanitize(text: string): string {
+  return text.replace(/```skilldraft[\s\S]*?```/gi, '').trim();
+}
+
+function SkillCopilotChat({ onCreated }: { onCreated: (id: string) => Promise<void> | void }) {
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [streamText, setStreamText] = useState('');
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || sending) return;
+    setInput('');
+    setDraft(null);
+    setSending(true);
+    setStreamText('');
+    const next: ChatMsg[] = [...messages, { id: `u-${Date.now()}`, role: 'user', content: text }];
+    setMessages(next);
+    try {
+      const res = await fetch('/api/skills/copilot/chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ messages: next.map((m) => ({ role: m.role, content: m.content })) }),
+      });
+      if (!res.ok || !res.body) throw new Error('对话失败');
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '', full = '', gotDraft: Draft | null = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const events = buf.split('\n\n');
+        buf = events.pop() ?? '';
+        for (const ev of events) {
+          const line = ev.trim();
+          if (!line.startsWith('data:')) continue;
+          const obj = JSON.parse(line.slice(5).trim());
+          if (obj.type === 'delta') { full += obj.text; setStreamText(sanitize(full)); }
+          else if (obj.type === 'draft') { gotDraft = obj.draft; }
+          else if (obj.type === 'error') throw new Error(obj.message);
+        }
+      }
+      setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: sanitize(full) }]);
+      if (gotDraft) setDraft(gotDraft);
+    } catch (e) {
+      setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : '对话失败'}` }]);
+    } finally {
+      setSending(false);
+      setStreamText('');
+    }
+  }
+
+  async function createFromDraft() {
+    if (!draft) return;
+    setCreating(true);
+    try {
+      const r = await apiFetch<{ skill: { id: string } }>('/api/skills', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: draft.name,
+          type: draft.type,
+          description: draft.description,
+          documentation: draft.documentation,
+          riskLevel: draft.riskLevel,
+        }),
+      });
+      setDraft(null);
+      setMessages((m) => [...m, { id: `s-${Date.now()}`, role: 'assistant', content: `✅ 已创建草稿「${draft.name}」，右侧可继续编辑正文` }]);
+      await onCreated(r.skill.id);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '创建失败');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="w-80 flex flex-col min-h-0 rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
+          <Wand2 className="h-4 w-4 text-primary" />
+        </div>
+        <div>
+          <p className="text-sm font-medium text-foreground">Skill 创建助手</p>
+          <p className="text-[11px] text-muted-foreground">对话式引导，一键生成草稿</p>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3 space-y-4 min-h-0">
+        {messages.length === 0 && !sending && (
+          <div className="h-full flex items-center justify-center text-center">
+            <div className="space-y-2">
+              <Sparkles className="h-7 w-7 text-primary mx-auto" />
+              <p className="text-sm text-foreground">描述你想要的 Skill</p>
+              <p className="text-xs text-muted-foreground">例：帮我做一个把周报要点整理成邮件的 Skill</p>
+            </div>
+          </div>
+        )}
+        {messages.map((m) => <ChatBubble key={m.id} role={m.role} content={m.content} />)}
+        {sending && <ChatBubble role="assistant" content={streamText} streaming />}
+        {draft && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              <span className="text-sm font-medium text-foreground">{draft.name}</span>
+              <Badge variant="secondary" className="text-[10px]">{draft.type}</Badge>
+            </div>
+            {draft.description && <p className="text-xs text-muted-foreground">{draft.description}</p>}
+            <Button size="sm" className="w-full gap-1.5" onClick={createFromDraft} disabled={creating}>
+              {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}创建此 Skill（草稿）
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 border-t border-border shrink-0 flex items-end gap-2">
+        <Input
+          aria-label="描述 Skill 需求"
+          placeholder="描述需求…"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          disabled={sending}
+          className="h-10"
+        />
+        <Button size="icon" className="h-10 w-10 shrink-0" onClick={send} disabled={sending || !input.trim()} aria-label="发送">
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ChatBubble({ role, content, streaming }: { role: 'user' | 'assistant'; content: string; streaming?: boolean }) {
+  const isUser = role === 'user';
+  return (
+    <div className={`flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
+      <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isUser ? 'bg-primary/10' : 'bg-gradient-to-br from-primary/20 to-accent/20'}`}>
+        {isUser ? <User className="h-3.5 w-3.5 text-primary" /> : <Bot className="h-3.5 w-3.5 text-primary" />}
+      </div>
+      <div className={`max-w-[80%] p-2.5 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${isUser ? 'bg-primary text-primary-foreground rounded-tr-sm' : 'bg-muted/50 text-foreground rounded-tl-sm'}`}>
+        {content}{streaming && <span className="inline-block w-1 h-3.5 ml-0.5 align-middle bg-primary animate-pulse" />}
       </div>
     </div>
   );
