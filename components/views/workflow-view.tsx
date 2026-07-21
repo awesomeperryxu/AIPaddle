@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -328,7 +329,9 @@ type EditorPanel = 'run' | 'versions' | 'vars' | 'preview' | null;
 export function WorkflowView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<AppType>('all');
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  // 个人助理意图跳转（切片2）：?assistant=<描述> → 初始即打开创建应用对话框
+  const searchParams = useSearchParams();
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(() => !!searchParams.get('assistant'));
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [selectedApp, setSelectedApp] = useState<WorkflowApp | null>(null);
   const [selectedNode, setSelectedNode] = useState<WorkflowNode | null>(null);

@@ -1,6 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { chatStream, type ChatMessage } from '@/lib/ai'
 import { retrieveSegments } from '@/lib/kb/rag'
+import { classifyIntent, INTENT_ROUTE, INTENT_LABEL } from '@/lib/assistant/intent'
 import {
   getOwnedConversation, listMessages, appendMessage, renameConversation,
   type Citation,
@@ -40,6 +41,29 @@ export async function POST(req: Request, { params }: Ctx) {
   const prior = await listMessages(ctx, id)
   await appendMessage(ctx, id, { role: 'user', content })
   if (prior.length === 0) await renameConversation(ctx, id, content.slice(0, 24)) // 首条自动命名
+
+  // 意图分类（切片2）：若识别为创建 agent/skill/workflow/chatflow → 回复 + 让前端整页跳创建页预填
+  const intent = await classifyIntent(content)
+  if (intent.kind !== 'chat') {
+    const label = INTENT_LABEL[intent.kind]
+    const target = INTENT_ROUTE[intent.kind]
+    const desc = intent.description || content
+    const notice = `我识别到你想创建「${label}」，正在带你去创建页面并预填你的描述…`
+    await appendMessage(ctx, id, { role: 'assistant', content: notice, citations: [] })
+    const enc = new TextEncoder()
+    const s = new ReadableStream({
+      start(controller) {
+        const send = (o: unknown) => controller.enqueue(enc.encode(`data: ${JSON.stringify(o)}\n\n`))
+        send({ type: 'delta', text: notice })
+        send({ type: 'redirect', target, kind: intent.kind, description: desc })
+        send({ type: 'done' })
+        controller.close()
+      },
+    })
+    return new Response(s, {
+      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive' },
+    })
+  }
 
   // RAG：检索全员可见知识库
   let citations: Citation[] = []

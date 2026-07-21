@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -135,9 +135,11 @@ export function AgentsAdminView({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // AI 帮我建（Copilot，4.1.6）
-  const [copilotOpen, setCopilotOpen] = useState(false);
-  const [copilotDesc, setCopilotDesc] = useState('');
+  // AI 帮我建（Copilot，4.1.6）；个人助理意图跳转（切片2）：?assistant=<描述> → 初始即打开并预填
+  const searchParams = useSearchParams();
+  const assistantDesc = searchParams.get('assistant') ?? '';
+  const [copilotOpen, setCopilotOpen] = useState(() => !!assistantDesc && canCreate);
+  const [copilotDesc, setCopilotDesc] = useState(assistantDesc);
   const [copiloting, setCopiloting] = useState(false);
   const [copilotError, setCopilotError] = useState<string | null>(null);
 
