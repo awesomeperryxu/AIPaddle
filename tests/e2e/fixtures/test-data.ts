@@ -3,7 +3,8 @@
  * 依据：PRD_Core_v1.04 各模块数据模型与用户流程
  * 约定（2026-07-19 用户拍板反转）：**seed 脚本（`supabase/seed.ts`）是租户与账号的权威来源**，
  *   本文件的 TENANTS / USERS / BAD_CREDENTIALS 必须与 seed 实际创建的两租户五账号保持一致。
- *   seed 默认密码统一为 AIPaddle@2026；账号为 Supabase Auth 已确认邮箱（email_confirm），不发真实邮件。
+ *   seed 密码从环境变量 `SEED_PASSWORD` 读取（勿硬编码进 git，仓库公开后的安全铁律）；
+ *   本地放 `.env.local`、CI 放 Secret，由 playwright.config 加载；账号为 Supabase Auth 已确认邮箱，不发真实邮件。
  *   其余为功能尚未落库的测试夹具（Agent/Skill/Workflow/租户开通/成员邀请），用 @aipaddle-test.local 占位。
  */
 
@@ -14,7 +15,7 @@ export const TENANTS = {
 } as const;
 
 // ─── 账号与角色（与 seed 一致；PRD 2.8：Admin/Developer/User/Auditor）────────
-const SEED_PASSWORD = 'AIPaddle@2026';
+const SEED_PASSWORD = process.env.SEED_PASSWORD ?? '';
 export const USERS = {
   adminA:   { email: 'admin-demo@aipaddle.dev', password: SEED_PASSWORD, name: 'Demo 管理员', role: 'Admin',     org: 'orgA' },
   devA:     { email: 'dev@aipaddle.dev',        password: SEED_PASSWORD, name: 'Demo 开发者', role: 'Developer', org: 'orgA' },
