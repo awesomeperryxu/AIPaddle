@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import type { Agent } from '@/lib/mock-data';
 import { apiFetch } from '@/lib/api/client';
+import { actionsFor, ACTION_LABEL, TRANSITIONS, type TransitionAction } from '@/lib/agents/status';
 import {
   Bot,
   Plus,
@@ -95,11 +96,15 @@ export function AgentsAdminView({
   canCreate = false,
   canDelete = false,
   canEdit = false,
+  canSubmit = false,
+  canReview = false,
 }: {
   agents?: Agent[];
   canCreate?: boolean;
   canDelete?: boolean;
   canEdit?: boolean;
+  canSubmit?: boolean;
+  canReview?: boolean;
 }) {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -161,6 +166,36 @@ export function AgentsAdminView({
       window.alert(e instanceof Error ? e.message : '删除失败');
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  // 状态机流转（4.1.2）
+  const [transitioningId, setTransitioningId] = useState<string | null>(null);
+
+  // 按当前状态 + 用户权限，算出该 Agent 可用的流转动作
+  function availableActions(agent: Agent): TransitionAction[] {
+    return actionsFor(agent.status).filter(a => {
+      const perm = TRANSITIONS[a].action;
+      if (perm === 'agent:submit') return canSubmit;
+      if (perm === 'agent:review') return canReview;
+      if (perm === 'agent:update') return canEdit;
+      return false;
+    });
+  }
+
+  async function handleTransition(agent: Agent, action: TransitionAction) {
+    if (transitioningId) return;
+    setTransitioningId(agent.id);
+    try {
+      await apiFetch(`/api/agents/${agent.id}/transition`, {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      });
+      router.refresh(); // 刷新列表，状态更新
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '操作失败');
+    } finally {
+      setTransitioningId(null);
     }
   }
 
@@ -433,17 +468,25 @@ export function AgentsAdminView({
                         复制
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      {agent.status === 'published' ? (
-                        <DropdownMenuItem>
-                          <Pause className="h-4 w-4 mr-2" />
-                          下线
+                      {availableActions(agent).map(action => (
+                        <DropdownMenuItem
+                          key={action}
+                          disabled={transitioningId === agent.id}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            handleTransition(agent, action);
+                          }}
+                        >
+                          {action === 'offline' ? (
+                            <Pause className="h-4 w-4 mr-2" />
+                          ) : action === 'reject' ? (
+                            <XCircle className="h-4 w-4 mr-2" />
+                          ) : (
+                            <Play className="h-4 w-4 mr-2" />
+                          )}
+                          {transitioningId === agent.id ? '处理中...' : ACTION_LABEL[action]}
                         </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem>
-                          <Play className="h-4 w-4 mr-2" />
-                          发布
-                        </DropdownMenuItem>
-                      )}
+                      ))}
                       {canDelete && (
                         <DropdownMenuItem
                           className="text-destructive"

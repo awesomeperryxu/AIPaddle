@@ -2,6 +2,7 @@ import 'server-only'
 import type { Agent } from '@/lib/mock-data'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
+import { TRANSITIONS, type TransitionAction } from '@/lib/agents/status'
 
 // 数据层（ADR-008）：唯一访问 agents 表的地方，首参 ctx，用请求级客户端（RLS 生效）。
 // DB 行 → 视图用的 Agent 形状映射。
@@ -124,4 +125,29 @@ export async function createAgent(
     .single()
   if (error) throw new Error(error.message)
   return mapRow(data as Row)
+}
+
+// 状态机流转（4.1.2）。原子条件更新：仅当当前 status === from 才落库，
+// 否则 0 行 → 再查一次区分「不存在/跨租户(RLS)」与「当前态非法流转」。
+export async function transitionAgent(
+  _ctx: RequestContext,
+  id: string,
+  action: TransitionAction,
+): Promise<{ ok: true; agent: Agent } | { ok: false; reason: 'not_found' | 'illegal' }> {
+  if (!UUID_RE.test(id)) return { ok: false, reason: 'not_found' }
+  const t = TRANSITIONS[action]
+  if (!t) return { ok: false, reason: 'illegal' }
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('agents')
+    .update({ status: t.to })
+    .eq('id', id)
+    .eq('status', t.from)
+    .is('deleted_at', null)
+    .select(COLS)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (data) return { ok: true, agent: mapRow(data as Row) }
+  const current = await getAgentById(_ctx, id)
+  return { ok: false, reason: current ? 'illegal' : 'not_found' }
 }
