@@ -91,4 +91,58 @@ export async function chatWithUsage(
   }
 }
 
+// 流式对话（个人助理切片1）：DashScope OpenAI 兼容 stream:true，逐块产出 delta；
+// 末尾产出 usage（include_usage）。调用方 for-await 消费 delta 转发给浏览器 SSE，并累计全文入库。
+export type ChatStreamChunk =
+  | { delta: string; usage?: undefined; model: string }
+  | { delta?: undefined; usage: { tokensIn: number; tokensOut: number }; model: string }
+
+export async function* chatStream(
+  messages: ChatMessage[],
+  opts: { temperature?: number; maxTokens?: number; model?: string } = {},
+): AsyncGenerator<ChatStreamChunk> {
+  const model = opts.model ?? LLM_MODEL
+  const res = await fetch(`${BASE}/chat/completions`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: opts.temperature ?? 0.3,
+      max_tokens: opts.maxTokens ?? 1024,
+      stream: true,
+      stream_options: { include_usage: true },
+    }),
+  })
+  if (!res.ok || !res.body) {
+    const t = await res.text().catch(() => '')
+    throw new Error(`AI 流式调用失败 ${res.status}：${t.slice(0, 200)}`)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop() ?? ''
+    for (const line of lines) {
+      const s = line.trim()
+      if (!s.startsWith('data:')) continue
+      const payload = s.slice(5).trim()
+      if (payload === '[DONE]') return
+      try {
+        const j = JSON.parse(payload) as {
+          choices?: { delta?: { content?: string } }[]
+          usage?: { prompt_tokens?: number; completion_tokens?: number }
+        }
+        const delta = j.choices?.[0]?.delta?.content
+        if (delta) yield { delta, model }
+        if (j.usage) yield { usage: { tokensIn: j.usage.prompt_tokens ?? 0, tokensOut: j.usage.completion_tokens ?? 0 }, model }
+      } catch { /* 忽略非 JSON/心跳行 */ }
+    }
+  }
+}
+
 export const AI_MODELS = { llm: LLM_MODEL, embedding: EMBED_MODEL, embeddingDim: EMBEDDING_DIM }
