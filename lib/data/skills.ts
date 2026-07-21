@@ -275,6 +275,18 @@ export async function uninstallSkill(
   return { ok: true, installs: await recomputeInstalls(supabase, skillId) }
 }
 
+// 当前用户已安装的 skill_id 列表（供前端标注安装态）。RLS 兜底本租户。
+export async function listInstalledSkillIds(ctx: RequestContext): Promise<string[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('skill_installs')
+    .select('skill_id')
+    .eq('user_id', ctx.userId)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((r) => (r as { skill_id: string }).skill_id)
+}
+
 // 升版本（S3-05）。当前版本快照进 config.versions（旧版本仍可查），version 置新值。
 // 无版本历史表 → 用 config jsonb 承载（改表须过 A 道，本切片不改表）。
 export async function bumpSkillVersion(
