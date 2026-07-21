@@ -1,26 +1,19 @@
 import { redirect } from 'next/navigation'
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
-import { listSkills, listInstalledSkillIds } from '@/lib/data/skills'
-import { listMyMcpServers } from '@/lib/data/mcp-servers'
-import { SkillHubView } from '@/components/views/skill-hub-view'
+import { listSkills } from '@/lib/data/skills'
+import { MySkillsWorkspaceView } from '@/components/views/my-skills-workspace-view'
 
-// 我的 Skill：与 Skill Hub 同一视图（内部「我的 Skill」页签按已安装过滤）。
+// 我的 Skill：对话式创作工作台（#51）——左列表 + 右 MD 编辑器 + 申请上架。
 export default async function Page() {
   const ctx = await getRequestContext()
   if (!ctx) redirect('/login')
-  const [skills, installedIds, mcpServers] = await Promise.all([
-    listSkills(ctx),
-    listInstalledSkillIds(ctx),
-    listMyMcpServers(ctx),
-  ])
+  const skills = await listSkills(ctx)
   return (
-    <SkillHubView
+    <MySkillsWorkspaceView
       skills={skills}
-      installedIds={installedIds}
-      mcpServers={mcpServers.map((s) => ({ id: s.id, name: s.name }))}
       canCreate={can(ctx, 'skill:create')}
-      canReview={can(ctx, 'skill:review')}
+      canSubmit={can(ctx, 'skill:submit')}
     />
   )
 }
