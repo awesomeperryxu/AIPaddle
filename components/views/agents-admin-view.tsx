@@ -93,9 +93,13 @@ const usageScenarios = [
 export function AgentsAdminView({
   agents = [],
   canCreate = false,
+  canDelete = false,
+  canEdit = false,
 }: {
   agents?: Agent[];
   canCreate?: boolean;
+  canDelete?: boolean;
+  canEdit?: boolean;
 }) {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -107,6 +111,58 @@ export function AgentsAdminView({
   const [form, setForm] = useState({ name: '', department: '', description: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // 编辑 Agent 弹窗
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', department: '', description: '' });
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // 删除 Agent（软删除）
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  function openEdit(agent: Agent) {
+    setEditForm({ name: agent.name, department: agent.department, description: agent.description });
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  async function handleEdit() {
+    if (!selectedAgent) return;
+    if (!editForm.name.trim()) {
+      setEditError('名称不能为空');
+      return;
+    }
+    setEditing(true);
+    setEditError(null);
+    try {
+      await apiFetch(`/api/agents/${selectedAgent.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(editForm),
+      });
+      setEditOpen(false);
+      setSelectedAgent({ ...selectedAgent, ...editForm });
+      router.refresh(); // 重新从服务端拉取，刷新后仍在
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setEditing(false);
+    }
+  }
+
+  async function handleDelete(agent: Agent) {
+    if (deletingId) return;
+    if (!window.confirm(`确定删除 Agent「${agent.name}」？删除后可在回收站找回（软删除）。`)) return;
+    setDeletingId(agent.id);
+    try {
+      await apiFetch(`/api/agents/${agent.id}`, { method: 'DELETE' });
+      router.refresh(); // 重新从服务端拉取列表，删除项消失
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '删除失败');
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function handleCreate() {
     if (!form.name.trim()) {
@@ -190,6 +246,49 @@ export function AgentsAdminView({
             <DialogFooter>
               <Button onClick={handleCreate} disabled={creating}>
                 {creating ? '创建中...' : '创建'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>编辑 Agent</DialogTitle>
+            </DialogHeader>
+            {editError && <p className="text-sm text-red-500">{editError}</p>}
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-agent-name">名称</Label>
+                <Input
+                  id="edit-agent-name"
+                  value={editForm.name}
+                  onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                  placeholder="Agent 名称"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-agent-dept">部门</Label>
+                <Input
+                  id="edit-agent-dept"
+                  value={editForm.department}
+                  onChange={e => setEditForm({ ...editForm, department: e.target.value })}
+                  placeholder="所属部门"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-agent-desc">描述</Label>
+                <Input
+                  id="edit-agent-desc"
+                  value={editForm.description}
+                  onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+                  placeholder="Agent 描述"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleEdit} disabled={editing}>
+                {editing ? '保存中...' : '保存'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -345,10 +444,19 @@ export function AgentsAdminView({
                           发布
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem className="text-destructive">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        删除
-                      </DropdownMenuItem>
+                      {canDelete && (
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          disabled={deletingId === agent.id}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            handleDelete(agent);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          {deletingId === agent.id ? '删除中...' : '删除'}
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -498,7 +606,11 @@ export function AgentsAdminView({
 
           {/* Actions */}
           <div className="flex gap-2">
-            <Button className="flex-1 shadow-sm">
+            <Button
+              className="flex-1 shadow-sm"
+              disabled={!canEdit}
+              onClick={() => selectedAgent && openEdit(selectedAgent)}
+            >
               <Settings className="h-4 w-4 mr-2" />
               编辑配置
             </Button>

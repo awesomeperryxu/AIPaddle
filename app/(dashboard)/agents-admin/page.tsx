@@ -8,5 +8,12 @@ export default async function Page() {
   const ctx = await getRequestContext()
   if (!ctx) redirect('/login')
   const agents = await listAgents(ctx)
-  return <AgentsAdminView agents={agents} canCreate={can(ctx, 'agent:create')} />
+  return (
+    <AgentsAdminView
+      agents={agents}
+      canCreate={can(ctx, 'agent:create')}
+      canDelete={can(ctx, 'agent:delete')}
+      canEdit={can(ctx, 'agent:update')}
+    />
+  )
 }

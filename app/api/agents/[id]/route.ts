@@ -1,6 +1,6 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
-import { getAgentById, updateAgent } from '@/lib/data/agents'
+import { getAgentById, updateAgent, deleteAgent } from '@/lib/data/agents'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
@@ -42,4 +42,22 @@ export async function PATCH(req: Request, { params }: Ctx) {
     return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
   }
   return Response.json({ agent })
+}
+
+// DELETE /api/agents/[id] —— 软删除 Agent。权限：agent:delete（Admin/Developer）。
+// 跨租户 id 影响 0 行 → 404（RLS 兜底），越权删被拦。
+export async function DELETE(_req: Request, { params }: Ctx) {
+  const ctx = await getRequestContext()
+  if (!ctx) {
+    return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
+  }
+  if (!can(ctx, 'agent:delete')) {
+    return Response.json({ error: { code: 'forbidden', message: '无权限：删除 Agent' } }, { status: 403 })
+  }
+  const { id } = await params
+  const ok = await deleteAgent(ctx, id)
+  if (!ok) {
+    return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
+  }
+  return Response.json({ ok: true })
 }
