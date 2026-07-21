@@ -20,3 +20,24 @@ yarn.lock
 # Playwright
 /test-results/
 /playwright-report/
+
+# ── 商业机密文档：不同步到公开 GitHub（本地保留；2026-07-21 决定）──
+docs/requirements/
+docs/visily/
+docs/design/
+docs/IMPLEMENTATION_AUDIT.md
+docs/PARALLEL_EXECUTION_PLAN.md
+docs/templates/
+docs/测试与CI操作手册-v0-ai-llmops-prototype.docx
+_legacy/
+# Excel 临时锁文件（Excel 打开时生成，勿入库）
+~$*
+docs/~$*
+
+# ── 追踪与架构文档：也停止同步（2026-07-21 用户决定，本地保留）──
+ROADMAP.md
+docs/ISSUES.md
+docs/adr/
+docs/AIPaddle-项目进度管控.xlsx
+# security 管理文档（本地专用，含机密文件清单，绝不同步）
+docs/SECURITY-机密与不同步清单.md

@@ -24,9 +24,10 @@ jobs:
       - name: SSH 部署到服务器
         env:
           GH_PAT: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 \
-            ubuntu@43.173.99.218 "GH_PAT='${GH_PAT}' bash -s" <<'REMOTE'
+            "ubuntu@${DEPLOY_HOST}" "GH_PAT='${GH_PAT}' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/aipaddle
           export PATH="$HOME/.local/share/pnpm:$PATH"
