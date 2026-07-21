@@ -2,6 +2,7 @@ import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { getWorkflow, publishWorkflow } from '@/lib/data/workflow'
 import { validateGraph } from '@/lib/workflow/validate'
+import { validateToolNodes } from '@/lib/workflow/validate-tools'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -17,7 +18,7 @@ export async function POST(_req: Request, { params }: Ctx) {
   const wf = await getWorkflow(ctx, id)
   if (!wf) return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
 
-  const validation = validateGraph(wf.graph)
+  const validation = [...validateGraph(wf.graph), ...(await validateToolNodes(ctx, wf.graph))]
   if (validation.length > 0) {
     return Response.json(
       { error: { code: 'invalid_graph', message: '图不合法，无法发布' }, validation },

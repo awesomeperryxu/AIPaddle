@@ -2,6 +2,7 @@ import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { getWorkflow, saveWorkflow } from '@/lib/data/workflow'
 import { validateGraph } from '@/lib/workflow/validate'
+import { validateToolNodes } from '@/lib/workflow/validate-tools'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -40,6 +41,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   })
   if (!workflow) return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
 
-  const validation = validateGraph(workflow.graph)
+  // 结构校验 + Tool 节点校验（4.4.2：Tool 只引用已发布 Skill、拒直连 MCP）
+  const validation = [...validateGraph(workflow.graph), ...(await validateToolNodes(ctx, workflow.graph))]
   return Response.json({ workflow, validation, valid: validation.length === 0 })
 }
