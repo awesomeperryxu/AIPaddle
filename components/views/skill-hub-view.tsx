@@ -64,6 +64,9 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [busy, setBusy] = useState(false);
+  const [testTool, setTestTool] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -112,6 +115,22 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
       alert(e instanceof Error ? e.message : '操作失败');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runTest(skill: Skill) {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await apiFetch<{ ok: boolean; result: unknown }>(`/api/skills/${skill.id}/test`, {
+        method: 'POST',
+        body: JSON.stringify({ tool: testTool.trim() || undefined, input: 'test' }),
+      });
+      setTestResult({ ok: true, text: JSON.stringify(res.result, null, 2) });
+    } catch (e) {
+      setTestResult({ ok: false, text: e instanceof Error ? e.message : '试跑失败' });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -340,6 +359,41 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
               </div>
             )}
           </div>
+
+          {/* 试跑（4.3.2 S3-06/S3-09）*/}
+          <Card className="bg-card border-border shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-foreground">在线试跑</CardTitle>
+              {selectedSkill.type === 'MCP' && (
+                <CardDescription className="text-xs">MCP 型只能调用封装白名单内的工具</CardDescription>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {selectedSkill.type === 'MCP' && (
+                <Input
+                  placeholder="工具名（tool）" value={testTool}
+                  onChange={(e) => setTestTool(e.target.value)}
+                  className="h-8 text-sm" data-testid="test-tool"
+                />
+              )}
+              <Button
+                className="w-full" size="sm" disabled={testing}
+                data-testid="run-test" onClick={() => runTest(selectedSkill)}
+              >
+                {testing ? '试跑中...' : '试跑'}
+              </Button>
+              {testResult && (
+                <pre
+                  data-testid="test-result"
+                  className={`p-2 rounded-lg text-[11px] whitespace-pre-wrap break-all ${
+                    testResult.ok ? 'bg-green-500/10 text-green-700' : 'bg-destructive/10 text-destructive'
+                  }`}
+                >
+                  {testResult.text}
+                </pre>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
 
