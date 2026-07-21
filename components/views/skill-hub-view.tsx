@@ -47,6 +47,24 @@ export function SkillHubView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  // 本地安装态（原型语义：安装/卸载切换，安装量随之 ±1）
+  const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
+
+  const isInstalled = selectedSkill ? installedIds.has(selectedSkill.id) : false;
+  const displayedInstalls = selectedSkill
+    ? selectedSkill.installs + (isInstalled ? 1 : 0)
+    : 0;
+
+  const toggleInstall = () => {
+    if (!selectedSkill) return;
+    const id = selectedSkill.id;
+    setInstalledIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const filteredSkills = mockSkills.filter(skill => {
     const matchesSearch = skill.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -179,6 +197,8 @@ export function SkillHubView() {
                 return (
                   <Card
                     key={skill.id}
+                    data-testid="skill-card"
+                    data-skill-name={skill.name}
                     className={`bg-card border-border cursor-pointer transition-all hover:shadow-md ${
                       selectedSkill?.id === skill.id ? 'ring-2 ring-primary shadow-md' : 'shadow-sm'
                     }`}
@@ -226,6 +246,8 @@ export function SkillHubView() {
                 return (
                   <Card
                     key={skill.id}
+                    data-testid="skill-card"
+                    data-skill-name={skill.name}
                     className={`bg-card border-border cursor-pointer transition-all hover:shadow-md ${
                       selectedSkill?.id === skill.id ? 'ring-2 ring-primary shadow-md' : 'shadow-sm'
                     }`}
@@ -269,6 +291,8 @@ export function SkillHubView() {
                 return (
                   <Card
                     key={skill.id}
+                    data-testid="skill-card"
+                    data-skill-name={skill.name}
                     className="bg-card border-border cursor-pointer transition-all hover:shadow-md shadow-sm"
                     onClick={() => setSelectedSkill(skill)}
                   >
@@ -336,7 +360,7 @@ export function SkillHubView() {
               {/* Stats */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="p-2.5 rounded-lg bg-muted/50 text-center">
-                  <p className="text-base font-semibold text-foreground">{selectedSkill.installs}</p>
+                  <p className="text-base font-semibold text-foreground" data-testid="skill-installs">{displayedInstalls}</p>
                   <p className="text-[11px] text-muted-foreground">安装量</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-muted/50 text-center">
@@ -406,9 +430,19 @@ export function SkillHubView() {
 
           {/* Actions */}
           <div className="flex gap-2">
-            <Button className="flex-1 shadow-sm">
-              <Download className="h-4 w-4 mr-2" />
-              安装 Skill
+            <Button
+              className="flex-1 shadow-sm"
+              variant={isInstalled ? 'outline' : 'default'}
+              onClick={toggleInstall}
+            >
+              {isInstalled ? (
+                '卸载'
+              ) : (
+                <>
+                  <Download className="h-4 w-4 mr-2" />
+                  安装
+                </>
+              )}
             </Button>
             <Button variant="outline" className="gap-1">
               文档

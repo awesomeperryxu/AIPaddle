@@ -155,7 +155,7 @@ export function AgentsView() {
                 </AvatarFallback>
               </Avatar>
               <div className="max-w-[75%]">
-                <div className="p-3.5 rounded-2xl bg-muted/40 border border-border rounded-tl-sm">
+                <div data-testid="chat-message-assistant" className="p-3.5 rounded-2xl bg-muted/40 border border-border rounded-tl-sm">
                   <p className="text-sm text-foreground leading-relaxed">
                     你好！我是{selectedAgent.name}。{selectedAgent.description}
                     <br /><br />
@@ -182,7 +182,9 @@ export function AgentsView() {
                   </AvatarFallback>
                 </Avatar>
                 <div className={`max-w-[75%] ${msg.role === 'user' ? 'text-right' : ''}`}>
-                  <div className={`p-3.5 rounded-2xl ${
+                  <div
+                    data-testid={msg.role === 'user' ? undefined : 'chat-message-assistant'}
+                    className={`p-3.5 rounded-2xl ${
                     msg.role === 'user'
                       ? 'bg-primary text-primary-foreground rounded-tr-sm'
                       : 'bg-muted/40 border border-border rounded-tl-sm'
@@ -204,6 +206,7 @@ export function AgentsView() {
             <div className="flex items-end gap-2">
               <div className="flex-1 relative">
                 <Input
+                  aria-label="输入消息"
                   placeholder={`向 ${selectedAgent.name} 提问...`}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -213,7 +216,7 @@ export function AgentsView() {
                   <Paperclip className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </div>
-              <Button size="icon" className="h-10 w-10 rounded-lg shadow-sm">
+              <Button aria-label="发送" size="icon" className="h-10 w-10 rounded-lg shadow-sm">
                 <Send className="h-4 w-4" />
               </Button>
             </div>
