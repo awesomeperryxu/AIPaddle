@@ -15,6 +15,8 @@ export type Action =
   | 'knowledge:read'
   | 'knowledge:delete'
   | 'member:manage'
+  | 'tenant:read'
+  | 'tenant:manage'
   | 'audit:read'
 
 // 每个 action 允许的角色集合；未列入矩阵的 action 视为无人允许（默认拒绝）。
@@ -30,6 +32,8 @@ const MATRIX: Record<Action, Role[]> = {
   'knowledge:read': ['Admin', 'Developer', 'User', 'Auditor'],
   'knowledge:delete': ['Admin', 'Developer'],
   'member:manage': ['Admin'],
+  'tenant:read': ['Admin', 'Auditor'],
+  'tenant:manage': ['Admin'],
   'audit:read': ['Admin', 'Auditor'],
 }
 
