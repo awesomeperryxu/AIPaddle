@@ -58,19 +58,37 @@ jobs:
       - name: Unit & integration tests
         run: pnpm test
 
-  # e2e:
-  #   # 仅在合并到 main 前跑冒烟集（ROADMAP 0.9 完成后启用）
-  #   if: github.event_name == 'pull_request'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: pnpm/action-setup@v4
-  #       with:
-  #         version: 9
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 22
-  #         cache: pnpm
-  #     - run: pnpm install --frozen-lockfile
-  #     - run: pnpm exec playwright install --with-deps chromium
-  #     - run: pnpm test:e2e
+  # ── ROADMAP 0.9c：带登录集成冒烟（只读，仅 PR 时跑）──
+  # 登录种子账号遍历主页面渲染，连线上 Supabase 但不写数据。
+  # secrets 缺失时 seed/冒烟步骤自动跳过（job 仍绿），可安全先合入再配 secrets。
+  e2e-smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SEED_PASSWORD: ${{ secrets.SEED_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright chromium
+        if: env.SEED_PASSWORD != ''
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Seed e2e accounts (idempotent)
+        if: env.SEED_PASSWORD != ''
+        run: pnpm seed:e2e
+      - name: Authed integration smoke
+        if: env.SEED_PASSWORD != ''
+        run: pnpm exec playwright test authed-smoke.spec.ts
+      - name: Skip note
+        if: env.SEED_PASSWORD == ''
+        run: echo "⏭️ 未配 SEED_PASSWORD/Supabase secrets，跳过 e2e 冒烟（配置后自动生效）"
