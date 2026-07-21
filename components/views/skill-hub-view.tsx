@@ -29,6 +29,7 @@ type Skill = {
   riskLevel: 'low' | 'medium' | 'high';
   status: 'draft' | 'pending' | 'published';
   tags: string[];
+  mine: boolean; // 本人发布（区分"我创建"与"从市场安装"）
 };
 
 type Props = {
@@ -87,8 +88,11 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
     return matchQ && matchT;
   });
   const marketSkills = filtered.filter((s) => s.status === 'published');
-  const mySkills = filtered.filter((s) => installed.has(s.id));
+  // 我的 Skill = 我自建的 + 从市场安装的（按来源区分展示）
+  const mySkills = filtered.filter((s) => s.mine || installed.has(s.id));
   const pendingSkills = filtered.filter((s) => s.status === 'pending');
+  // 来源标签：自建优先，其次已安装
+  const sourceOf = (s: Skill) => (s.mine ? { label: '自建', className: 'bg-primary/10 text-primary' } : installed.has(s.id) ? { label: '已安装', className: 'bg-blue-500/10 text-blue-600' } : null);
 
   const stats = {
     total: skills.length,
@@ -208,6 +212,9 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
               <Badge className={`text-[10px] gap-1 ${statusConfig[skill.status].className}`}>
                 <StatusIcon className="h-3 w-3" />{statusConfig[skill.status].label}
               </Badge>
+              {sourceOf(skill) && (
+                <Badge className={`text-[10px] ${sourceOf(skill)!.className}`}>{sourceOf(skill)!.label}</Badge>
+              )}
               <Badge variant="outline" className={`text-[10px] ${riskConfig[skill.riskLevel].className}`}>
                 {riskConfig[skill.riskLevel].label}风险
               </Badge>

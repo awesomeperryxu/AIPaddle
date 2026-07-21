@@ -29,6 +29,7 @@ export type Skill = {
   config: SkillConfig
   createdAt: string
   updatedAt: string
+  mine: boolean // 是否本人发布（区分"我创建"与"从市场安装"）
 }
 
 type Row = {
@@ -43,15 +44,16 @@ type Row = {
   status: SkillStatus
   tags: string[] | null
   config: SkillConfig | null
+  publisher_id: string
   created_at: string | null
   updated_at: string | null
 }
 
 const COLS =
-  'id,name,description,type,version,installs,rating,risk_level,status,tags,config,created_at,updated_at'
+  'id,name,description,type,version,installs,rating,risk_level,status,tags,config,publisher_id,created_at,updated_at'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-function mapRow(r: Row): Skill {
+function mapRow(r: Row, userId?: string): Skill {
   return {
     id: r.id,
     name: r.name,
@@ -66,6 +68,7 @@ function mapRow(r: Row): Skill {
     config: r.config ?? {},
     createdAt: (r.created_at ?? '').slice(0, 10),
     updatedAt: r.updated_at ?? '',
+    mine: !!userId && r.publisher_id === userId,
   }
 }
 
@@ -77,7 +80,7 @@ export async function listSkills(_ctx: RequestContext): Promise<Skill[]> {
     .is('deleted_at', null)
     .order('updated_at', { ascending: false })
   if (error) throw new Error(error.message)
-  return (data as Row[] | null ?? []).map(mapRow)
+  return (data as Row[] | null ?? []).map((r) => mapRow(r, _ctx.userId))
 }
 
 export async function getSkillById(_ctx: RequestContext, id: string): Promise<Skill | null> {
@@ -90,7 +93,7 @@ export async function getSkillById(_ctx: RequestContext, id: string): Promise<Sk
     .is('deleted_at', null)
     .maybeSingle()
   if (error) throw new Error(error.message)
-  return data ? mapRow(data as Row) : null
+  return data ? mapRow(data as Row, _ctx.userId) : null
 }
 
 export async function createSkill(
