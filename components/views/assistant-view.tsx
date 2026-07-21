@@ -2,19 +2,19 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api/client';
 import {
   Send, Bot, User, Sparkles, Plus, Zap, FileText, Image as ImageIcon,
-  ChevronRight, Loader2, Trash2, MessageSquare,
+  Loader2, Trash2, MessageSquare,
 } from 'lucide-react';
 
 type Citation = { documentId: string; filename: string; snippet: string; similarity: number };
 type Msg = { id: string; role: 'user' | 'assistant' | 'system'; content: string; citations: Citation[] };
 type Conversation = { id: string; title: string; updatedAt: string };
+type Res = { id: string; name: string };
 
 // 快捷动作（切片1 暂不实现，置灰；切片3 接工具能力）
 const QUICK_ACTIONS = [
@@ -33,6 +33,28 @@ export function AssistantView() {
   const [streamCitations, setStreamCitations] = useState<Citation[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  // 切片3：@Agent / /Skill 资源调取
+  const [resources, setResources] = useState<{ agents: Res[]; skills: Res[]; knowledgeBases: (Res & { documentCount?: number })[] }>({ agents: [], skills: [], knowledgeBases: [] });
+  const [pickedAgent, setPickedAgent] = useState<Res | null>(null);
+  const [pickedSkill, setPickedSkill] = useState<Res | null>(null);
+
+  useEffect(() => {
+    apiFetch<typeof resources>('/api/assistant/resources')
+      .then(setResources)
+      .catch(() => {});
+  }, []);
+
+  // 输入以 @ 或 / 开头时显示资源选择器
+  const pickerMode: 'agent' | 'skill' | null =
+    !pickedAgent && !pickedSkill && input.startsWith('@') ? 'agent'
+      : !pickedAgent && !pickedSkill && input.startsWith('/') ? 'skill'
+        : null;
+  const pickerQuery = pickerMode ? input.slice(1).toLowerCase() : '';
+  const pickerItems = pickerMode === 'agent'
+    ? resources.agents.filter((a) => a.name.toLowerCase().includes(pickerQuery))
+    : pickerMode === 'skill'
+      ? resources.skills.filter((s) => s.name.toLowerCase().includes(pickerQuery))
+      : [];
 
   const loadConversations = useCallback(async () => {
     try {
@@ -82,13 +104,16 @@ export function AssistantView() {
   async function send() {
     const text = input.trim();
     if (!text || sending) return;
+    const agent = pickedAgent, skill = pickedSkill;
     setInput('');
     setSending(true); setStreamText(''); setStreamCitations([]);
     const convId = await ensureConversation();
-    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: text, citations: [] }]);
+    const prefix = agent ? `@${agent.name} ` : skill ? `/${skill.name} ` : '';
+    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: prefix + text, citations: [] }]);
     try {
       const res = await fetch(`/api/assistant/conversations/${convId}/messages`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: text }),
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ content: text, agentId: agent?.id, skillId: skill?.id }),
       });
       if (!res.ok || !res.body) throw new Error('发送失败');
       const reader = res.body.getReader();
@@ -121,6 +146,7 @@ export function AssistantView() {
       setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : '发送失败'}`, citations: [] }]);
     } finally {
       setSending(false); setStreamText(''); setStreamCitations([]);
+      setPickedAgent(null); setPickedSkill(null);
     }
   }
 
@@ -193,21 +219,49 @@ export function AssistantView() {
         </div>
 
         {/* 输入区 */}
-        <div className="pt-4 border-t border-border space-y-3">
-          <div className="flex gap-2">
+        <div className="relative pt-4 border-t border-border space-y-3">
+          {/* @Agent / /Skill 选择器（切片3）*/}
+          {pickerMode && pickerItems.length > 0 && (
+            <div className="absolute bottom-full left-0 mb-1 w-80 max-h-56 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg z-20 p-1">
+              <p className="px-2 py-1 text-[11px] text-muted-foreground">{pickerMode === 'agent' ? '@ 选择 Agent（本条由其回答）' : '/ 选择 Skill（触发试跑）'}</p>
+              {pickerItems.map((it) => (
+                <button
+                  key={it.id}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm text-foreground hover:bg-muted"
+                  onClick={() => {
+                    if (pickerMode === 'agent') setPickedAgent(it); else setPickedSkill(it);
+                    setInput('');
+                  }}
+                >
+                  {pickerMode === 'agent' ? <Bot className="h-4 w-4 text-primary" /> : <Zap className="h-4 w-4 text-primary" />}
+                  {it.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2 items-center">
             {QUICK_ACTIONS.map((a) => (
               <Button key={a.label} variant="outline" size="sm" className="gap-2" disabled title="即将支持">
                 <a.icon className="h-4 w-4" />{a.label}
               </Button>
             ))}
+            <span className="ml-auto text-xs text-muted-foreground">输入 @ 调 Agent，/ 调 Skill</span>
           </div>
+          {(pickedAgent || pickedSkill) && (
+            <div>
+              <Badge variant="secondary" className="gap-1">
+                {pickedAgent ? <><Bot className="h-3 w-3" />@{pickedAgent.name}</> : <><Zap className="h-3 w-3" />/{pickedSkill!.name}</>}
+                <button onClick={() => { setPickedAgent(null); setPickedSkill(null); }} aria-label="取消" className="ml-1">×</button>
+              </Badge>
+            </div>
+          )}
           <div className="flex items-end gap-3">
             <Input
               aria-label="输入消息"
-              placeholder="输入你的问题…"
+              placeholder={pickedAgent ? `向 @${pickedAgent.name} 提问…` : pickedSkill ? `给 /${pickedSkill.name} 的输入…` : '输入你的问题；@ 调 Agent，/ 调 Skill…'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !pickerMode) { e.preventDefault(); send(); } }}
               disabled={sending}
               className="py-6 bg-card border-border"
             />
@@ -218,34 +272,44 @@ export function AssistantView() {
         </div>
       </div>
 
-      {/* 我的 Skill（切片3 接真实数据）*/}
-      <div className="w-72 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-foreground">我的 Skill</h3>
-          <Button variant="ghost" size="sm" disabled>查看全部<ChevronRight className="h-4 w-4 ml-1" /></Button>
+      {/* 可用资源（切片3）：真实 Agent / Skill / 知识库 */}
+      <div className="w-72 flex flex-col gap-4 min-h-0 overflow-y-auto">
+        <ResourceGroup kind="agent" title="可调取 Agent（@）" icon={Bot} items={resources.agents}
+          hint="点击 @ 该 Agent 回答本条" onPick={(it) => { setPickedSkill(null); setPickedAgent(it); }} />
+        <ResourceGroup kind="skill" title="可调取 Skill（/）" icon={Zap} items={resources.skills}
+          hint="点击 / 触发该 Skill 试跑" onPick={(it) => { setPickedAgent(null); setPickedSkill(it); }} />
+        <div>
+          <h3 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5"><FileText className="h-4 w-4 text-primary" />知识库（自动检索）</h3>
+          <div className="space-y-1.5">
+            {resources.knowledgeBases.length === 0 && <p className="px-1 text-xs text-muted-foreground">暂无知识库</p>}
+            {resources.knowledgeBases.map((k) => (
+              <div key={k.id} className="rounded-lg bg-card border border-border p-2 text-xs text-foreground flex items-center justify-between">
+                <span className="truncate">{k.name}</span>
+                {typeof k.documentCount === 'number' && <span className="text-muted-foreground shrink-0 ml-1">{k.documentCount} 文档</span>}
+              </div>
+            ))}
+          </div>
+          <p className="px-1 mt-1 text-[11px] text-muted-foreground">提问时自动检索全员可见知识库并带引用</p>
         </div>
-        <div className="space-y-2">
-          {[
-            { name: '周报生成器', calls: 45 },
-            { name: '邮件回复助手', calls: 128 },
-            { name: '会议纪要', calls: 32 },
-          ].map((skill) => (
-            <Card key={skill.name} className="bg-card border-border opacity-70">
-              <CardContent className="p-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Zap className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{skill.name}</p>
-                    <p className="text-xs text-muted-foreground">{skill.calls} 次使用</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <p className="px-1 text-xs text-muted-foreground">Skill 调取（/ 命令）即将支持</p>
+      </div>
+    </div>
+  );
+}
+
+function ResourceGroup({ kind, title, icon: Icon, items, hint, onPick }: {
+  kind: 'agent' | 'skill'; title: string; icon: typeof Bot; items: Res[]; hint: string; onPick: (it: Res) => void;
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5"><Icon className="h-4 w-4 text-primary" />{title}</h3>
+      <div className="space-y-1.5">
+        {items.length === 0 && <p className="px-1 text-xs text-muted-foreground">暂无</p>}
+        {items.map((it) => (
+          <button key={it.id} data-testid={`res-${kind}`} onClick={() => onPick(it)} title={hint}
+            className="w-full rounded-lg bg-card border border-border p-2 text-xs text-left text-foreground hover:border-primary/50 truncate">
+            {it.name}
+          </button>
+        ))}
       </div>
     </div>
   );

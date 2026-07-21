@@ -2,10 +2,28 @@ import { getRequestContext } from '@/lib/context'
 import { chatStream, type ChatMessage } from '@/lib/ai'
 import { retrieveSegments } from '@/lib/kb/rag'
 import { classifyIntent, INTENT_ROUTE, INTENT_LABEL } from '@/lib/assistant/intent'
+import { getAgentForChat } from '@/lib/data/agents'
+import { getSkillById } from '@/lib/data/skills'
+import { evaluateSkillCall } from '@/lib/skills/invoke'
 import {
   getOwnedConversation, listMessages, appendMessage, renameConversation,
   type Citation,
 } from '@/lib/data/conversations'
+
+function sseOnce(text: string): Response {
+  const enc = new TextEncoder()
+  const s = new ReadableStream({
+    start(controller) {
+      const send = (o: unknown) => controller.enqueue(enc.encode(`data: ${JSON.stringify(o)}\n\n`))
+      send({ type: 'delta', text })
+      send({ type: 'done' })
+      controller.close()
+    },
+  })
+  return new Response(s, {
+    headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive' },
+  })
+}
 
 type Ctx = { params: Promise<{ id: string }> }
 const RAG_MIN_SIMILARITY = 0.3
@@ -39,14 +57,39 @@ export async function POST(req: Request, { params }: Ctx) {
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
   const content = String(body?.content ?? '').trim()
   if (!content) return Response.json({ error: { code: 'invalid', message: '消息不能为空' } }, { status: 400 })
+  const agentId = typeof body?.agentId === 'string' ? body.agentId : undefined // @Agent 单条借答（切片3）
+  const skillId = typeof body?.skillId === 'string' ? body.skillId : undefined // /Skill 触发试跑（切片3）
 
   // 历史（存用户消息前取，用于判首条 + 组装上下文）
   const prior = await listMessages(ctx, id)
   await appendMessage(ctx, id, { role: 'user', content })
   if (prior.length === 0) await renameConversation(ctx, id, content.slice(0, 24)) // 首条自动命名
 
-  // 意图分类（切片2）：若识别为创建 agent/skill/workflow/chatflow → 回复 + 让前端整页跳创建页预填
-  const intent = await classifyIntent(content)
+  // /Skill：触发该 Skill 试跑并把结果带回对话（切片3）
+  if (skillId) {
+    const skill = await getSkillById(ctx, skillId)
+    if (!skill) return sseOnce('⚠️ 该 Skill 不存在或无权访问。')
+    const allowedTools = Array.isArray(skill.config.allowed_tools) ? skill.config.allowed_tools.map(String) : []
+    const requestedTool = skill.type === 'MCP' ? allowedTools[0] : undefined
+    const check = evaluateSkillCall({ type: skill.type, allowedTools, requestedTool, serverStatus: skill.type === 'MCP' ? 'approved' : undefined })
+    const result = check.ok
+      ? `已试跑 Skill「${skill.name}」（${skill.type}）\n输入：${content}\n结果（模拟试跑）：Skill「${skill.name}」执行成功，返回处理结果占位。`
+      : `Skill「${skill.name}」调用被拒：${check.message}`
+    await appendMessage(ctx, id, { role: 'assistant', content: result, citations: [] })
+    return sseOnce(result)
+  }
+
+  // @Agent：本条用该 Agent 的人设回答（切片3）——跳过意图分类
+  let systemPrompt = SYSTEM_BASE
+  if (agentId) {
+    const agent = await getAgentForChat(ctx, agentId)
+    if (!agent) return sseOnce('⚠️ 该 Agent 不存在或无权访问。')
+    systemPrompt = agent.systemPrompt?.trim()
+      || `你是企业数字员工「${agent.name}」，围绕职责用简洁专业的简体中文回答。你由通义千问（Qwen）驱动，勿编造自研模型或虚假承诺。`
+  }
+
+  // 意图分类（切片2）：仅普通对话（无 @Agent/@Skill）时判定创建意图
+  const intent = agentId ? { kind: 'chat' as const, description: '' } : await classifyIntent(content)
   if (intent.kind !== 'chat') {
     const label = INTENT_LABEL[intent.kind]
     const target = INTENT_ROUTE[intent.kind]
@@ -82,7 +125,7 @@ export async function POST(req: Request, { params }: Ctx) {
   } catch { /* 检索失败不阻断对话 */ }
 
   const llmMessages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_BASE + ragContext },
+    { role: 'system', content: systemPrompt + ragContext },
     ...prior.slice(-HISTORY_LIMIT).map((m) => ({ role: m.role, content: m.content }) as ChatMessage),
     { role: 'user', content },
   ]
