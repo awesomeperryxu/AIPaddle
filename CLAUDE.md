@@ -65,5 +65,5 @@ gh issue list   # 查看当前任务
 
 ## 部署
 
-- 目标服务器：`ubuntu@43.173.99.218`（Ubuntu）
+- 目标服务器：`ubuntu@<部署服务器IP·见私密配置/GitHub Secret DEPLOY_HOST>`（Ubuntu）
 - 部署链路尚未建立，对应 ROADMAP 任务 0.7 / 0.8；建成前不要臆造部署脚本。

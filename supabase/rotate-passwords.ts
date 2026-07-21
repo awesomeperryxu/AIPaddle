@@ -3,9 +3,9 @@
  * 运行：SEED_PASSWORD='<新密码>' pnpm dlx tsx supabase/rotate-passwords.ts
  *   （或把新密码写入 .env.local 的 SEED_PASSWORD 后，用 dotenv/--env-file 加载再运行）
  *
- * 背景：老密码 AIPaddle@2026 已随仓库公开进入 git 历史（永久泄露），
- *   必须轮换线上账号密码。seed.ts 对已存在账号不改密码，故用本脚本以
- *   admin.updateUserById 强制重置全部 seed 账号密码。
+ * 背景：仓库公开后旧 seed 密码已随 git 历史泄露，必须轮换线上账号密码。
+ *   seed.ts 对已存在账号不改密码，故用本脚本以 admin.updateUserById
+ *   强制重置全部 seed 账号密码。新密码只放 .env.local，绝不进 git。
  */
 import { createClient } from '@supabase/supabase-js'
 
@@ -17,8 +17,8 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !NEW_PASSWORD) {
   console.error('缺少环境变量 NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / SEED_PASSWORD')
   process.exit(1)
 }
-if (NEW_PASSWORD === 'AIPaddle@2026') {
-  console.error('❌ SEED_PASSWORD 仍是已泄露的旧密码，请改成新密码再运行')
+if (NEW_PASSWORD.length < 12) {
+  console.error('❌ SEED_PASSWORD 太短（<12），请用足够强的新密码再运行')
   process.exit(1)
 }
 
