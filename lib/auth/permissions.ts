@@ -16,6 +16,7 @@ export type Action =
   | 'knowledge:delete'
   | 'member:manage'
   | 'audit:read'
+  | 'tenant:read'
 
 // 每个 action 允许的角色集合；未列入矩阵的 action 视为无人允许（默认拒绝）。
 const MATRIX: Record<Action, Role[]> = {
@@ -31,6 +32,7 @@ const MATRIX: Record<Action, Role[]> = {
   'knowledge:delete': ['Admin', 'Developer'],
   'member:manage': ['Admin'],
   'audit:read': ['Admin', 'Auditor'],
+  'tenant:read': ['Admin', 'Auditor'], // 本租户信息/配额/用量查看（ADR-007）；跨租户 tenant:manage 属阶段 6
 }
 
 /** 多角色取并集：任一角色被允许即允许。默认拒绝。 */
