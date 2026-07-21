@@ -2,12 +2,14 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 const SESSION_MAX_MS = 24 * 60 * 60 * 1000 // 24 小时强制重登
+const COOKIE_MAX_AGE = 24 * 60 * 60 // 会话 cookie 持久 24 小时（跨浏览器关闭保留，与上限一致）
 const SESSION_START_COOKIE = 'aipaddle_session_start'
 
-// 将 Supabase cookie 的 maxAge/expires 去掉，使其成为 session cookie（关浏览器即清除）
+// 将 Supabase cookie 设为持久 24 小时（此前为 session cookie·关浏览器即清除；
+// 改为持久后，24 小时内重开浏览器无需重新登录，超过 24h 仍强制重登）。
 function toSessionCookieOptions(options: Record<string, unknown> = {}) {
-  const { maxAge: _m, expires: _e, ...rest } = options
-  return rest
+  const { expires: _e, ...rest } = options
+  return { ...rest, maxAge: COOKIE_MAX_AGE }
 }
 
 export async function proxy(request: NextRequest) {
@@ -49,7 +51,7 @@ export async function proxy(request: NextRequest) {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
-        // 不设 maxAge/expires → session cookie
+        maxAge: COOKIE_MAX_AGE, // 持久 24 小时，跨浏览器关闭保留
       })
     } else if (now - parseInt(sessionStart) > SESSION_MAX_MS) {
       // 超过 24 小时，强制退出
