@@ -35,3 +35,17 @@ _Last updated: 2026-07-21_
 | MIG-1 | 账号迁移收尾 | 🔄 | 旧 repo Issue/PR 未迁；新 repo 需重配 CI Secrets（`DEPLOY_SSH_KEY` 等）、分支保护 |
 
 > 其它道（D 知识库 4.2.x / C 测试 / E 集成）的开放条目由各道自行在本表追加。
+
+## UI 原型对齐批次（2026-07-21，`public/prototype/*.dc.html` 为唯一真实源）
+
+> 用户拍板：全部 UI（含 e2e）按原型对齐，差异全按原型更新；成员角色**保留后端键、只改显示标签**。四轮完成，`pnpm check` 全绿、Playwright 解析 73 用例正常。分支 `feat/prototype-ui-alignment`（批次 PR）。
+
+| 编号 | 内容 | 状态 | 备注 / 遗留 |
+|------|------|:---:|------|
+| 4.2.x | 知识库管理页接入真实数据（上传→向量化→列表→删除→建库） | ✅ | 服务端页 listKnowledgeBases+listDocuments；按 knowledge:create 门控 |
+| UI-R1 | 知识库/成员/租户 中度偏离对齐 + s2 e2e 改写 | ✅ | 成员保留角色键改标签；租户 ¥/菜单8项 |
+| UI-R2 | keys/billing/settings/saas-dashboard 空白页按原型落地 | ✅ | **UI 骨架 + 内联 mock；真实后端接线待后续切片** |
+| UI-R3 | dashboard 监控明细下钻 / workflow 编辑器4面板 / knowledge-qa 双栏 | ✅ | mock 交互；qa 保留 /api/knowledge/ask 接线 |
+| UI-R4 | agents/skill-hub e2e 钩子（testid/aria-label）+ spec 文案对齐 | ✅ | 「已下线」页签原型无，已从 s1 移除 |
+| FIX-IDX | S2-IDX-04 检索评分面板 | ⏸ | 原型仅按钮占位、面板未建，e2e 标 `test.fixme` |
+| FIX-INV | S5-01 成员邀请表单 | ⏸ | 「添加成员」按钮为 disabled 占位、无表单，e2e 标 `test.fixme` |
