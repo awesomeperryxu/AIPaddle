@@ -11,14 +11,24 @@ import type { RequestContext } from '@/lib/context'
 
 vi.mock('@/lib/context', () => ({ getRequestContext: vi.fn() }))
 vi.mock('@/lib/data/agents', () => ({ transitionAgent: vi.fn() }))
+vi.mock('@/lib/data/reviews', () => ({
+  recordSubmission: vi.fn(),
+  recordReviewDecision: vi.fn(),
+}))
+vi.mock('@/lib/data/audit', () => ({ writeAudit: vi.fn() }))
 
 import { getRequestContext } from '@/lib/context'
 import { transitionAgent } from '@/lib/data/agents'
+import { recordSubmission, recordReviewDecision } from '@/lib/data/reviews'
+import { writeAudit } from '@/lib/data/audit'
 import { POST } from '@/app/api/agents/[id]/transition/route'
 import { TRANSITIONS, actionsFor } from '@/lib/agents/status'
 
 const mockCtx = vi.mocked(getRequestContext)
 const mockTransition = vi.mocked(transitionAgent)
+const mockRecordSubmission = vi.mocked(recordSubmission)
+const mockRecordDecision = vi.mocked(recordReviewDecision)
+const mockAudit = vi.mocked(writeAudit)
 
 const adminCtx: RequestContext = { userId: 'u1', orgId: 'org1', roles: ['Admin'] }
 const userCtx: RequestContext = { userId: 'u3', orgId: 'org1', roles: ['User'] }
@@ -103,5 +113,42 @@ describe('状态机 TRANSITIONS 纯逻辑', () => {
     expect(actionsFor('pending').sort()).toEqual(['approve', 'reject'])
     expect(actionsFor('published')).toEqual(['offline'])
     expect(actionsFor('offline')).toEqual(['online'])
+  })
+})
+
+describe('4.1.3 审批留痕（transition 联动 reviews + audit）', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('submit 成功 → 建 pending 审批记录 + 写 agent.submit 审计', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockTransition.mockResolvedValueOnce({ ok: true, agent: { id: ID, status: 'pending' } as never })
+    await call('submit')
+    expect(mockRecordSubmission).toHaveBeenCalledWith(adminCtx, ID)
+    expect(mockRecordDecision).not.toHaveBeenCalled()
+    expect(mockAudit).toHaveBeenCalledWith(adminCtx, 'agent.submit', 'agent', ID, { to: 'pending' })
+  })
+
+  it('approve 成功 → 审批记录置 approved + 审计', async () => {
+    mockCtx.mockResolvedValueOnce(auditorCtx)
+    mockTransition.mockResolvedValueOnce({ ok: true, agent: { id: ID, status: 'published' } as never })
+    await call('approve')
+    expect(mockRecordDecision).toHaveBeenCalledWith(auditorCtx, ID, 'approved')
+    expect(mockAudit).toHaveBeenCalledWith(auditorCtx, 'agent.approve', 'agent', ID, { to: 'published' })
+  })
+
+  it('reject 成功 → 审批记录置 rejected', async () => {
+    mockCtx.mockResolvedValueOnce(auditorCtx)
+    mockTransition.mockResolvedValueOnce({ ok: true, agent: { id: ID, status: 'draft' } as never })
+    await call('reject')
+    expect(mockRecordDecision).toHaveBeenCalledWith(auditorCtx, ID, 'rejected')
+  })
+
+  it('非法流转 → 不写任何审批/审计', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockTransition.mockResolvedValueOnce({ ok: false, reason: 'illegal' })
+    await call('approve')
+    expect(mockRecordSubmission).not.toHaveBeenCalled()
+    expect(mockRecordDecision).not.toHaveBeenCalled()
+    expect(mockAudit).not.toHaveBeenCalled()
   })
 })

@@ -1,6 +1,8 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { transitionAgent } from '@/lib/data/agents'
+import { recordSubmission, recordReviewDecision } from '@/lib/data/reviews'
+import { writeAudit } from '@/lib/data/audit'
 import { TRANSITIONS, type TransitionAction } from '@/lib/agents/status'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
@@ -36,5 +38,16 @@ export async function POST(req: Request, { params }: Ctx) {
       { status: 409 },
     )
   }
+
+  // 4.1.3：审批记录 + 审计留痕（状态已落库，记录失败只记日志不回滚）
+  try {
+    if (action === 'submit') await recordSubmission(ctx, id)
+    else if (action === 'approve') await recordReviewDecision(ctx, id, 'approved')
+    else if (action === 'reject') await recordReviewDecision(ctx, id, 'rejected')
+  } catch (e) {
+    console.error('[review] 审批记录写入失败:', action, e)
+  }
+  await writeAudit(ctx, `agent.${action}`, 'agent', id, { to: t.to })
+
   return Response.json({ agent: result.agent })
 }
