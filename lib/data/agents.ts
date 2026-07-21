@@ -127,6 +127,40 @@ export async function createAgent(
   return mapRow(data as Row)
 }
 
+// 取 Agent 对话所需配置（4.1.4）。含 config 里的 model/systemPrompt，用于组装对话请求。
+export type AgentChatConfig = {
+  id: string
+  name: string
+  description: string
+  status: Agent['status']
+  model?: string
+  systemPrompt?: string
+  temperature?: number
+}
+
+export async function getAgentForChat(_ctx: RequestContext, id: string): Promise<AgentChatConfig | null> {
+  if (!UUID_RE.test(id)) return null
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('agents')
+    .select('id,name,description,status,config')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  const cfg = (data.config ?? {}) as { model?: string; systemPrompt?: string; temperature?: number }
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    description: (data.description ?? '') as string,
+    status: data.status as Agent['status'],
+    model: cfg.model,
+    systemPrompt: cfg.systemPrompt,
+    temperature: cfg.temperature,
+  }
+}
+
 // 状态机流转（4.1.2）。原子条件更新：仅当当前 status === from 才落库，
 // 否则 0 行 → 再查一次区分「不存在/跨租户(RLS)」与「当前态非法流转」。
 export async function transitionAgent(

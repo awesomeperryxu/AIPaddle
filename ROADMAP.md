@@ -119,7 +119,7 @@
 | 4.1.1 | Agent CRUD API + 页面接通（列表/创建/编辑/删除） | ✅ | CRUD 闭环（增删改查 + 8 单测）已并入 main（PR #5）；agents-admin 接真实数据、跨租户隔离生效；待用户线上亲验 |
 | 4.1.2 | 状态机：草稿 → 待审核 → 已发布 → 停用（含校验规则） | 🔄 待验收 | `lib/agents/status.ts`（5 条合法流转表）+ 数据层 `transitionAgent`（原子条件更新，当前态≠from→非法）+ `POST /api/agents/[id]/transition`（submit=agent:submit / approve·reject=agent:review / offline·online=agent:update，非法流转 409）+ UI 按状态+权限渲染动作；12 测试全绿；本地完成待用户同意提批次 |
 | 4.1.3 | 审核流程接入安全管理模块（审批提交、留痕） | 🔄 待验收 | 状态机流转联动：submit→建 `security_reviews` pending 记录；approve/reject→裁决更新 + `reviewer_id/reviewed_at`；各动作写 `audit_logs`（不可篡改）。`lib/data/reviews.ts`(record/list) + `audit.ts`(writeAudit)；security 页接 `listReviews` 真实数据、SecurityView 加 `reviews` prop（空回落 mock）；+4 审批留痕测试；本地绿待用户同意提批次 |
-| 4.1.4 | Agent 调用：接通真实大模型 API | ⬜ | 数字员工页面能真实对话，回答与 Agent 配置相符 |
+| 4.1.4 | Agent 调用：接通真实大模型 API | 🔄 待验收 | `POST /api/agents/[id]/chat`（加载 config→systemPrompt→`lib/ai.chat` qwen-plus）+ 数字员工页真实对话接线；防前端 system 注入；7 测试 + 实测通义回答与配置相符 |
 | 4.1.5 | 调用日志落库与展示 | ⬜ | 日志数与实际调用次数一致 |
 | 4.1.6 | **Agent Copilot 最简版**（ADR-005）：配置页"AI 帮我建"侧栏，描述→生成配置草稿→落 draft 态 | ⬜ | 生成物过 Schema 校验；AI 不能触发发布；生成动作留审计 |
 
