@@ -36,6 +36,20 @@ export async function replaceChunks(
   return rows.length
 }
 
+/** 软删某文档的全部内容块（4.2.9：删文档时同步失效其向量块，RAG 不再检索/引用）。 */
+export async function deleteChunksByDocument(
+  _ctx: RequestContext,
+  documentId: string,
+): Promise<void> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('chunks')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('document_id', documentId)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+}
+
 export type MatchedChunk = {
   id: string
   documentId: string
