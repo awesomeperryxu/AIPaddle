@@ -25,7 +25,37 @@ type ClientAttachment =
   | { kind: 'image'; filename: string; dataUrl: string };
 
 const MAX_ATTACHMENTS = 8; // 单条最多附件数
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 图片单文件 10MB
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 图片原图上限 20MB（前端压缩后再上传）
+const IMG_MAX_EDGE = 1600; // 压缩后最大边（qwen-vl 足够，兼顾清晰与体积）
+const IMG_QUALITY = 0.82; // JPEG 质量
+
+// 前端图片压缩：解码 → 缩到最大边 ≤ IMG_MAX_EDGE → 转 JPEG，显著降低 base64 体积与 VL 调用开销。
+// 解码失败（非位图等）回退原图 base64。
+async function compressImage(file: File): Promise<string> {
+  const rawDataUrl = () =>
+    new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('读取失败'));
+      r.readAsDataURL(file);
+    });
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, IMG_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { bitmap.close?.(); return await rawDataUrl(); }
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    return canvas.toDataURL('image/jpeg', IMG_QUALITY);
+  } catch {
+    return rawDataUrl();
+  }
+}
 
 export function AssistantView() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -92,13 +122,8 @@ export function AssistantView() {
     const picked = Array.from(files).slice(0, room);
     const next: ClientAttachment[] = [];
     for (const f of picked) {
-      if (f.size > MAX_IMAGE_SIZE) { window.alert(`「${f.name}」超出 10MB 限制`); continue; }
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error('读取失败'));
-        reader.readAsDataURL(f);
-      }).catch(() => '');
+      if (f.size > MAX_IMAGE_SIZE) { window.alert(`「${f.name}」超出 20MB 限制`); continue; }
+      const dataUrl = await compressImage(f).catch(() => '');
       if (dataUrl) next.push({ kind: 'image', filename: f.name, dataUrl });
     }
     setAttachments((a) => [...a, ...next].slice(0, MAX_ATTACHMENTS));
