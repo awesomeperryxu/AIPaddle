@@ -27,6 +27,7 @@ export type Skill = {
   status: SkillStatus
   tags: string[]
   config: SkillConfig
+  documentation: string // Skill 的 markdown 正文（「我的 Skill」工作台右侧编辑，#51）
   createdAt: string
   updatedAt: string
   mine: boolean // 是否本人发布（区分"我创建"与"从市场安装"）
@@ -56,6 +57,7 @@ type Row = {
   status: SkillStatus
   tags: string[] | null
   config: SkillConfig | null
+  documentation: string | null
   publisher_id: string
   origin: SkillOrigin
   mandatory: boolean
@@ -64,7 +66,7 @@ type Row = {
 }
 
 const COLS =
-  'id,name,description,type,version,installs,rating,risk_level,status,tags,config,publisher_id,origin,mandatory,created_at,updated_at'
+  'id,name,description,type,version,installs,rating,risk_level,status,tags,config,documentation,publisher_id,origin,mandatory,created_at,updated_at'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function mapRow(r: Row, userId?: string): Skill {
@@ -82,6 +84,7 @@ function mapRow(r: Row, userId?: string): Skill {
     status: r.status,
     tags: r.tags ?? [],
     config: r.config ?? {},
+    documentation: r.documentation ?? '',
     createdAt: (r.created_at ?? '').slice(0, 10),
     updatedAt: r.updated_at ?? '',
     mine: !!userId && r.publisher_id === userId,
@@ -124,6 +127,7 @@ export async function createSkill(
     riskLevel?: RiskLevel
     tags?: string[]
     config?: SkillConfig
+    documentation?: string
   },
 ): Promise<Skill> {
   const supabase = await createClient()
@@ -138,6 +142,7 @@ export async function createSkill(
       risk_level: input.riskLevel ?? 'low',
       tags: input.tags ?? [],
       config: input.config ?? {},
+      documentation: input.documentation ?? null,
       status: 'draft', // 创建一律 draft，发布须走审核（submit→approve）
     })
     .select(COLS)
@@ -155,6 +160,7 @@ export async function updateSkill(
     riskLevel?: RiskLevel
     tags?: string[]
     config?: SkillConfig
+    documentation?: string
   },
 ): Promise<Skill | null> {
   if (!UUID_RE.test(id)) return null
@@ -164,6 +170,7 @@ export async function updateSkill(
   if (patch.riskLevel) fields.risk_level = patch.riskLevel
   if (Array.isArray(patch.tags)) fields.tags = patch.tags
   if (patch.config !== undefined) fields.config = patch.config
+  if (typeof patch.documentation === 'string') fields.documentation = patch.documentation
   if (Object.keys(fields).length === 0) return getSkillById(_ctx, id)
 
   const supabase = await createClient()

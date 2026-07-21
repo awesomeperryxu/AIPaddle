@@ -55,6 +55,7 @@ export async function POST(request: Request) {
     name,
     type,
     description: typeof body?.description === 'string' ? body.description : undefined,
+    documentation: typeof body?.documentation === 'string' ? body.documentation : undefined,
     riskLevel,
     tags: Array.isArray(body?.tags) ? body.tags.map(String) : undefined,
     config,

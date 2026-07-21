@@ -1,6 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { transitionSkill, submitSkill } from '@/lib/data/skills'
+import { recordSubmission, recordReviewDecision } from '@/lib/data/reviews'
 import { writeAudit } from '@/lib/data/audit'
 import { TRANSITIONS, type SkillTransitionAction } from '@/lib/skills/status'
 
@@ -32,6 +33,8 @@ export async function POST(req: Request, { params }: Ctx) {
         { status: 409 },
       )
     }
+    // 申请上架且需人工审核（中/高风险→pending）时，建一条 skill 类型的待审记录，平台管理员在安全模块审批
+    if (!r.auto) await recordSubmission(ctx, id, r.skill.riskLevel, 'skill')
     await writeAudit(ctx, 'skill.submit', 'skill', id, { to: r.skill.status, auto: r.auto })
     return Response.json({ skill: r.skill, autoPublished: r.auto })
   }
@@ -46,6 +49,8 @@ export async function POST(req: Request, { params }: Ctx) {
       { status: 409 },
     )
   }
+  // 审批裁决同步更新该 skill 的待审记录
+  await recordReviewDecision(ctx, id, action === 'approve' ? 'approved' : 'rejected', undefined, 'skill')
   await writeAudit(ctx, `skill.${action}`, 'skill', id, { to: t.to })
   return Response.json({ skill: result.skill })
 }

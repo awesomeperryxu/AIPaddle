@@ -26,6 +26,7 @@ export async function PATCH(request: Request, { params }: Ctx) {
   const patch: Parameters<typeof updateSkill>[2] = {}
   if (typeof body?.name === 'string') patch.name = body.name
   if (typeof body?.description === 'string') patch.description = body.description
+  if (typeof body?.documentation === 'string') patch.documentation = body.documentation
   if (['low', 'medium', 'high'].includes(String(body?.riskLevel))) patch.riskLevel = body.riskLevel as RiskLevel
   if (Array.isArray(body?.tags)) patch.tags = body.tags.map(String)
   if (body?.config && typeof body.config === 'object') patch.config = body.config as SkillConfig
