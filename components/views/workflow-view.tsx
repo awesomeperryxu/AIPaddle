@@ -385,43 +385,120 @@ export function WorkflowView() {
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
-  const filteredApps = mockApps.filter(app => {
+  // ── 4.4.1：真实数据接线（列表/创建/加载/保存）───────────────
+  const [apps, setApps] = useState<WorkflowApp[]>([]);
+  const [appsLoaded, setAppsLoaded] = useState(false);
+
+  const mapItemToApp = useCallback((w: {
+    id: string; name: string; type: 'workflow' | 'chatflow'; status: 'draft' | 'published'; updatedAt?: string;
+  }): WorkflowApp => ({
+    id: w.id, name: w.name, description: '', type: w.type, tags: [],
+    lastEditedBy: '', lastEditedAt: w.updatedAt ?? '', status: w.status, executions: 0, successRate: 0,
+  }), []);
+
+  const reloadApps = useCallback(async () => {
+    try {
+      const res = await fetch('/api/workflows');
+      if (res.ok) {
+        const { workflows } = await res.json();
+        setApps((workflows ?? []).map(mapItemToApp));
+      }
+    } catch { /* 忽略：保持已有列表 */ }
+    setAppsLoaded(true);
+  }, [mapItemToApp]);
+
+  useEffect(() => { void reloadApps(); }, [reloadApps]);
+
+  // 编辑器状态 ↔ 后端 graph 互转
+  const buildGraph = useCallback(() => ({
+    nodes: workflowNodes.map(n => ({ id: n.id, type: n.type, position: n.position, data: { label: n.label, description: n.description, config: n.config } })),
+    edges: connections.map(c => ({ id: c.id, source: c.sourceId, target: c.targetId })),
+  }), [workflowNodes, connections]);
+
+  const loadGraphIntoEditor = useCallback((graph: { nodes?: unknown[]; edges?: unknown[] }) => {
+    const gn = Array.isArray(graph?.nodes) ? graph.nodes as Array<Record<string, unknown>> : [];
+    const ge = Array.isArray(graph?.edges) ? graph.edges as Array<Record<string, unknown>> : [];
+    if (gn.length > 0) {
+      setWorkflowNodes(gn.map((n) => {
+        const data = (n.data ?? {}) as Record<string, unknown>;
+        return {
+          id: String(n.id), type: n.type as NodeType,
+          label: String(data.label ?? n.type ?? ''), description: data.description as string | undefined,
+          position: (n.position ?? { x: 250, y: 50 }) as { x: number; y: number },
+          config: data.config as Record<string, unknown> | undefined,
+        };
+      }));
+      setConnections(ge.map((e) => ({ id: String(e.id ?? `${e.source}-${e.target}`), sourceId: String(e.source), targetId: String(e.target) })));
+    }
+  }, []);
+
+  const filteredApps = (appsLoaded ? apps : mockApps).filter(app => {
     const matchesSearch = app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       app.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = selectedType === 'all' || app.type === selectedType;
     return matchesSearch && matchesType;
   });
 
-  const handleEditWorkflow = (app: WorkflowApp) => {
+  const handleEditWorkflow = async (app: WorkflowApp) => {
     setSelectedApp(app);
     setIsEditorOpen(true);
-    // Reset workflow state for new editor session
-    setWorkflowNodes(initialWorkflowNodes);
-    setConnections(initialConnections);
     setSelectedNode(null);
     setActivePanel(null);
+    // 4.4.1：从后端加载真实图（刷新后画布原样恢复）；失败则回退初始节点
+    setWorkflowNodes(initialWorkflowNodes);
+    setConnections(initialConnections);
+    try {
+      const res = await fetch(`/api/workflows/${app.id}`);
+      if (res.ok) {
+        const { workflow } = await res.json();
+        loadGraphIntoEditor(workflow.graph ?? { nodes: [], edges: [] });
+      }
+    } catch { /* 回退初始节点 */ }
   };
 
   // 创建空白应用（Workflow / Chatflow）— 原型创建对话框前两个入口
-  const handleCreateBlank = (type: 'workflow' | 'chatflow') => {
+  const handleCreateBlank = async (type: 'workflow' | 'chatflow') => {
     setIsCreateDialogOpen(false);
+    const name = type === 'chatflow' ? '新建 Chatflow' : '新建工作流';
+    // 4.4.1：真实创建（POST），拿到真实 id 后进编辑器
+    let id = 'new';
+    try {
+      const res = await fetch('/api/workflows', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, type }),
+      });
+      if (res.ok) { id = (await res.json()).workflow.id; }
+      else { showToast('创建失败：无权限或未登录'); return; }
+    } catch { showToast('创建失败：网络错误'); return; }
     setSelectedApp({
-      id: 'new',
-      name: type === 'chatflow' ? '新建 Chatflow' : '新建工作流',
-      description: '',
-      type,
-      tags: [],
-      lastEditedBy: 'You',
-      lastEditedAt: new Date().toLocaleString('zh-CN'),
-      status: 'draft',
-      executions: 0,
-      successRate: 0
+      id, name, description: '', type, tags: [], lastEditedBy: 'You',
+      lastEditedAt: new Date().toLocaleString('zh-CN'), status: 'draft', executions: 0, successRate: 0,
     });
     setWorkflowNodes([{ id: 'start-1', type: 'start', label: '开始', position: { x: 250, y: 50 } }]);
     setConnections([]);
     setSelectedNode(null);
     setActivePanel(null);
     setIsEditorOpen(true);
+    void reloadApps();
+  };
+
+  // 4.4.1：保存工作流图（PATCH），返回校验结果则提示（孤立节点/环等）
+  const [isSaving, setIsSaving] = useState(false);
+  const handleSaveWorkflow = async () => {
+    if (!selectedApp || selectedApp.id === 'new') { showToast('请先创建工作流'); return; }
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/workflows/${selectedApp.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ graph: buildGraph() }),
+      });
+      if (!res.ok) { showToast('保存失败：无权限或未登录'); return; }
+      const { valid, validation } = await res.json();
+      if (valid) showToast('已保存 · 图结构校验通过');
+      else showToast(`已保存（草稿）· 图有 ${validation.length} 处问题：${validation.map((v: { message: string }) => v.message).join('；')}`);
+      void reloadApps();
+    } catch { showToast('保存失败：网络错误'); }
+    finally { setIsSaving(false); }
   };
 
   // Generate unique node ID
@@ -666,6 +743,11 @@ export function WorkflowView() {
             >
               <Play className="h-4 w-4" />
               运行
+            </Button>
+            {/* 4.4.1：保存（图校验 + 持久化，刷新后可恢复）*/}
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={handleSaveWorkflow} disabled={isSaving}>
+              <Save className="h-4 w-4" />
+              {isSaving ? '保存中…' : '保存'}
             </Button>
             {/* 发布 · 带发布前检查清单 */}
             <DropdownMenu open={publishOpen} onOpenChange={setPublishOpen}>
