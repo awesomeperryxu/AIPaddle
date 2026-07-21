@@ -108,3 +108,72 @@ export async function saveWorkflow(
   const r = data as Row
   return { ...mapItem(r), graph: r.graph ?? { nodes: [], edges: [] } }
 }
+
+// ── 4.4.4：版本发布 + 运行历史 ──────────────────────────────
+
+export type WorkflowRun = {
+  id: string
+  status: string
+  durationMs: number | null
+  input: string
+  output: string
+  traceCount: number
+  createdAt: string
+}
+
+type RunRow = {
+  id: string
+  status: string
+  duration_ms: number | null
+  input: { text?: string } | null
+  output: { text?: string } | null
+  node_traces: unknown[] | null
+  created_at: string | null
+}
+
+/** 某工作流的运行历史（workflow_runs，RLS 按 org 隔离）。 */
+export async function listRuns(_ctx: RequestContext, workflowId: string): Promise<WorkflowRun[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('workflow_runs')
+    .select('id,status,duration_ms,input,output,node_traces,created_at')
+    .eq('workflow_id', workflowId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(50)
+  if (error) throw new Error(error.message)
+  return ((data as RunRow[] | null) ?? []).map((r) => ({
+    id: r.id,
+    status: r.status,
+    durationMs: r.duration_ms,
+    input: r.input?.text ?? '',
+    output: r.output?.text ?? '',
+    traceCount: Array.isArray(r.node_traces) ? r.node_traces.length : 0,
+    createdAt: (r.created_at ?? '').slice(0, 19).replace('T', ' '),
+  }))
+}
+
+/** 发布工作流：置 published，published_version=当前 version，version 自增（供草稿继续编辑）。
+ *  图合法性由调用方（API）先校验；此处只做状态推进。RLS 兜底租户隔离。 */
+export async function publishWorkflow(_ctx: RequestContext, id: string): Promise<WorkflowDetail | null> {
+  const supabase = await createClient()
+  const { data: cur } = await supabase
+    .from('workflows')
+    .select('version')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!cur) return null
+  const version = (cur as { version: number }).version
+  const { data, error } = await supabase
+    .from('workflows')
+    .update({ status: 'published', published_version: version, version: version + 1, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select(DETAIL_COLS)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  const r = data as Row
+  return { ...mapItem(r), graph: r.graph ?? { nodes: [], edges: [] } }
+}
