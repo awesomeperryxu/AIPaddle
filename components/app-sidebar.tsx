@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { signOut } from '@/app/(dashboard)/actions';
 import {
   Bot,
   Boxes,
@@ -112,9 +113,11 @@ interface AppSidebarProps {
   activeView: string;
   onViewChange: (view: string) => void;
   orgName?: string;
+  userName?: string;
+  userRole?: string;
 }
 
-export function AppSidebar({ activeView, onViewChange, orgName = '—' }: AppSidebarProps) {
+export function AppSidebar({ activeView, onViewChange, orgName = '—', userName = '用户', userRole = '成员' }: AppSidebarProps) {
   const [openSections, setOpenSections] = useState<string[]>(
     navSections.filter(s => s.defaultOpen).map(s => s.title)
   );
@@ -244,12 +247,12 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—' }: AppSid
             <button className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-sidebar-accent transition-colors">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary/20 text-primary text-xs font-medium">
-                  陈
+                  {userName.slice(0, 1)}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0 text-left">
-                <p className="text-sm font-medium text-sidebar-foreground truncate">陈雪</p>
-                <p className="text-[11px] text-sidebar-foreground/60 truncate">企业管理员</p>
+                <p className="text-sm font-medium text-sidebar-foreground truncate">{userName}</p>
+                <p className="text-[11px] text-sidebar-foreground/60 truncate">{userRole}</p>
               </div>
               <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/60 shrink-0" />
             </button>
@@ -264,7 +267,11 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—' }: AppSid
               系统设置
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">
+            <DropdownMenuItem onSelect={() => { void signOut(); }}>
+              <LogOut className="h-4 w-4 mr-2" />
+              切换账号
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive" onSelect={() => { void signOut(); }}>
               <LogOut className="h-4 w-4 mr-2" />
               退出登录
             </DropdownMenuItem>

@@ -17,6 +17,7 @@ export default async function DashboardGroupLayout({
 
   // 真实租户名（RLS 只允许读本租户，天然隔离；替换侧边栏原硬编码占位名"示范科技"）
   let orgName = '—'
+  let userRole = '成员'
   const ctx = await getRequestContext()
   if (ctx) {
     const { data: tenant } = await supabase
@@ -25,7 +26,11 @@ export default async function DashboardGroupLayout({
       .eq('id', ctx.orgId)
       .single()
     orgName = tenant?.name ?? orgName
+    // 角色中文（取首个角色；多角色取并集时以最高权展示）
+    const ROLE_LABEL: Record<string, string> = { Admin: '管理员', Developer: '开发者', User: '用户', Auditor: '审计员' }
+    const top = ['Admin', 'Developer', 'Auditor', 'User'].find((r) => ctx.roles.includes(r as never))
+    userRole = (top && ROLE_LABEL[top]) ?? '成员'
   }
 
-  return <DashboardShell userName={userName} orgName={orgName}>{children}</DashboardShell>
+  return <DashboardShell userName={userName} userRole={userRole} orgName={orgName}>{children}</DashboardShell>
 }

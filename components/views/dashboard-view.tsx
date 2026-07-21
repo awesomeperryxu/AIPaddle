@@ -53,7 +53,7 @@ import {
   Cell
 } from 'recharts';
 
-const COLORS = ['hsl(var(--primary))', 'hsl(var(--accent))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))'];
+const COLORS = ['var(--primary)', 'var(--accent)', 'var(--chart-3)', 'var(--chart-4)'];
 
 const agentDistribution = [
   { name: '智能客服', value: 45 },
@@ -78,12 +78,12 @@ interface DetailConfig {
   side?: { title: string; items: SideItem[] };
 }
 
-const C_PRIMARY = 'hsl(var(--primary))';
-const C_ACCENT = 'hsl(var(--accent))';
-const C_CHART3 = 'hsl(var(--chart-3))';
-const C_CHART4 = 'hsl(var(--chart-4))';
-const C_WARNING = 'hsl(var(--warning))';
-const C_DESTRUCTIVE = 'hsl(var(--destructive))';
+const C_PRIMARY = 'var(--primary)';
+const C_ACCENT = 'var(--accent)';
+const C_CHART3 = 'var(--chart-3)';
+const C_CHART4 = 'var(--chart-4)';
+const C_WARNING = 'var(--warning)';
+const C_DESTRUCTIVE = 'var(--destructive)';
 const C_GREEN = '#22c55e';
 
 const clampPct = (n: number) => Math.min(100, Math.max(3, Math.round(n)));
@@ -323,26 +323,26 @@ function DetailPanel({ cfg, onBack }: { cfg: DetailConfig; onBack: () => void })
             <div className="h-[200px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={cfg.chart.data}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
                   <YAxis
-                    stroke="hsl(var(--muted-foreground))"
+                    stroke="var(--muted-foreground)"
                     fontSize={11}
                     tickLine={false}
                     axisLine={false}
                     domain={cfg.chart.yDomain ?? undefined}
                   />
                   <Tooltip
-                    cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }}
+                    cursor={{ fill: 'var(--muted)', opacity: 0.3 }}
                     contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
+                      backgroundColor: 'var(--card)',
+                      border: '1px solid var(--border)',
                       borderRadius: '8px',
-                      color: 'hsl(var(--foreground))',
+                      color: 'var(--foreground)',
                       fontSize: '12px',
                     }}
                   />
-                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} name="数值" />
+                  <Bar dataKey="value" fill="var(--primary)" radius={[3, 3, 0, 0]} name="数值" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -595,26 +595,26 @@ export function DashboardView({ stats }: { stats?: Partial<typeof dashboardStats
                 <AreaChart data={mockUsageMetrics}>
                   <defs>
                     <linearGradient id="colorCalls" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
+                      backgroundColor: 'var(--card)',
+                      border: '1px solid var(--border)',
                       borderRadius: '8px',
-                      color: 'hsl(var(--foreground))',
+                      color: 'var(--foreground)',
                       fontSize: '12px'
                     }}
                   />
                   <Area
                     type="monotone"
                     dataKey="agentCalls"
-                    stroke="hsl(var(--primary))"
+                    stroke="var(--primary)"
                     strokeWidth={2}
                     fill="url(#colorCalls)"
                     name="调用量"
@@ -649,10 +649,10 @@ export function DashboardView({ stats }: { stats?: Partial<typeof dashboardStats
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
+                      backgroundColor: 'var(--card)',
+                      border: '1px solid var(--border)',
                       borderRadius: '8px',
-                      color: 'hsl(var(--foreground))',
+                      color: 'var(--foreground)',
                       fontSize: '12px'
                     }}
                   />
