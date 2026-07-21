@@ -111,11 +111,54 @@ export function AgentsAdminView({
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [activeTab, setActiveTab] = useState('all');
 
+  // 调用日志（4.1.5）：选中 Agent 时拉取真实日志
+  type CallLogItem = { id: string; model: string | null; tokensIn: number; tokensOut: number; success: boolean; createdAt: string };
+  const [logs, setLogs] = useState<CallLogItem[]>([]);
+  const [logCount, setLogCount] = useState<number | null>(null);
+
+  async function selectForDetail(agent: Agent) {
+    setSelectedAgent(agent);
+    setLogs([]);
+    setLogCount(null);
+    try {
+      const res = await apiFetch<{ logs: CallLogItem[]; count: number }>(`/api/agents/${agent.id}/logs`);
+      setLogs(res.logs);
+      setLogCount(res.count);
+    } catch {
+      // 无 audit:read 权限或空 → 静默
+    }
+  }
+
   // 创建 Agent 弹窗
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: '', department: '', description: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // AI 帮我建（Copilot，4.1.6）
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotDesc, setCopilotDesc] = useState('');
+  const [copiloting, setCopiloting] = useState(false);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
+
+  async function handleCopilot() {
+    if (copilotDesc.trim().length < 4) {
+      setCopilotError('请多描述一点需求');
+      return;
+    }
+    setCopiloting(true);
+    setCopilotError(null);
+    try {
+      await apiFetch('/api/agents/copilot', { method: 'POST', body: JSON.stringify({ description: copilotDesc }) });
+      setCopilotOpen(false);
+      setCopilotDesc('');
+      router.refresh(); // 生成的草稿出现在列表（draft 态）
+    } catch (e) {
+      setCopilotError(e instanceof Error ? e.message : '生成失败');
+    } finally {
+      setCopiloting(false);
+    }
+  }
 
   // 编辑 Agent 弹窗
   const [editOpen, setEditOpen] = useState(false);
@@ -243,12 +286,43 @@ export function AgentsAdminView({
             <p className="text-sm text-muted-foreground mt-0.5">创建、配置和管理 AI Agent</p>
           </div>
           {canCreate && (
-            <Button className="gap-2 shadow-sm" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" />
-              创建 Agent
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" className="gap-2" onClick={() => setCopilotOpen(true)}>
+                <Zap className="h-4 w-4" />
+                AI 帮我建
+              </Button>
+              <Button className="gap-2 shadow-sm" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4" />
+                创建 Agent
+              </Button>
+            </div>
           )}
         </div>
+
+        {/* AI 帮我建（Copilot，4.1.6）*/}
+        <Dialog open={copilotOpen} onOpenChange={setCopilotOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>AI 帮我建 Agent</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-muted-foreground">描述你想要的 Agent，AI 生成配置草稿（草稿态，发布仍需走审核）。</p>
+            {copilotError && <p className="text-sm text-red-500">{copilotError}</p>}
+            <div className="space-y-1.5">
+              <Label htmlFor="copilot-desc">需求描述</Label>
+              <Input
+                id="copilot-desc"
+                value={copilotDesc}
+                onChange={e => setCopilotDesc(e.target.value)}
+                placeholder="例如：一个处理客户售后投诉的客服助手，语气耐心专业"
+              />
+            </div>
+            <DialogFooter>
+              <Button onClick={handleCopilot} disabled={copiloting}>
+                {copiloting ? 'AI 生成中...' : '生成草稿'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent>
@@ -414,7 +488,7 @@ export function AgentsAdminView({
               className={`bg-card border-border cursor-pointer transition-all hover:shadow-md ${
                 selectedAgent?.id === agent.id ? 'ring-2 ring-primary shadow-md' : 'shadow-sm'
               }`}
-              onClick={() => setSelectedAgent(agent)}
+              onClick={() => selectForDetail(agent)}
             >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
@@ -536,8 +610,8 @@ export function AgentsAdminView({
               {/* Quick Stats */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2.5 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground mb-0.5">总调用量</p>
-                  <p className="text-base font-semibold text-foreground">{selectedAgent.calls.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground mb-0.5">总调用量{logCount !== null ? '（实时）' : ''}</p>
+                  <p className="text-base font-semibold text-foreground">{(logCount ?? selectedAgent.calls).toLocaleString()}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-muted/50">
                   <p className="text-xs text-muted-foreground mb-0.5">成功率</p>
@@ -552,6 +626,24 @@ export function AgentsAdminView({
                   <p className="text-base font-semibold text-foreground">{selectedAgent.createdAt}</p>
                 </div>
               </div>
+
+              {/* 调用日志（4.1.5，真实） */}
+              {logs.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">最近调用</p>
+                  <div className="space-y-1">
+                    {logs.slice(0, 5).map(log => (
+                      <div key={log.id} className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg bg-muted/40">
+                        <span className="flex items-center gap-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${log.success ? 'bg-success' : 'bg-destructive'}`} />
+                          <span className="text-muted-foreground">{log.model ?? '—'}</span>
+                        </span>
+                        <span className="text-muted-foreground">↑{log.tokensIn} ↓{log.tokensOut} tokens</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

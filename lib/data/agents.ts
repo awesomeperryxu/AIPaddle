@@ -108,8 +108,11 @@ export async function deleteAgent(_ctx: RequestContext, id: string): Promise<boo
 
 export async function createAgent(
   ctx: RequestContext,
-  input: { name: string; department?: string; description?: string },
+  input: { name: string; department?: string; description?: string; systemPrompt?: string; model?: string },
 ): Promise<Agent> {
+  const config: Record<string, unknown> = {}
+  if (input.systemPrompt) config.systemPrompt = input.systemPrompt
+  if (input.model) config.model = input.model
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('agents')
@@ -119,12 +122,47 @@ export async function createAgent(
       name: input.name,
       department: input.department ?? null,
       description: input.description ?? null,
-      status: 'draft',
+      status: 'draft', // AI 生成/手工创建一律 draft，发布须走审核（4.1.2/4.1.3）
+      config,
     })
     .select(COLS)
     .single()
   if (error) throw new Error(error.message)
   return mapRow(data as Row)
+}
+
+// 取 Agent 对话所需配置（4.1.4）。含 config 里的 model/systemPrompt，用于组装对话请求。
+export type AgentChatConfig = {
+  id: string
+  name: string
+  description: string
+  status: Agent['status']
+  model?: string
+  systemPrompt?: string
+  temperature?: number
+}
+
+export async function getAgentForChat(_ctx: RequestContext, id: string): Promise<AgentChatConfig | null> {
+  if (!UUID_RE.test(id)) return null
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('agents')
+    .select('id,name,description,status,config')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  const cfg = (data.config ?? {}) as { model?: string; systemPrompt?: string; temperature?: number }
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    description: (data.description ?? '') as string,
+    status: data.status as Agent['status'],
+    model: cfg.model,
+    systemPrompt: cfg.systemPrompt,
+    temperature: cfg.temperature,
+  }
 }
 
 // 状态机流转（4.1.2）。原子条件更新：仅当当前 status === from 才落库，
