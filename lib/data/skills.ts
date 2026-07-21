@@ -1,7 +1,13 @@
 import 'server-only'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
-import { TRANSITIONS, type SkillTransitionAction, type SkillStatus, type SkillType } from '@/lib/skills/status'
+import {
+  TRANSITIONS,
+  submitTargetForRisk,
+  type SkillTransitionAction,
+  type SkillStatus,
+  type SkillType,
+} from '@/lib/skills/status'
 
 // 数据层（ADR-008）：唯一访问 skills 表的地方。首参 ctx、请求级客户端（RLS 生效）。
 // config jsonb 承载各类型的封装配置；MCP 型放 { mcp_server_id, allowed_tools }（S3-09）。
@@ -187,4 +193,112 @@ export async function transitionSkill(
   if (data) return { ok: true, skill: mapRow(data as Row) }
   const current = await getSkillById(_ctx, id)
   return { ok: false, reason: current ? 'illegal' : 'not_found' }
+}
+
+// 提交发布（S3-04 风险分级）：低风险 draft→published 自动通过；中/高风险 draft→pending 须审核。
+// 原子条件更新，from 固定 draft。返回 auto=是否自动发布。
+export async function submitSkill(
+  ctx: RequestContext,
+  id: string,
+): Promise<{ ok: true; skill: Skill; auto: boolean } | { ok: false; reason: 'not_found' | 'illegal' }> {
+  if (!UUID_RE.test(id)) return { ok: false, reason: 'not_found' }
+  const cur = await getSkillById(ctx, id)
+  if (!cur) return { ok: false, reason: 'not_found' }
+  if (cur.status !== 'draft') return { ok: false, reason: 'illegal' }
+  const to = submitTargetForRisk(cur.riskLevel)
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('skills')
+    .update({ status: to })
+    .eq('id', id)
+    .eq('status', 'draft')
+    .is('deleted_at', null)
+    .select(COLS)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (data) return { ok: true, skill: mapRow(data as Row), auto: to === 'published' }
+  const now = await getSkillById(ctx, id)
+  return { ok: false, reason: now ? 'illegal' : 'not_found' }
+}
+
+// 重算安装量并回写 skills.installs（避免计数漂移）。RLS 兜底：只统计本租户安装记录。
+async function recomputeInstalls(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  skillId: string,
+): Promise<number> {
+  const { count } = await supabase
+    .from('skill_installs')
+    .select('id', { count: 'exact', head: true })
+    .eq('skill_id', skillId)
+    .is('deleted_at', null)
+  const n = count ?? 0
+  await supabase.from('skills').update({ installs: n }).eq('id', skillId)
+  return n
+}
+
+// 安装 Skill（S3-03）。只能装已发布；幂等（unique(skill_id,user_id) + upsert，重复安装计数不变）。
+// 跨租户不可见：RLS 使他租户 skill 查不到 → not_found。
+export async function installSkill(
+  ctx: RequestContext,
+  skillId: string,
+): Promise<{ ok: true; installs: number } | { ok: false; reason: 'not_found' | 'not_published' }> {
+  if (!UUID_RE.test(skillId)) return { ok: false, reason: 'not_found' }
+  const skill = await getSkillById(ctx, skillId)
+  if (!skill) return { ok: false, reason: 'not_found' }
+  if (skill.status !== 'published') return { ok: false, reason: 'not_published' }
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('skill_installs')
+    .upsert(
+      { org_id: ctx.orgId, skill_id: skillId, user_id: ctx.userId, deleted_at: null },
+      { onConflict: 'skill_id,user_id' },
+    )
+  if (error) throw new Error(error.message)
+  return { ok: true, installs: await recomputeInstalls(supabase, skillId) }
+}
+
+// 卸载 Skill（S3-03）。幂等：未安装也返回 ok。他租户 skill → not_found。
+export async function uninstallSkill(
+  ctx: RequestContext,
+  skillId: string,
+): Promise<{ ok: true; installs: number } | { ok: false; reason: 'not_found' }> {
+  if (!UUID_RE.test(skillId)) return { ok: false, reason: 'not_found' }
+  const skill = await getSkillById(ctx, skillId)
+  if (!skill) return { ok: false, reason: 'not_found' }
+  const supabase = await createClient()
+  await supabase
+    .from('skill_installs')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('skill_id', skillId)
+    .eq('user_id', ctx.userId)
+    .is('deleted_at', null)
+  return { ok: true, installs: await recomputeInstalls(supabase, skillId) }
+}
+
+// 升版本（S3-05）。当前版本快照进 config.versions（旧版本仍可查），version 置新值。
+// 无版本历史表 → 用 config jsonb 承载（改表须过 A 道，本切片不改表）。
+export async function bumpSkillVersion(
+  ctx: RequestContext,
+  id: string,
+  newVersion: string,
+): Promise<Skill | null> {
+  if (!UUID_RE.test(id)) return null
+  const cur = await getSkillById(ctx, id)
+  if (!cur) return null
+  const prevVersions = Array.isArray(cur.config.versions) ? (cur.config.versions as unknown[]) : []
+  const { versions: _drop, ...configNoHistory } = cur.config
+  const newConfig: SkillConfig = {
+    ...cur.config,
+    versions: [...prevVersions, { version: cur.version, config: configNoHistory, at: new Date().toISOString() }],
+  }
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('skills')
+    .update({ version: newVersion, config: newConfig })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select(COLS)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return data ? mapRow(data as Row) : null
 }

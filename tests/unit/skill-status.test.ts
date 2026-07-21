@@ -8,6 +8,7 @@ import {
   ACTION_LABEL,
   isSkillType,
   SKILL_TYPES,
+  submitTargetForRisk,
   type SkillTransitionAction,
 } from '@/lib/skills/status'
 
@@ -45,5 +46,15 @@ describe('Skill 类型校验（S3-01）', () => {
     expect(isSkillType('')).toBe(false)
     expect(isSkillType(123)).toBe(false)
     expect(isSkillType(undefined)).toBe(false)
+  })
+})
+
+describe('风险分级发布策略（S3-04）', () => {
+  it('低风险 → 直接发布（自动通过）', () => {
+    expect(submitTargetForRisk('low')).toBe('published')
+  })
+  it('中/高风险 → 进 pending 待安全审核', () => {
+    expect(submitTargetForRisk('medium')).toBe('pending')
+    expect(submitTargetForRisk('high')).toBe('pending')
   })
 })

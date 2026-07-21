@@ -25,6 +25,13 @@ export const ACTION_LABEL: Record<SkillTransitionAction, string> = {
   reject: '驳回',
 }
 
+// 风险分级发布策略（S3-04）：提交时低风险自动通过直接发布，中/高风险须过安全审核。
+// 纯函数，供 submit 逻辑与单元测试共用。
+export type SkillRisk = 'low' | 'medium' | 'high'
+export function submitTargetForRisk(risk: SkillRisk): 'published' | 'pending' {
+  return risk === 'low' ? 'published' : 'pending'
+}
+
 // Skill 五类型（S3-01，对齐 DB CHECK 与 my_mcp_servers 封装）
 export const SKILL_TYPES = ['MCP', 'API', 'DB', 'Workflow', 'Prompt'] as const
 export type SkillType = (typeof SKILL_TYPES)[number]
