@@ -403,9 +403,11 @@ function DetailPanel({ cfg, onBack }: { cfg: DetailConfig; onBack: () => void })
 // 可点击卡片的统一交互样式
 const clickableCard = 'bg-card border-border shadow-sm cursor-pointer transition-colors hover:border-primary/50';
 
-export function DashboardView() {
+export function DashboardView({ stats }: { stats?: Partial<typeof dashboardStats> }) {
   const router = useRouter();
   const [detail, setDetail] = useState<DetailKey | null>(null);
+  // BUG-74：真实指标覆盖 mock（未提供的字段回落 mock，明细趋势图仍为示例）
+  const S = { ...dashboardStats, ...(stats ?? {}) };
 
   if (detail) {
     return <DetailPanel cfg={DETAIL_CONFIGS[detail]} onBack={() => setDetail(null)} />;
@@ -417,7 +419,7 @@ export function DashboardView() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">监控</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">企业 AI 使用情况实时监控</p>
+          <p className="text-sm text-muted-foreground mt-0.5">企业 AI 使用情况实时监控（核心指标已接真实数据；成本/活跃用户/趋势明细为示例）</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="gap-1.5 py-1 px-2.5">
@@ -438,7 +440,7 @@ export function DashboardView() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">今日调用量</p>
-                <p className="text-2xl font-semibold text-foreground mt-1">{dashboardStats.todayCalls.toLocaleString()}</p>
+                <p className="text-2xl font-semibold text-foreground mt-1">{S.todayCalls.toLocaleString()}</p>
                 <div className="flex items-center gap-1 mt-1.5">
                   <TrendingUp className="h-3 w-3 text-green-500" />
                   <span className="text-xs text-green-500">+12.5%</span>
@@ -457,7 +459,7 @@ export function DashboardView() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Token 消耗</p>
-                <p className="text-2xl font-semibold text-foreground mt-1">{(dashboardStats.todayTokens / 1000000).toFixed(2)}M</p>
+                <p className="text-2xl font-semibold text-foreground mt-1">{(S.todayTokens / 1000000).toFixed(2)}M</p>
                 <div className="flex items-center gap-1 mt-1.5">
                   <TrendingUp className="h-3 w-3 text-green-500" />
                   <span className="text-xs text-green-500">+8.3%</span>
@@ -476,7 +478,7 @@ export function DashboardView() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">今日成本</p>
-                <p className="text-2xl font-semibold text-foreground mt-1">${dashboardStats.todayCost}</p>
+                <p className="text-2xl font-semibold text-foreground mt-1">${S.todayCost}</p>
                 <div className="flex items-center gap-1 mt-1.5">
                   <TrendingDown className="h-3 w-3 text-red-500" />
                   <span className="text-xs text-red-500">-3.2%</span>
@@ -495,7 +497,7 @@ export function DashboardView() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">活跃用户</p>
-                <p className="text-2xl font-semibold text-foreground mt-1">{dashboardStats.activeUsers}</p>
+                <p className="text-2xl font-semibold text-foreground mt-1">{S.activeUsers}</p>
                 <div className="flex items-center gap-1 mt-1.5">
                   <TrendingUp className="h-3 w-3 text-green-500" />
                   <span className="text-xs text-green-500">+23.1%</span>
@@ -518,7 +520,7 @@ export function DashboardView() {
               <Bot className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <p className="text-base font-semibold text-foreground">{dashboardStats.publishedAgents}/{dashboardStats.totalAgents}</p>
+              <p className="text-base font-semibold text-foreground">{S.publishedAgents}/{S.totalAgents}</p>
               <p className="text-[11px] text-muted-foreground">已发布 Agent</p>
             </div>
           </CardContent>
@@ -530,7 +532,7 @@ export function DashboardView() {
               <Boxes className="h-4 w-4 text-accent" />
             </div>
             <div>
-              <p className="text-base font-semibold text-foreground">{dashboardStats.publishedSkills}/{dashboardStats.totalSkills}</p>
+              <p className="text-base font-semibold text-foreground">{S.publishedSkills}/{S.totalSkills}</p>
               <p className="text-[11px] text-muted-foreground">已发布 Skill</p>
             </div>
           </CardContent>
@@ -542,7 +544,7 @@ export function DashboardView() {
               <CheckCircle2 className="h-4 w-4 text-green-500" />
             </div>
             <div>
-              <p className="text-base font-semibold text-foreground">{dashboardStats.successRate}%</p>
+              <p className="text-base font-semibold text-foreground">{S.successRate}%</p>
               <p className="text-[11px] text-muted-foreground">调用成功率</p>
             </div>
           </CardContent>
@@ -554,7 +556,7 @@ export function DashboardView() {
               <Shield className="h-4 w-4 text-destructive" />
             </div>
             <div>
-              <p className="text-base font-semibold text-foreground">{dashboardStats.pendingReviews}</p>
+              <p className="text-base font-semibold text-foreground">{S.pendingReviews}</p>
               <p className="text-[11px] text-muted-foreground">待审核项</p>
             </div>
           </CardContent>
@@ -566,7 +568,7 @@ export function DashboardView() {
               <AlertTriangle className="h-4 w-4 text-warning" />
             </div>
             <div>
-              <p className="text-base font-semibold text-foreground">{dashboardStats.riskBlocked}</p>
+              <p className="text-base font-semibold text-foreground">{S.riskBlocked}</p>
               <p className="text-[11px] text-muted-foreground">今日风险拦截</p>
             </div>
           </CardContent>
@@ -684,7 +686,7 @@ export function DashboardView() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {dashboardStats.topAgents.slice(0, 4).map((agent, index) => (
+              {S.topAgents.slice(0, 4).map((agent, index) => (
                 <div key={agent.name} className="flex items-center gap-3">
                   <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-medium ${
                     index === 0 ? 'bg-yellow-500/10 text-yellow-600' :
@@ -699,7 +701,7 @@ export function DashboardView() {
                     <div className="w-full bg-muted rounded-full h-1 mt-1">
                       <div
                         className="bg-primary h-1 rounded-full"
-                        style={{ width: `${(agent.calls / dashboardStats.topAgents[0].calls) * 100}%` }}
+                        style={{ width: `${(agent.calls / S.topAgents[0].calls) * 100}%` }}
                       />
                     </div>
                   </div>
@@ -722,7 +724,7 @@ export function DashboardView() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {dashboardStats.topSkills.slice(0, 4).map((skill, index) => (
+              {S.topSkills.slice(0, 4).map((skill, index) => (
                 <div key={skill.name} className="flex items-center gap-3">
                   <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-medium ${
                     index === 0 ? 'bg-yellow-500/10 text-yellow-600' :
@@ -737,7 +739,7 @@ export function DashboardView() {
                     <div className="w-full bg-muted rounded-full h-1 mt-1">
                       <div
                         className="bg-accent h-1 rounded-full"
-                        style={{ width: `${(skill.calls / dashboardStats.topSkills[0].calls) * 100}%` }}
+                        style={{ width: `${(skill.calls / S.topSkills[0].calls) * 100}%` }}
                       />
                     </div>
                   </div>
@@ -756,7 +758,7 @@ export function DashboardView() {
                 <AlertTriangle className="h-4 w-4 text-destructive" />
                 风险预警
               </CardTitle>
-              <Badge variant="outline" className="text-xs">{dashboardStats.pendingReviews} 项</Badge>
+              <Badge variant="outline" className="text-xs">{S.pendingReviews} 项</Badge>
             </div>
           </CardHeader>
           <CardContent>
@@ -790,7 +792,7 @@ export function DashboardView() {
                 <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-1.5 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-foreground">今日风险拦截</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">成功拦截 {dashboardStats.riskBlocked} 次可疑调用</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">成功拦截 {S.riskBlocked} 次可疑调用</p>
                 </div>
                 <Badge variant="outline" className="text-[10px] h-5 shrink-0">正常</Badge>
               </div>
