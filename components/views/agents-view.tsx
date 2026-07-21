@@ -5,7 +5,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { mockAgents, Agent, mockConversations } from '@/lib/mock-data';
+import { mockAgents, Agent } from '@/lib/mock-data';
+import { apiFetch } from '@/lib/api/client';
+
+type ChatMsg = { role: 'user' | 'assistant'; content: string };
 import {
   Search,
   MessageSquare,
@@ -19,12 +22,43 @@ import {
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
-export function AgentsView() {
+export function AgentsView({ agents }: { agents?: Agent[] }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [message, setMessage] = useState('');
 
-  const publishedAgents = mockAgents.filter(a => a.status === 'published');
+  // 真实对话（4.1.4）
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [sending, setSending] = useState(false);
+
+  // 选择 Agent：切换并清空上一段对话
+  function selectAgent(agent: Agent) {
+    setSelectedAgent(agent);
+    setMessages([]);
+    setMessage('');
+  }
+
+  async function handleSend(text?: string) {
+    const content = (text ?? message).trim();
+    if (!content || sending || !selectedAgent) return;
+    const next: ChatMsg[] = [...messages, { role: 'user', content }];
+    setMessages(next);
+    setMessage('');
+    setSending(true);
+    try {
+      const res = await apiFetch<{ reply: string }>(`/api/agents/${selectedAgent.id}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ messages: next }),
+      });
+      setMessages([...next, { role: 'assistant', content: res.reply }]);
+    } catch (e) {
+      setMessages([...next, { role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : '对话失败'}` }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const publishedAgents = agents && agents.length > 0 ? agents : mockAgents.filter(a => a.status === 'published');
   const filteredAgents = publishedAgents.filter(agent =>
     agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     agent.department.toLowerCase().includes(searchTerm.toLowerCase())
@@ -59,7 +93,7 @@ export function AgentsView() {
                 <button
                   key={agent.id}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card border border-border hover:border-primary/50 transition-colors shrink-0"
-                  onClick={() => setSelectedAgent(agent)}
+                  onClick={() => selectAgent(agent)}
                 >
                   <span className="text-base">{agent.avatar}</span>
                   <span className="text-sm text-foreground">{agent.name}</span>
@@ -77,7 +111,7 @@ export function AgentsView() {
               className={`bg-card border-border cursor-pointer transition-all hover:shadow-md ${
                 selectedAgent?.id === agent.id ? 'ring-2 ring-primary shadow-md' : 'shadow-sm'
               }`}
-              onClick={() => setSelectedAgent(agent)}
+              onClick={() => selectAgent(agent)}
             >
               <CardContent className={`${selectedAgent ? 'p-3' : 'p-4'}`}>
                 <div className="flex items-start gap-3">
@@ -155,7 +189,7 @@ export function AgentsView() {
                 </AvatarFallback>
               </Avatar>
               <div className="max-w-[75%]">
-                <div data-testid="chat-message-assistant" className="p-3.5 rounded-2xl bg-muted/40 border border-border rounded-tl-sm">
+                <div className="p-3.5 rounded-2xl bg-muted/40 border border-border rounded-tl-sm">
                   <p className="text-sm text-foreground leading-relaxed">
                     你好！我是{selectedAgent.name}。{selectedAgent.description}
                     <br /><br />
@@ -166,10 +200,11 @@ export function AgentsView() {
               </div>
             </div>
 
-            {/* Sample Conversation */}
-            {mockConversations[0].messages.map((msg, index) => (
+            {/* 真实对话消息 */}
+            {messages.map((msg, index) => (
               <div
                 key={index}
+                data-testid={msg.role === 'assistant' ? 'chat-message-assistant' : undefined}
                 className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
               >
                 <Avatar className="h-8 w-8 shrink-0">
@@ -182,9 +217,7 @@ export function AgentsView() {
                   </AvatarFallback>
                 </Avatar>
                 <div className={`max-w-[75%] ${msg.role === 'user' ? 'text-right' : ''}`}>
-                  <div
-                    data-testid={msg.role === 'user' ? undefined : 'chat-message-assistant'}
-                    className={`p-3.5 rounded-2xl ${
+                  <div className={`p-3.5 rounded-2xl ${
                     msg.role === 'user'
                       ? 'bg-primary text-primary-foreground rounded-tr-sm'
                       : 'bg-muted/40 border border-border rounded-tl-sm'
@@ -195,10 +228,21 @@ export function AgentsView() {
                       {msg.content}
                     </p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-1.5">{msg.timestamp}</p>
                 </div>
               </div>
             ))}
+            {sending && (
+              <div className="flex gap-3">
+                <Avatar className="h-8 w-8 shrink-0">
+                  <AvatarFallback className="bg-gradient-to-br from-primary/20 to-accent/20 text-xs">
+                    {selectedAgent.avatar}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="p-3.5 rounded-2xl bg-muted/40 border border-border rounded-tl-sm">
+                  <p className="text-sm text-muted-foreground">正在思考…</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Input Area */}
@@ -210,13 +254,26 @@ export function AgentsView() {
                   placeholder={`向 ${selectedAgent.name} 提问...`}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  disabled={sending}
                   className="pr-10 py-5 bg-background border-border"
                 />
                 <Button variant="ghost" size="icon" className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7">
                   <Paperclip className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </div>
-              <Button aria-label="发送" size="icon" className="h-10 w-10 rounded-lg shadow-sm">
+              <Button
+                size="icon"
+                aria-label="发送"
+                className="h-10 w-10 rounded-lg shadow-sm"
+                onClick={() => handleSend()}
+                disabled={sending || !message.trim()}
+              >
                 <Send className="h-4 w-4" />
               </Button>
             </div>
@@ -236,7 +293,8 @@ export function AgentsView() {
                     variant="outline"
                     size="sm"
                     className="shrink-0 h-7 text-xs"
-                    onClick={() => setMessage(suggestion)}
+                    disabled={sending}
+                    onClick={() => handleSend(suggestion)}
                   >
                     {suggestion}
                   </Button>

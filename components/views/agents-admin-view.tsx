@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import type { Agent } from '@/lib/mock-data';
 import { apiFetch } from '@/lib/api/client';
+import { actionsFor, ACTION_LABEL, TRANSITIONS, type TransitionAction } from '@/lib/agents/status';
 import {
   Bot,
   Plus,
@@ -95,22 +96,69 @@ export function AgentsAdminView({
   canCreate = false,
   canDelete = false,
   canEdit = false,
+  canSubmit = false,
+  canReview = false,
 }: {
   agents?: Agent[];
   canCreate?: boolean;
   canDelete?: boolean;
   canEdit?: boolean;
+  canSubmit?: boolean;
+  canReview?: boolean;
 }) {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [activeTab, setActiveTab] = useState('all');
 
+  // 调用日志（4.1.5）：选中 Agent 时拉取真实日志
+  type CallLogItem = { id: string; model: string | null; tokensIn: number; tokensOut: number; success: boolean; createdAt: string };
+  const [logs, setLogs] = useState<CallLogItem[]>([]);
+  const [logCount, setLogCount] = useState<number | null>(null);
+
+  async function selectForDetail(agent: Agent) {
+    setSelectedAgent(agent);
+    setLogs([]);
+    setLogCount(null);
+    try {
+      const res = await apiFetch<{ logs: CallLogItem[]; count: number }>(`/api/agents/${agent.id}/logs`);
+      setLogs(res.logs);
+      setLogCount(res.count);
+    } catch {
+      // 无 audit:read 权限或空 → 静默
+    }
+  }
+
   // 创建 Agent 弹窗
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: '', department: '', description: '' });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // AI 帮我建（Copilot，4.1.6）
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotDesc, setCopilotDesc] = useState('');
+  const [copiloting, setCopiloting] = useState(false);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
+
+  async function handleCopilot() {
+    if (copilotDesc.trim().length < 4) {
+      setCopilotError('请多描述一点需求');
+      return;
+    }
+    setCopiloting(true);
+    setCopilotError(null);
+    try {
+      await apiFetch('/api/agents/copilot', { method: 'POST', body: JSON.stringify({ description: copilotDesc }) });
+      setCopilotOpen(false);
+      setCopilotDesc('');
+      router.refresh(); // 生成的草稿出现在列表（draft 态）
+    } catch (e) {
+      setCopilotError(e instanceof Error ? e.message : '生成失败');
+    } finally {
+      setCopiloting(false);
+    }
+  }
 
   // 编辑 Agent 弹窗
   const [editOpen, setEditOpen] = useState(false);
@@ -164,6 +212,36 @@ export function AgentsAdminView({
     }
   }
 
+  // 状态机流转（4.1.2）
+  const [transitioningId, setTransitioningId] = useState<string | null>(null);
+
+  // 按当前状态 + 用户权限，算出该 Agent 可用的流转动作
+  function availableActions(agent: Agent): TransitionAction[] {
+    return actionsFor(agent.status).filter(a => {
+      const perm = TRANSITIONS[a].action;
+      if (perm === 'agent:submit') return canSubmit;
+      if (perm === 'agent:review') return canReview;
+      if (perm === 'agent:update') return canEdit;
+      return false;
+    });
+  }
+
+  async function handleTransition(agent: Agent, action: TransitionAction) {
+    if (transitioningId) return;
+    setTransitioningId(agent.id);
+    try {
+      await apiFetch(`/api/agents/${agent.id}/transition`, {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      });
+      router.refresh(); // 刷新列表，状态更新
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '操作失败');
+    } finally {
+      setTransitioningId(null);
+    }
+  }
+
   async function handleCreate() {
     if (!form.name.trim()) {
       setCreateError('名称不能为空');
@@ -208,12 +286,43 @@ export function AgentsAdminView({
             <p className="text-sm text-muted-foreground mt-0.5">创建、配置和管理 AI Agent</p>
           </div>
           {canCreate && (
-            <Button className="gap-2 shadow-sm" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" />
-              创建 Agent
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" className="gap-2" onClick={() => setCopilotOpen(true)}>
+                <Zap className="h-4 w-4" />
+                AI 帮我建
+              </Button>
+              <Button className="gap-2 shadow-sm" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4" />
+                创建 Agent
+              </Button>
+            </div>
           )}
         </div>
+
+        {/* AI 帮我建（Copilot，4.1.6）*/}
+        <Dialog open={copilotOpen} onOpenChange={setCopilotOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>AI 帮我建 Agent</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-muted-foreground">描述你想要的 Agent，AI 生成配置草稿（草稿态，发布仍需走审核）。</p>
+            {copilotError && <p className="text-sm text-red-500">{copilotError}</p>}
+            <div className="space-y-1.5">
+              <Label htmlFor="copilot-desc">需求描述</Label>
+              <Input
+                id="copilot-desc"
+                value={copilotDesc}
+                onChange={e => setCopilotDesc(e.target.value)}
+                placeholder="例如：一个处理客户售后投诉的客服助手，语气耐心专业"
+              />
+            </div>
+            <DialogFooter>
+              <Button onClick={handleCopilot} disabled={copiloting}>
+                {copiloting ? 'AI 生成中...' : '生成草稿'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent>
@@ -248,7 +357,7 @@ export function AgentsAdminView({
                   id="agent-desc"
                   value={form.description}
                   onChange={e => setForm({ ...form, description: e.target.value })}
-                  placeholder="Agent 描述"
+                  placeholder="Agent 用途描述"
                 />
               </div>
             </div>
@@ -312,7 +421,7 @@ export function AgentsAdminView({
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
                 <div>
-                  <p data-testid="stat-全部" className="text-lg font-semibold text-foreground">{stats.total}</p>
+                  <p className="text-lg font-semibold text-foreground" data-testid="stat-全部">{stats.total}</p>
                   <p className="text-xs text-muted-foreground">全部</p>
                 </div>
               </div>
@@ -325,7 +434,7 @@ export function AgentsAdminView({
                   <CheckCircle2 className="h-4 w-4 text-success" />
                 </div>
                 <div>
-                  <p data-testid="stat-已发布" className="text-lg font-semibold text-foreground">{stats.published}</p>
+                  <p className="text-lg font-semibold text-foreground" data-testid="stat-已发布">{stats.published}</p>
                   <p className="text-xs text-muted-foreground">已发布</p>
                 </div>
               </div>
@@ -338,7 +447,7 @@ export function AgentsAdminView({
                   <Clock className="h-4 w-4 text-warning" />
                 </div>
                 <div>
-                  <p data-testid="stat-待审核" className="text-lg font-semibold text-foreground">{stats.pending}</p>
+                  <p className="text-lg font-semibold text-foreground" data-testid="stat-待审核">{stats.pending}</p>
                   <p className="text-xs text-muted-foreground">待审核</p>
                 </div>
               </div>
@@ -351,7 +460,7 @@ export function AgentsAdminView({
                   <XCircle className="h-4 w-4 text-muted-foreground" />
                 </div>
                 <div>
-                  <p data-testid="stat-草稿" className="text-lg font-semibold text-foreground">{stats.draft}</p>
+                  <p className="text-lg font-semibold text-foreground" data-testid="stat-草稿">{stats.draft}</p>
                   <p className="text-xs text-muted-foreground">草稿</p>
                 </div>
               </div>
@@ -388,7 +497,7 @@ export function AgentsAdminView({
               className={`bg-card border-border cursor-pointer transition-all hover:shadow-md ${
                 selectedAgent?.id === agent.id ? 'ring-2 ring-primary shadow-md' : 'shadow-sm'
               }`}
-              onClick={() => setSelectedAgent(agent)}
+              onClick={() => selectForDetail(agent)}
             >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
@@ -442,17 +551,25 @@ export function AgentsAdminView({
                         复制
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      {agent.status === 'published' ? (
-                        <DropdownMenuItem>
-                          <Pause className="h-4 w-4 mr-2" />
-                          下线
+                      {availableActions(agent).map(action => (
+                        <DropdownMenuItem
+                          key={action}
+                          disabled={transitioningId === agent.id}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            handleTransition(agent, action);
+                          }}
+                        >
+                          {action === 'offline' ? (
+                            <Pause className="h-4 w-4 mr-2" />
+                          ) : action === 'reject' ? (
+                            <XCircle className="h-4 w-4 mr-2" />
+                          ) : (
+                            <Play className="h-4 w-4 mr-2" />
+                          )}
+                          {transitioningId === agent.id ? '处理中...' : ACTION_LABEL[action]}
                         </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem>
-                          <Play className="h-4 w-4 mr-2" />
-                          发布
-                        </DropdownMenuItem>
-                      )}
+                      ))}
                       {canDelete && (
                         <DropdownMenuItem
                           className="text-destructive"
@@ -502,8 +619,8 @@ export function AgentsAdminView({
               {/* Quick Stats */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2.5 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground mb-0.5">总调用量</p>
-                  <p data-testid="metric-calls" className="text-base font-semibold text-foreground">{selectedAgent.calls.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground mb-0.5">总调用量{logCount !== null ? '（实时）' : ''}</p>
+                  <p className="text-base font-semibold text-foreground" data-testid="metric-calls">{(logCount ?? selectedAgent.calls).toLocaleString()}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-muted/50">
                   <p className="text-xs text-muted-foreground mb-0.5">成功率</p>
@@ -518,6 +635,24 @@ export function AgentsAdminView({
                   <p className="text-base font-semibold text-foreground">{selectedAgent.createdAt}</p>
                 </div>
               </div>
+
+              {/* 调用日志（4.1.5，真实） */}
+              {logs.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">最近调用</p>
+                  <div className="space-y-1">
+                    {logs.slice(0, 5).map(log => (
+                      <div key={log.id} className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg bg-muted/40">
+                        <span className="flex items-center gap-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${log.success ? 'bg-success' : 'bg-destructive'}`} />
+                          <span className="text-muted-foreground">{log.model ?? '—'}</span>
+                        </span>
+                        <span className="text-muted-foreground">↑{log.tokensIn} ↓{log.tokensOut} tokens</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -69,4 +69,26 @@ export async function chat(
   return choices?.[0]?.message?.content ?? ''
 }
 
+// 带用量的对话（4.1.5 调用日志）：返回内容 + token 用量 + 实际模型，用于落 call_logs。
+export async function chatWithUsage(
+  messages: ChatMessage[],
+  opts: { temperature?: number; maxTokens?: number; model?: string } = {},
+): Promise<{ content: string; tokensIn: number; tokensOut: number; model: string }> {
+  const model = opts.model ?? LLM_MODEL
+  const json = await postJson('/chat/completions', {
+    model,
+    messages,
+    temperature: opts.temperature ?? 0.3,
+    max_tokens: opts.maxTokens ?? 1024,
+  })
+  const choices = json.choices as { message?: { content?: string } }[] | undefined
+  const usage = (json.usage ?? {}) as { prompt_tokens?: number; completion_tokens?: number }
+  return {
+    content: choices?.[0]?.message?.content ?? '',
+    tokensIn: usage.prompt_tokens ?? 0,
+    tokensOut: usage.completion_tokens ?? 0,
+    model,
+  }
+}
+
 export const AI_MODELS = { llm: LLM_MODEL, embedding: EMBED_MODEL, embeddingDim: EMBEDDING_DIM }

@@ -14,6 +14,8 @@ export default async function Page() {
       canCreate={can(ctx, 'agent:create')}
       canDelete={can(ctx, 'agent:delete')}
       canEdit={can(ctx, 'agent:update')}
+      canSubmit={can(ctx, 'agent:submit')}
+      canReview={can(ctx, 'agent:review')}
     />
   )
 }

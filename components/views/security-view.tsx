@@ -40,11 +40,13 @@ const statusConfig = {
   rejected: { label: '已驳回', className: 'bg-destructive/10 text-destructive' }
 };
 
-export function SecurityView() {
+export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
   const [selectedReview, setSelectedReview] = useState<SecurityReview | null>(null);
 
-  const pendingReviews = mockSecurityReviews.filter(r => r.status === 'pending');
-  const completedReviews = mockSecurityReviews.filter(r => r.status !== 'pending');
+  // 真实审批记录（4.1.3）；为空时回落 mock 以保持演示连续性
+  const allReviews = reviews && reviews.length > 0 ? reviews : mockSecurityReviews;
+  const pendingReviews = allReviews.filter(r => r.status === 'pending');
+  const completedReviews = allReviews.filter(r => r.status !== 'pending');
 
   return (
     <div className="flex h-full gap-6">
@@ -77,7 +79,7 @@ export function SecurityView() {
                   <AlertTriangle className="h-4 w-4 text-destructive" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{mockSecurityReviews.filter(r => r.riskLevel === 'high').length}</p>
+                  <p className="text-lg font-semibold text-foreground">{allReviews.filter(r => r.riskLevel === 'high').length}</p>
                   <p className="text-xs text-muted-foreground">高风险项</p>
                 </div>
               </div>
