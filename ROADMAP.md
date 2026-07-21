@@ -121,7 +121,7 @@
 | 4.1.3 | 审核流程接入安全管理模块（审批提交、留痕） | 🔄 待验收 | 状态机流转联动：submit→建 `security_reviews` pending 记录；approve/reject→裁决更新 + `reviewer_id/reviewed_at`；各动作写 `audit_logs`（不可篡改）。`lib/data/reviews.ts`(record/list) + `audit.ts`(writeAudit)；security 页接 `listReviews` 真实数据、SecurityView 加 `reviews` prop（空回落 mock）；+4 审批留痕测试；本地绿待用户同意提批次 |
 | 4.1.4 | Agent 调用：接通真实大模型 API | 🔄 待验收 | `POST /api/agents/[id]/chat`（加载 config→systemPrompt→`lib/ai.chat` qwen-plus）+ 数字员工页真实对话接线；防前端 system 注入；7 测试 + 实测通义回答与配置相符 |
 | 4.1.5 | 调用日志落库与展示 | 🔄 待验收 | chat 落 `call_logs`（真实 token/延迟/成败）+ `GET /api/agents/[id]/logs` + agents-admin 详情展示真实调用数/最近调用；`chatWithUsage` 取用量；3 测试 |
-| 4.1.6 | **Agent Copilot 最简版**（ADR-005）：配置页"AI 帮我建"侧栏，描述→生成配置草稿→落 draft 态 | ⬜ | 生成物过 Schema 校验；AI 不能触发发布；生成动作留审计 |
+| 4.1.6 | **Agent Copilot 最简版**（ADR-005） | 🔄 待验收 | `POST /api/agents/copilot`：描述→LLM→zod 校验(过落 draft/不过 422)→createAgent 强制 draft(AI 不能发布)→审计；「AI 帮我建」弹窗；7 测试 |
 
 ### 切片 2：知识库闭环（审计建议第 3 条前半）⬜
 

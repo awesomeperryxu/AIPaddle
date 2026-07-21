@@ -108,8 +108,11 @@ export async function deleteAgent(_ctx: RequestContext, id: string): Promise<boo
 
 export async function createAgent(
   ctx: RequestContext,
-  input: { name: string; department?: string; description?: string },
+  input: { name: string; department?: string; description?: string; systemPrompt?: string; model?: string },
 ): Promise<Agent> {
+  const config: Record<string, unknown> = {}
+  if (input.systemPrompt) config.systemPrompt = input.systemPrompt
+  if (input.model) config.model = input.model
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('agents')
@@ -119,7 +122,8 @@ export async function createAgent(
       name: input.name,
       department: input.department ?? null,
       description: input.description ?? null,
-      status: 'draft',
+      status: 'draft', // AI 生成/手工创建一律 draft，发布须走审核（4.1.2/4.1.3）
+      config,
     })
     .select(COLS)
     .single()
