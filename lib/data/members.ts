@@ -114,6 +114,16 @@ export async function inviteMember(
 ): Promise<Member> {
   const admin = createAdminClient()
 
+  // 0. 幂等：本租户内邮箱已存在则拒绝（返回中文提示，供前端展示）
+  const reqClient = await createClient()
+  const { data: dup } = await reqClient
+    .from('users')
+    .select('id')
+    .eq('email', input.email)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (dup) throw new Error('该邮箱已邀请或已是成员')
+
   // 1. 通过 Supabase Auth 发邀请邮件（创建 auth.users）
   const { data: invited, error: invErr } = await admin.auth.admin.inviteUserByEmail(
     input.email,
