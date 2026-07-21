@@ -111,9 +111,9 @@ test.describe('S5 成员与租户闭环 @stage5', () => {
   stageGate(5);
 
   for (const invite of MEMBER_INVITES) {
-    // 成员邀请表单未实现（功能待落地）：原型/实现的「添加成员」按钮为 disabled 占位，
-    // 无邮箱/姓名/角色/部门表单弹窗，故整条依赖表单的用例标 fixme，不伪造表单。
-    test.fixme(`S5-01 邀请成员：${invite.name}（${invite.role}）`, async ({ page }) => {
+    // 4.5.1 成员邀请已落地：添加成员对话框（邮箱/姓名/角色/部门→发送邀请，POST /api/members）
+    // + 后端 inviteMember 幂等（重复邮箱返回「已邀请或已是成员」）
+    test(`S5-01 邀请成员：${invite.name}（${invite.role}）`, async ({ page }) => {
       await login(page, 'adminA');
       await page.goto('/members');
       await page.getByRole('button', { name: /添加成员/ }).click();
@@ -131,19 +131,26 @@ test.describe('S5 成员与租户闭环 @stage5', () => {
     });
   }
 
+  // 平台租户开通/暂停已落地（ADR-010）：/tenants 服务端 isPlatformAdmin 门控，
+  // 开通企业对话框(4 区块) + POST /api/tenants；行内下拉「暂停/恢复服务」→ PATCH。
+  // 前置：seed 须把 adminA 加入 platform_admins，且存在 code=aipaddle-demo 的租户（幂等冲突用例）。
+  async function fillOnboarding(page: import('@playwright/test').Page, over: Partial<Record<string, string>> = {}) {
+    const d = TENANT_ONBOARDING.valid;
+    await page.getByLabel(/企业名称/).fill(over.name ?? d.basic.name);
+    await page.getByLabel(/企业编码/).fill(over.code ?? d.basic.code);
+    await page.getByLabel(/联系人姓名/).fill(d.contact.name);
+    await page.getByLabel(/邮箱/).fill(over.email ?? d.contact.email);
+    await page.getByLabel(/套餐/).selectOption(d.plan.type);
+    await page.getByLabel(/Token 配额/).fill(over.tokenQuota ?? String(d.plan.tokenQuota));
+  }
+
   test('S5-04 租户开通四区块表单（PRD 2.9.8）', async ({ page }) => {
     await login(page, 'adminA'); // 平台超管视角
     await page.goto('/tenants');
     await page.getByRole('button', { name: /开通企业/ }).click();
-    const d = TENANT_ONBOARDING.valid;
-    await page.getByLabel(/企业名称/).fill(d.basic.name);
-    await page.getByLabel(/企业编码/).fill(d.basic.code);
-    await page.getByLabel(/联系人姓名/).fill(d.contact.name);
-    await page.getByLabel(/邮箱/).fill(d.contact.email);
-    await page.getByLabel(/套餐/).selectOption(d.plan.type);
-    await page.getByLabel(/Token 配额/).fill(String(d.plan.tokenQuota));
+    await fillOnboarding(page);
     await page.getByRole('button', { name: /提交|开通/ }).click();
-    await expect(page.getByRole('row', { name: new RegExp(d.basic.name) })).toBeVisible();
+    await expect(page.getByRole('row', { name: new RegExp(TENANT_ONBOARDING.valid.basic.name) })).toBeVisible();
   });
 
   for (const bad of TENANT_ONBOARDING.invalid) {
@@ -151,17 +158,19 @@ test.describe('S5 成员与租户闭环 @stage5', () => {
       await login(page, 'adminA');
       await page.goto('/tenants');
       await page.getByRole('button', { name: /开通企业/ }).click();
-      // 依字段填入非法值后提交
+      await fillOnboarding(page, { [bad.field]: String(bad.value) });
+      await page.getByRole('button', { name: /提交|开通/ }).click();
       await expect(page.getByText(new RegExp(bad.expectError))).toBeVisible();
     });
   }
 
   test('S5-05 暂停租户后其成员立即不可访问', async ({ page }) => {
+    page.on('dialog', (dlg) => dlg.accept()); // 暂停走 window.confirm
     await login(page, 'adminA');
     await page.goto('/tenants');
     const row = page.getByRole('row', { name: new RegExp(TENANT_ONBOARDING.valid.basic.name) });
-    await row.getByRole('button', { name: /暂停服务/ }).click();
-    await page.getByRole('button', { name: /确认/ }).click();
+    await row.getByRole('button').last().click(); // 行内更多菜单
+    await page.getByRole('menuitem', { name: /暂停服务/ }).click();
     await expect(row.getByText(/已暂停/)).toBeVisible();
   });
 });

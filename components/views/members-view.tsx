@@ -18,6 +18,10 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 
 // 显示标签对齐原型（员工/AI 工程师/安全人员/管理员）；后端角色键保持 ADR-007 体系不变
 const roleConfig: Record<Member['role'], { label: string; className: string }> = {
@@ -38,6 +42,14 @@ export function MembersView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  // 邀请成员（4.5.1）
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invEmail, setInvEmail] = useState('');
+  const [invName, setInvName] = useState('');
+  const [invRole, setInvRole] = useState<Member['role']>('User');
+  const [invDept, setInvDept] = useState('');
+  const [invBusy, setInvBusy] = useState(false);
+  const [invError, setInvError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false
@@ -63,6 +75,25 @@ export function MembersView() {
     }
   }
 
+  async function handleInvite() {
+    if (invBusy) return;
+    if (!invEmail.trim() || !invName.trim()) { setInvError('邮箱和姓名不能为空'); return; }
+    setInvBusy(true); setInvError(null);
+    try {
+      await apiFetch('/api/members', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: invEmail.trim(), name: invName.trim(), role: invRole, department: invDept.trim() || undefined,
+        }),
+      });
+      setInviteOpen(false);
+      setInvEmail(''); setInvName(''); setInvRole('User'); setInvDept('');
+      setTick(t => t + 1);
+    } catch (e) {
+      setInvError(e instanceof Error ? e.message : '邀请失败');
+    } finally { setInvBusy(false); }
+  }
+
   const filteredMembers = members.filter(m =>
     m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     m.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -85,7 +116,7 @@ export function MembersView() {
             <Upload className="h-4 w-4" />
             批量导入
           </Button>
-          <Button className="gap-2 shadow-sm" disabled>
+          <Button className="gap-2 shadow-sm" onClick={() => { setInvError(null); setInviteOpen(true); }}>
             <Plus className="h-4 w-4" />
             添加成员
           </Button>
@@ -300,6 +331,50 @@ export function MembersView() {
           </CardContent>
         </Card>
       )}
+
+      {/* 邀请成员对话框（4.5.1）*/}
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>添加成员</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-email">邮箱</Label>
+              <Input id="inv-email" type="email" value={invEmail} onChange={e => setInvEmail(e.target.value)} placeholder="member@example.com" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-name">姓名</Label>
+              <Input id="inv-name" value={invName} onChange={e => setInvName(e.target.value)} placeholder="成员姓名" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="inv-role">角色</Label>
+                <select
+                  id="inv-role"
+                  value={invRole}
+                  onChange={e => setInvRole(e.target.value as Member['role'])}
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+                >
+                  {(Object.keys(roleConfig) as Member['role'][]).map(r => (
+                    <option key={r} value={r}>{roleConfig[r].label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="inv-dept">部门</Label>
+                <Input id="inv-dept" value={invDept} onChange={e => setInvDept(e.target.value)} placeholder="所属部门" />
+              </div>
+            </div>
+            {invError && <p className="text-xs text-destructive">{invError}</p>}
+          </div>
+          <DialogFooter>
+            <Button onClick={handleInvite} disabled={invBusy}>
+              {invBusy ? '发送中…' : '发送邀请'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

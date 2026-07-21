@@ -37,6 +37,14 @@ export async function getRequestContext(): Promise<RequestContext | null> {
   }
   if (!orgId) return null
 
+  // 租户停用强制（ADR-010）：所在租户 suspended → 拒绝访问（成员立即不可用）。
+  const { data: tenantRow } = await supabase
+    .from('tenants')
+    .select('status')
+    .eq('id', orgId)
+    .maybeSingle()
+  if ((tenantRow as { status?: string } | null)?.status === 'suspended') return null
+
   const { data: roleRows } = await supabase
     .from('user_roles')
     .select('role')
