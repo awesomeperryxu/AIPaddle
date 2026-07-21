@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { mockKnowledgeBases, KnowledgeBase } from '@/lib/mock-data';
+import type { KnowledgeBase } from '@/lib/mock-data';
+import { apiFetch } from '@/lib/api/client';
 import { Progress } from '@/components/ui/progress';
 import {
   Plus,
@@ -36,13 +38,73 @@ const statusConfig = {
   failed: { label: '失败', className: 'bg-destructive/10 text-destructive', icon: XCircle }
 };
 
-export function KnowledgeAdminView() {
+type KbDoc = { id: string; filename: string; kbId: string; status: string; createdAt: string };
+
+export function KnowledgeAdminView({
+  knowledgeBases = [],
+  documents = [],
+  canManage = false,
+}: {
+  knowledgeBases?: KnowledgeBase[];
+  documents?: KbDoc[];
+  canManage?: boolean;
+}) {
+  const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedKB, setSelectedKB] = useState<KnowledgeBase | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  const filteredKBs = mockKnowledgeBases.filter(kb =>
+  const filteredKBs = knowledgeBases.filter(kb =>
     kb.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const kbDocs = selectedKB ? documents.filter(d => d.kbId === selectedKB.id) : [];
+
+  async function handleUpload(file: File) {
+    if (!selectedKB || busy) return;
+    setBusy(true); setMsg('上传中…');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('kbId', selectedKB.id);
+      const upRes = await fetch('/api/documents', { method: 'POST', body: fd });
+      const up = await upRes.json();
+      if (!upRes.ok) throw new Error(up?.error?.message ?? '上传失败');
+      setMsg('向量化中…');
+      await apiFetch(`/api/documents/${up.document.id}/process`, { method: 'POST' });
+      setMsg('已完成');
+      router.refresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '上传失败');
+    } finally {
+      setBusy(false);
+      setTimeout(() => setMsg(null), 2500);
+    }
+  }
+
+  async function handleDeleteDoc(id: string) {
+    if (busy || !window.confirm('确定删除该文档？')) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/api/documents/${id}`, { method: 'DELETE' });
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '删除失败');
+    } finally { setBusy(false); }
+  }
+
+  async function handleCreateKb() {
+    const name = window.prompt('知识库名称？');
+    if (!name?.trim() || busy) return;
+    setBusy(true);
+    try {
+      await apiFetch('/api/knowledge-bases', { method: 'POST', body: JSON.stringify({ name: name.trim() }) });
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '创建失败');
+    } finally { setBusy(false); }
+  }
 
   return (
     <div className="flex h-full gap-6">
@@ -53,10 +115,12 @@ export function KnowledgeAdminView() {
             <h1 className="text-2xl font-semibold text-foreground">知识库管理</h1>
             <p className="text-muted-foreground">管理企业知识文档</p>
           </div>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
-            创建知识库
-          </Button>
+          {canManage && (
+            <Button className="gap-2" onClick={handleCreateKb} disabled={busy}>
+              <Plus className="h-4 w-4" />
+              创建知识库
+            </Button>
+          )}
         </div>
 
         {/* Stats */}
@@ -68,7 +132,7 @@ export function KnowledgeAdminView() {
                   <Database className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{mockKnowledgeBases.length}</p>
+                  <p className="text-lg font-semibold text-foreground">{knowledgeBases.length}</p>
                   <p className="text-xs text-muted-foreground">知识库数量</p>
                 </div>
               </div>
@@ -81,7 +145,7 @@ export function KnowledgeAdminView() {
                   <FileText className="h-5 w-5 text-chart-2" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{mockKnowledgeBases.reduce((acc, kb) => acc + kb.documents, 0)}</p>
+                  <p className="text-lg font-semibold text-foreground">{knowledgeBases.reduce((acc, kb) => acc + kb.documents, 0)}</p>
                   <p className="text-xs text-muted-foreground">总文档数</p>
                 </div>
               </div>
@@ -94,7 +158,7 @@ export function KnowledgeAdminView() {
                   <CheckCircle2 className="h-5 w-5 text-green-500" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{mockKnowledgeBases.filter(kb => kb.vectorStatus === 'completed').length}</p>
+                  <p className="text-lg font-semibold text-foreground">{knowledgeBases.filter(kb => kb.vectorStatus === 'completed').length}</p>
                   <p className="text-xs text-muted-foreground">已完成向量化</p>
                 </div>
               </div>
@@ -107,7 +171,7 @@ export function KnowledgeAdminView() {
                   <Clock className="h-5 w-5 text-yellow-500" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{mockKnowledgeBases.filter(kb => kb.vectorStatus === 'processing').length}</p>
+                  <p className="text-lg font-semibold text-foreground">{knowledgeBases.filter(kb => kb.vectorStatus === 'processing').length}</p>
                   <p className="text-xs text-muted-foreground">处理中</p>
                 </div>
               </div>
@@ -240,19 +304,33 @@ export function KnowledgeAdminView() {
                 )}
               </div>
 
-              {/* Recent Documents */}
+              {/* Documents */}
               <div className="space-y-3">
-                <h4 className="text-sm font-medium text-foreground">最近文档</h4>
+                <h4 className="text-sm font-medium text-foreground">文档（{kbDocs.length}）</h4>
                 <div className="space-y-2">
-                  {['员工手册 v2.0.pdf', '请假制度说明.docx', '福利政策.md'].map((doc) => (
-                    <div key={doc} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm text-foreground">{doc}</span>
+                  {kbDocs.length === 0 && (
+                    <p className="text-xs text-muted-foreground">暂无文档，点下方「上传文档」添加</p>
+                  )}
+                  {kbDocs.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="text-sm text-foreground truncate">{doc.filename}</span>
+                        {doc.status !== 'active' && (
+                          <Badge variant="outline" className="text-[10px] shrink-0">{doc.status}</Badge>
+                        )}
                       </div>
-                      <Button variant="ghost" size="icon" className="h-6 w-6">
-                        <Eye className="h-3 w-3" />
-                      </Button>
+                      {canManage && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => handleDeleteDoc(doc.id)}
+                          disabled={busy}
+                        >
+                          <XCircle className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -269,16 +347,26 @@ export function KnowledgeAdminView() {
               </div>
 
               {/* Actions */}
-              <div className="flex gap-2">
-                <Button className="flex-1">
-                  <Upload className="h-4 w-4 mr-2" />
-                  上传文档
-                </Button>
-                <Button variant="outline">
-                  <Eye className="h-4 w-4 mr-2" />
-                  测试召回
-                </Button>
-              </div>
+              {canManage && (
+                <div className="space-y-2">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUpload(f);
+                      e.currentTarget.value = '';
+                    }}
+                  />
+                  <Button className="w-full" onClick={() => fileRef.current?.click()} disabled={busy}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    {busy ? '处理中…' : '上传文档（PDF）'}
+                  </Button>
+                  {msg && <p className="text-xs text-center text-muted-foreground">{msg}</p>}
+                </div>
+              )}
             </CardContent>
           </Card>
 
