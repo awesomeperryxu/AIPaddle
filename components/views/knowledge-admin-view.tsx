@@ -31,6 +31,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const statusConfig = {
   processing: { label: '处理中', className: 'bg-yellow-500/10 text-yellow-500', icon: Clock },
@@ -39,6 +45,7 @@ const statusConfig = {
 };
 
 type KbDoc = { id: string; filename: string; kbId: string; status: string; createdAt: string };
+type RetrievedSeg = { documentId: string; filename: string; snippet: string; similarity: number };
 type KbVisibility = 'org' | 'restricted';
 type KbView = KnowledgeBase & { visibility?: KbVisibility };
 type AgentOpt = { id: string; name: string };
@@ -61,6 +68,12 @@ export function KnowledgeAdminView({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [linkedAgentIds, setLinkedAgentIds] = useState<string[]>([]);
+  // 4.2.5 检索测试
+  const [retrieveOpen, setRetrieveOpen] = useState(false);
+  const [rQuery, setRQuery] = useState('');
+  const [rLoading, setRLoading] = useState(false);
+  const [rSegments, setRSegments] = useState<RetrievedSeg[]>([]);
+  const [rDone, setRDone] = useState(false);
 
   const filteredKBs = knowledgeBases.filter(kb =>
     kb.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -108,6 +121,26 @@ export function KnowledgeAdminView({
     } catch (e) {
       window.alert(e instanceof Error ? e.message : '设置失败');
     } finally { setBusy(false); }
+  }
+
+  function openRetrieve() {
+    setRQuery(''); setRSegments([]); setRDone(false); setRetrieveOpen(true);
+  }
+
+  async function runRetrieve() {
+    const q = rQuery.trim();
+    if (!q || !selectedKB || rLoading) return;
+    setRLoading(true); setRDone(false);
+    try {
+      const r = await apiFetch<{ segments: RetrievedSeg[] }>('/api/knowledge/retrieve', {
+        method: 'POST',
+        body: JSON.stringify({ question: q, kbId: selectedKB.id }),
+      });
+      setRSegments(r.segments);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '检索失败');
+      setRSegments([]);
+    } finally { setRLoading(false); setRDone(true); }
   }
 
   async function handleUpload(file: File) {
@@ -465,7 +498,7 @@ export function KnowledgeAdminView({
                       {busy ? '处理中…' : '上传文档'}
                     </Button>
                   )}
-                  <Button variant="outline" className={canManage ? '' : 'flex-1'}>
+                  <Button variant="outline" className={canManage ? '' : 'flex-1'} onClick={openRetrieve}>
                     <Eye className="h-4 w-4 mr-2" />
                     测试召回
                   </Button>
@@ -492,6 +525,48 @@ export function KnowledgeAdminView({
           </Card>
         </div>
       )}
+
+      {/* 4.2.5 检索测试面板：召回分段 + 相关性评分（降序） */}
+      <Dialog open={retrieveOpen} onOpenChange={setRetrieveOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>检索测试{selectedKB ? ` · ${selectedKB.name}` : ''}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                aria-label="查询"
+                placeholder="输入查询，查看召回分段与相关性评分"
+                value={rQuery}
+                onChange={(e) => setRQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && runRetrieve()}
+              />
+              <Button onClick={runRetrieve} disabled={rLoading || !rQuery.trim()}>
+                {rLoading ? '检索中…' : '检索'}
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+              {rDone && rSegments.length === 0 && (
+                <p className="text-sm text-muted-foreground">未召回任何分段（该知识库无相关内容或未向量化）。</p>
+              )}
+              {rSegments.map((s, i) => (
+                <div key={s.documentId + i} className="rounded-lg bg-muted/30 p-3 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-sm text-foreground min-w-0">
+                      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate">{s.filename}</span>
+                    </span>
+                    <Badge variant="secondary" className="text-[10px] shrink-0" data-testid="retrieval-score">
+                      {(s.similarity * 100).toFixed(1)}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground line-clamp-2">{s.snippet}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

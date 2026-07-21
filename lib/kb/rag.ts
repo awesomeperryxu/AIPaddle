@@ -21,6 +21,42 @@ export type RagAnswer = {
   refused: boolean
 }
 
+export type RetrievedSegment = {
+  documentId: string
+  filename: string
+  snippet: string
+  similarity: number
+}
+
+/**
+ * 检索测试（4.2.5）：只做嵌入 + 向量检索，返回召回分段与相关性评分（不调用 LLM 生成）。
+ * kbId 传入 → 仅在该知识库内检索；否则按可访问范围（全员可见）。按相似度降序。
+ */
+export async function retrieveSegments(
+  ctx: RequestContext,
+  question: string,
+  opts?: { kbId?: string; topK?: number },
+): Promise<RetrievedSegment[]> {
+  const q = question.trim()
+  if (!q) return []
+  const kbIds = opts?.kbId ? [opts.kbId] : await listAccessibleKbIds(ctx)
+  const qEmbedding = await embedOne(q)
+  const matches = await searchChunks(ctx, qEmbedding, opts?.topK ?? TOP_K, kbIds)
+  if (matches.length === 0) return []
+  const filenames = await getDocumentFilenames(
+    ctx,
+    [...new Set(matches.map((m) => m.documentId))],
+  )
+  return matches
+    .map((m) => ({
+      documentId: m.documentId,
+      filename: filenames[m.documentId] ?? '文档',
+      snippet: m.content.slice(0, 160),
+      similarity: Math.round(m.similarity * 1000) / 1000,
+    }))
+    .sort((a, b) => b.similarity - a.similarity)
+}
+
 const SYSTEM_PROMPT = `你是企业知识库问答助手。严格只依据下面「资料」中的内容回答用户问题，用简体中文简洁作答。
 规则：
 1. 资料中有明确答案 → 直接答，并在答案末尾用 [编号] 标注引用的资料条目（可多个）。
