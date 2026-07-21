@@ -41,3 +41,8 @@ docs/adr/
 docs/AIPaddle-项目进度管控.xlsx
 # security 管理文档（本地专用，含机密文件清单，绝不同步）
 docs/SECURITY-机密与不同步清单.md
+
+# Playwright 登录态（含会话 token，勿提交）
+playwright/.auth/
+test-results/
+playwright-report/

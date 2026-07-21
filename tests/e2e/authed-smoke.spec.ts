@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test'
-import { login } from './helpers'
+import { storageStatePath } from './helpers'
 
 // 需真实会话：无 SEED_PASSWORD（CI / 无凭据环境）时跳过，避免误红。
 test.skip(!process.env.SEED_PASSWORD, '需 SEED_PASSWORD + 可登录的种子账号')
+// 复用 auth.setup.ts 预登录的 adminA 登录态（免每条用例重复登录）
+test.use({ storageState: storageStatePath('adminA') })
 
 // 带登录集成冒烟：真实会话下各主页面正常渲染、无应用级报错。adminA 已是 platform_admin。
 const ROUTES: { path: string; expectText: RegExp }[] = [
@@ -22,7 +24,6 @@ test.describe('集成冒烟（带登录）', () => {
       const errors: string[] = []
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
       page.on('pageerror', (e) => errors.push(String(e)))
-      await login(page, 'adminA')
       await page.goto(r.path)
       const main = page.locator('main')
       await expect(main).toBeVisible({ timeout: 15_000 })
