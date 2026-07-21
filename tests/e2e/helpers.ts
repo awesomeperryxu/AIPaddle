@@ -16,6 +16,14 @@ export function stageGate(required: number, reason?: string) {
 
 export type UserKey = keyof typeof USERS;
 
+// 登录态 storageState（E道0.9）：auth.setup.ts 预登录各角色存盘，测试 test.use({ storageState }) 复用，
+// 免每条用例重复登录。目录内含会话 token，务必 gitignore。
+export const USER_KEYS = Object.keys(USERS) as UserKey[];
+export const AUTH_DIR = 'playwright/.auth';
+export function storageStatePath(key: UserKey): string {
+  return `${AUTH_DIR}/${key}.json`;
+}
+
 /** 登录（切片 0 落地后按真实登录页微调选择器；约定见 tests/e2e/README.md） */
 export async function login(page: Page, userKey: UserKey) {
   const user = USERS[userKey];

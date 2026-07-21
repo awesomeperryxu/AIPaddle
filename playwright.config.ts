@@ -34,9 +34,13 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
+    // 全局登录态：先为各角色生成 storageState（E道0.9）
+    { name: 'setup', testMatch: /auth\.setup\.ts/ },
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
+      testIgnore: /auth\.setup\.ts/,
     },
   ],
   webServer: {
