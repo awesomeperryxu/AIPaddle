@@ -3,6 +3,7 @@ import type { RequestContext } from '@/lib/context'
 import { embedOne, chat } from '@/lib/ai'
 import { searchChunks } from '@/lib/data/chunks'
 import { getDocumentFilenames } from '@/lib/data/documents'
+import { listAccessibleKbIds } from '@/lib/data/knowledge'
 
 // 相似度阈值：低于此值视为"检索不到"，触发拒答（金标准里有必须拒答的问题）。
 const MIN_SIMILARITY = 0.28
@@ -27,14 +28,21 @@ const SYSTEM_PROMPT = `你是企业知识库问答助手。严格只依据下面
 3. 不要复述资料原文，用自己的话简洁概括。`
 
 /**
- * RAG 问答（4.2.3）：嵌入问题 → 向量检索(RLS 隔离) → 相关块喂 qwen → 带引用作答；无相关块则拒答。
+ * RAG 问答（4.2.3 / 4.2.8）：嵌入问题 → 按可访问知识库范围向量检索 → 相关块喂 qwen → 带引用作答；无相关块则拒答。
+ * opts.agentId 传入（Agent 对话）→ 仅检索该 Agent 关联的知识库；
+ * 不传（通用问答）→ 仅检索全员可见（visibility='org'）的知识库。
  */
-export async function answerQuestion(ctx: RequestContext, question: string): Promise<RagAnswer> {
+export async function answerQuestion(
+  ctx: RequestContext,
+  question: string,
+  opts?: { agentId?: string },
+): Promise<RagAnswer> {
   const q = question.trim()
   if (!q) return { answer: '请输入问题。', citations: [], refused: true }
 
+  const kbIds = await listAccessibleKbIds(ctx, { agentId: opts?.agentId })
   const qEmbedding = await embedOne(q)
-  const matches = await searchChunks(ctx, qEmbedding, TOP_K)
+  const matches = await searchChunks(ctx, qEmbedding, TOP_K, kbIds)
   const relevant = matches.filter((m) => m.similarity >= MIN_SIMILARITY)
 
   if (relevant.length === 0) {

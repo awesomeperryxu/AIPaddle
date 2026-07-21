@@ -3,6 +3,7 @@ import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { listKnowledgeBases } from '@/lib/data/knowledge'
 import { listDocuments } from '@/lib/data/documents'
+import { listAgents } from '@/lib/data/agents'
 import { KnowledgeAdminView } from '@/components/views/knowledge-admin-view'
 
 // 真实库状态 → 原型视图的向量化状态
@@ -23,9 +24,10 @@ export default async function Page() {
   const ctx = await getRequestContext()
   if (!ctx) redirect('/login')
 
-  const [kbs, docs] = await Promise.all([
+  const [kbs, docs, agentList] = await Promise.all([
     listKnowledgeBases(ctx),
     listDocuments(ctx),
+    listAgents(ctx),
   ])
 
   // 各库存储大小
@@ -40,9 +42,12 @@ export default async function Page() {
     description: kb.description || '—',
     documents: kb.documentCount,
     vectorStatus: VECTOR_STATUS[kb.status] ?? 'completed',
+    visibility: kb.visibility,
     lastUpdated: kb.createdAt,
     size: formatSize(sizeByKb.get(kb.id) ?? 0),
   }))
+
+  const agents = agentList.map((a) => ({ id: a.id, name: a.name }))
 
   const documents = docs.map((d) => ({
     id: d.id,
@@ -56,6 +61,7 @@ export default async function Page() {
     <KnowledgeAdminView
       knowledgeBases={knowledgeBases}
       documents={documents}
+      agents={agents}
       canManage={can(ctx, 'knowledge:create')}
     />
   )

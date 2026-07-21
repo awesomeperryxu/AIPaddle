@@ -39,27 +39,76 @@ const statusConfig = {
 };
 
 type KbDoc = { id: string; filename: string; kbId: string; status: string; createdAt: string };
+type KbVisibility = 'org' | 'restricted';
+type KbView = KnowledgeBase & { visibility?: KbVisibility };
+type AgentOpt = { id: string; name: string };
 
 export function KnowledgeAdminView({
   knowledgeBases = [],
   documents = [],
+  agents = [],
   canManage = false,
 }: {
-  knowledgeBases?: KnowledgeBase[];
+  knowledgeBases?: KbView[];
   documents?: KbDoc[];
+  agents?: AgentOpt[];
   canManage?: boolean;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedKB, setSelectedKB] = useState<KnowledgeBase | null>(null);
+  const [selectedKB, setSelectedKB] = useState<KbView | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [linkedAgentIds, setLinkedAgentIds] = useState<string[]>([]);
 
   const filteredKBs = knowledgeBases.filter(kb =>
     kb.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
   const kbDocs = selectedKB ? documents.filter(d => d.kbId === selectedKB.id) : [];
+
+  // 选中知识库：同时拉取其关联 Agent（4.2.8 权限范围）
+  async function selectKb(kb: KbView) {
+    setSelectedKB(kb);
+    setLinkedAgentIds([]);
+    try {
+      const r = await apiFetch<{ agents: { agentId: string }[] }>(`/api/knowledge-bases/${kb.id}`);
+      setLinkedAgentIds(r.agents.map(a => a.agentId));
+    } catch { /* 忽略拉取失败 */ }
+  }
+
+  async function handleToggleVisibility() {
+    if (!selectedKB || busy) return;
+    const next: KbVisibility = selectedKB.visibility === 'restricted' ? 'org' : 'restricted';
+    setBusy(true);
+    try {
+      await apiFetch(`/api/knowledge-bases/${selectedKB.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ visibility: next }),
+      });
+      setSelectedKB({ ...selectedKB, visibility: next });
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '设置失败');
+    } finally { setBusy(false); }
+  }
+
+  async function handleToggleAgent(agentId: string) {
+    if (!selectedKB || busy) return;
+    const next = linkedAgentIds.includes(agentId)
+      ? linkedAgentIds.filter(id => id !== agentId)
+      : [...linkedAgentIds, agentId];
+    setBusy(true);
+    try {
+      await apiFetch(`/api/knowledge-bases/${selectedKB.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ agentIds: next }),
+      });
+      setLinkedAgentIds(next);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '设置失败');
+    } finally { setBusy(false); }
+  }
 
   async function handleUpload(file: File) {
     if (!selectedKB || busy) return;
@@ -202,7 +251,7 @@ export function KnowledgeAdminView({
                 className={`bg-card border-border cursor-pointer transition-all hover:border-primary/50 ${
                   selectedKB?.id === kb.id ? 'border-primary ring-1 ring-primary' : ''
                 }`}
-                onClick={() => setSelectedKB(kb)}
+                onClick={() => selectKb(kb)}
               >
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
@@ -349,14 +398,49 @@ export function KnowledgeAdminView({
                 </div>
               </div>
 
-              {/* Permissions */}
+              {/* Permissions（4.2.8 权限范围）*/}
               <div className="space-y-3">
-                <h4 className="text-sm font-medium text-foreground">权限范围</h4>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">全员可访问</Badge>
-                  <Badge variant="outline">HR政策顾问 Agent</Badge>
-                  <Badge variant="outline">智能客服助手 Agent</Badge>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-foreground">权限范围</h4>
+                  {canManage && (
+                    <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={handleToggleVisibility} disabled={busy}>
+                      切换为{selectedKB.visibility === 'restricted' ? '全员可见' : '受限'}
+                    </Button>
+                  )}
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge className={selectedKB.visibility === 'restricted' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-green-500/10 text-green-500'}>
+                    {selectedKB.visibility === 'restricted' ? '受限（仅关联 Agent）' : '全员可访问'}
+                  </Badge>
+                </div>
+
+                {selectedKB.visibility === 'restricted' && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      {canManage ? '勾选可使用本知识库的 Agent：' : '可使用本知识库的 Agent：'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {agents.length === 0 && <span className="text-xs text-muted-foreground">暂无 Agent</span>}
+                      {agents.map((a) => {
+                        const linked = linkedAgentIds.includes(a.id);
+                        return canManage ? (
+                          <Button
+                            key={a.id}
+                            variant={linked ? 'default' : 'outline'}
+                            size="sm"
+                            className="h-6 text-xs"
+                            onClick={() => handleToggleAgent(a.id)}
+                            disabled={busy}
+                          >
+                            {a.name}
+                          </Button>
+                        ) : linked ? (
+                          <Badge key={a.id} variant="outline">{a.name}</Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Actions */}
