@@ -31,6 +31,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const statusConfig = {
   processing: { label: '处理中', className: 'bg-yellow-500/10 text-yellow-500', icon: Clock },
@@ -39,27 +45,103 @@ const statusConfig = {
 };
 
 type KbDoc = { id: string; filename: string; kbId: string; status: string; createdAt: string };
+type RetrievedSeg = { documentId: string; filename: string; snippet: string; similarity: number };
+type KbVisibility = 'org' | 'restricted';
+type KbView = KnowledgeBase & { visibility?: KbVisibility };
+type AgentOpt = { id: string; name: string };
 
 export function KnowledgeAdminView({
   knowledgeBases = [],
   documents = [],
+  agents = [],
   canManage = false,
 }: {
-  knowledgeBases?: KnowledgeBase[];
+  knowledgeBases?: KbView[];
   documents?: KbDoc[];
+  agents?: AgentOpt[];
   canManage?: boolean;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedKB, setSelectedKB] = useState<KnowledgeBase | null>(null);
+  const [selectedKB, setSelectedKB] = useState<KbView | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [linkedAgentIds, setLinkedAgentIds] = useState<string[]>([]);
+  // 4.2.5 检索测试
+  const [retrieveOpen, setRetrieveOpen] = useState(false);
+  const [rQuery, setRQuery] = useState('');
+  const [rLoading, setRLoading] = useState(false);
+  const [rSegments, setRSegments] = useState<RetrievedSeg[]>([]);
+  const [rDone, setRDone] = useState(false);
 
   const filteredKBs = knowledgeBases.filter(kb =>
     kb.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
   const kbDocs = selectedKB ? documents.filter(d => d.kbId === selectedKB.id) : [];
+
+  // 选中知识库：同时拉取其关联 Agent（4.2.8 权限范围）
+  async function selectKb(kb: KbView) {
+    setSelectedKB(kb);
+    setLinkedAgentIds([]);
+    try {
+      const r = await apiFetch<{ agents: { agentId: string }[] }>(`/api/knowledge-bases/${kb.id}`);
+      setLinkedAgentIds(r.agents.map(a => a.agentId));
+    } catch { /* 忽略拉取失败 */ }
+  }
+
+  async function handleToggleVisibility() {
+    if (!selectedKB || busy) return;
+    const next: KbVisibility = selectedKB.visibility === 'restricted' ? 'org' : 'restricted';
+    setBusy(true);
+    try {
+      await apiFetch(`/api/knowledge-bases/${selectedKB.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ visibility: next }),
+      });
+      setSelectedKB({ ...selectedKB, visibility: next });
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '设置失败');
+    } finally { setBusy(false); }
+  }
+
+  async function handleToggleAgent(agentId: string) {
+    if (!selectedKB || busy) return;
+    const next = linkedAgentIds.includes(agentId)
+      ? linkedAgentIds.filter(id => id !== agentId)
+      : [...linkedAgentIds, agentId];
+    setBusy(true);
+    try {
+      await apiFetch(`/api/knowledge-bases/${selectedKB.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ agentIds: next }),
+      });
+      setLinkedAgentIds(next);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '设置失败');
+    } finally { setBusy(false); }
+  }
+
+  function openRetrieve() {
+    setRQuery(''); setRSegments([]); setRDone(false); setRetrieveOpen(true);
+  }
+
+  async function runRetrieve() {
+    const q = rQuery.trim();
+    if (!q || !selectedKB || rLoading) return;
+    setRLoading(true); setRDone(false);
+    try {
+      const r = await apiFetch<{ segments: RetrievedSeg[] }>('/api/knowledge/retrieve', {
+        method: 'POST',
+        body: JSON.stringify({ question: q, kbId: selectedKB.id }),
+      });
+      setRSegments(r.segments);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '检索失败');
+      setRSegments([]);
+    } finally { setRLoading(false); setRDone(true); }
+  }
 
   async function handleUpload(file: File) {
     if (!selectedKB || busy) return;
@@ -202,7 +284,7 @@ export function KnowledgeAdminView({
                 className={`bg-card border-border cursor-pointer transition-all hover:border-primary/50 ${
                   selectedKB?.id === kb.id ? 'border-primary ring-1 ring-primary' : ''
                 }`}
-                onClick={() => setSelectedKB(kb)}
+                onClick={() => selectKb(kb)}
               >
                 <CardContent className="p-4">
                   <div className="flex items-start gap-4">
@@ -349,14 +431,49 @@ export function KnowledgeAdminView({
                 </div>
               </div>
 
-              {/* Permissions */}
+              {/* Permissions（4.2.8 权限范围）*/}
               <div className="space-y-3">
-                <h4 className="text-sm font-medium text-foreground">权限范围</h4>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">全员可访问</Badge>
-                  <Badge variant="outline">HR政策顾问 Agent</Badge>
-                  <Badge variant="outline">智能客服助手 Agent</Badge>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-foreground">权限范围</h4>
+                  {canManage && (
+                    <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={handleToggleVisibility} disabled={busy}>
+                      切换为{selectedKB.visibility === 'restricted' ? '全员可见' : '受限'}
+                    </Button>
+                  )}
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge className={selectedKB.visibility === 'restricted' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-green-500/10 text-green-500'}>
+                    {selectedKB.visibility === 'restricted' ? '受限（仅关联 Agent）' : '全员可访问'}
+                  </Badge>
+                </div>
+
+                {selectedKB.visibility === 'restricted' && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      {canManage ? '勾选可使用本知识库的 Agent：' : '可使用本知识库的 Agent：'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {agents.length === 0 && <span className="text-xs text-muted-foreground">暂无 Agent</span>}
+                      {agents.map((a) => {
+                        const linked = linkedAgentIds.includes(a.id);
+                        return canManage ? (
+                          <Button
+                            key={a.id}
+                            variant={linked ? 'default' : 'outline'}
+                            size="sm"
+                            className="h-6 text-xs"
+                            onClick={() => handleToggleAgent(a.id)}
+                            disabled={busy}
+                          >
+                            {a.name}
+                          </Button>
+                        ) : linked ? (
+                          <Badge key={a.id} variant="outline">{a.name}</Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Actions */}
@@ -381,7 +498,7 @@ export function KnowledgeAdminView({
                       {busy ? '处理中…' : '上传文档'}
                     </Button>
                   )}
-                  <Button variant="outline" className={canManage ? '' : 'flex-1'}>
+                  <Button variant="outline" className={canManage ? '' : 'flex-1'} onClick={openRetrieve}>
                     <Eye className="h-4 w-4 mr-2" />
                     测试召回
                   </Button>
@@ -408,6 +525,48 @@ export function KnowledgeAdminView({
           </Card>
         </div>
       )}
+
+      {/* 4.2.5 检索测试面板：召回分段 + 相关性评分（降序） */}
+      <Dialog open={retrieveOpen} onOpenChange={setRetrieveOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>检索测试{selectedKB ? ` · ${selectedKB.name}` : ''}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                aria-label="查询"
+                placeholder="输入查询，查看召回分段与相关性评分"
+                value={rQuery}
+                onChange={(e) => setRQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && runRetrieve()}
+              />
+              <Button onClick={runRetrieve} disabled={rLoading || !rQuery.trim()}>
+                {rLoading ? '检索中…' : '检索'}
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+              {rDone && rSegments.length === 0 && (
+                <p className="text-sm text-muted-foreground">未召回任何分段（该知识库无相关内容或未向量化）。</p>
+              )}
+              {rSegments.map((s, i) => (
+                <div key={s.documentId + i} className="rounded-lg bg-muted/30 p-3 space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-sm text-foreground min-w-0">
+                      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate">{s.filename}</span>
+                    </span>
+                    <Badge variant="secondary" className="text-[10px] shrink-0" data-testid="retrieval-score">
+                      {(s.similarity * 100).toFixed(1)}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground line-clamp-2">{s.snippet}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

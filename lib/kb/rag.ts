@@ -3,6 +3,7 @@ import type { RequestContext } from '@/lib/context'
 import { embedOne, chat } from '@/lib/ai'
 import { searchChunks } from '@/lib/data/chunks'
 import { getDocumentFilenames } from '@/lib/data/documents'
+import { listAccessibleKbIds } from '@/lib/data/knowledge'
 
 // 相似度阈值：低于此值视为"检索不到"，触发拒答（金标准里有必须拒答的问题）。
 const MIN_SIMILARITY = 0.28
@@ -20,6 +21,42 @@ export type RagAnswer = {
   refused: boolean
 }
 
+export type RetrievedSegment = {
+  documentId: string
+  filename: string
+  snippet: string
+  similarity: number
+}
+
+/**
+ * 检索测试（4.2.5）：只做嵌入 + 向量检索，返回召回分段与相关性评分（不调用 LLM 生成）。
+ * kbId 传入 → 仅在该知识库内检索；否则按可访问范围（全员可见）。按相似度降序。
+ */
+export async function retrieveSegments(
+  ctx: RequestContext,
+  question: string,
+  opts?: { kbId?: string; topK?: number },
+): Promise<RetrievedSegment[]> {
+  const q = question.trim()
+  if (!q) return []
+  const kbIds = opts?.kbId ? [opts.kbId] : await listAccessibleKbIds(ctx)
+  const qEmbedding = await embedOne(q)
+  const matches = await searchChunks(ctx, qEmbedding, opts?.topK ?? TOP_K, kbIds)
+  if (matches.length === 0) return []
+  const filenames = await getDocumentFilenames(
+    ctx,
+    [...new Set(matches.map((m) => m.documentId))],
+  )
+  return matches
+    .map((m) => ({
+      documentId: m.documentId,
+      filename: filenames[m.documentId] ?? '文档',
+      snippet: m.content.slice(0, 160),
+      similarity: Math.round(m.similarity * 1000) / 1000,
+    }))
+    .sort((a, b) => b.similarity - a.similarity)
+}
+
 const SYSTEM_PROMPT = `你是企业知识库问答助手。严格只依据下面「资料」中的内容回答用户问题，用简体中文简洁作答。
 规则：
 1. 资料中有明确答案 → 直接答，并在答案末尾用 [编号] 标注引用的资料条目（可多个）。
@@ -27,14 +64,21 @@ const SYSTEM_PROMPT = `你是企业知识库问答助手。严格只依据下面
 3. 不要复述资料原文，用自己的话简洁概括。`
 
 /**
- * RAG 问答（4.2.3）：嵌入问题 → 向量检索(RLS 隔离) → 相关块喂 qwen → 带引用作答；无相关块则拒答。
+ * RAG 问答（4.2.3 / 4.2.8）：嵌入问题 → 按可访问知识库范围向量检索 → 相关块喂 qwen → 带引用作答；无相关块则拒答。
+ * opts.agentId 传入（Agent 对话）→ 仅检索该 Agent 关联的知识库；
+ * 不传（通用问答）→ 仅检索全员可见（visibility='org'）的知识库。
  */
-export async function answerQuestion(ctx: RequestContext, question: string): Promise<RagAnswer> {
+export async function answerQuestion(
+  ctx: RequestContext,
+  question: string,
+  opts?: { agentId?: string },
+): Promise<RagAnswer> {
   const q = question.trim()
   if (!q) return { answer: '请输入问题。', citations: [], refused: true }
 
+  const kbIds = await listAccessibleKbIds(ctx, { agentId: opts?.agentId })
   const qEmbedding = await embedOne(q)
-  const matches = await searchChunks(ctx, qEmbedding, TOP_K)
+  const matches = await searchChunks(ctx, qEmbedding, TOP_K, kbIds)
   const relevant = matches.filter((m) => m.similarity >= MIN_SIMILARITY)
 
   if (relevant.length === 0) {

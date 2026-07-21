@@ -36,6 +36,20 @@ export async function replaceChunks(
   return rows.length
 }
 
+/** 软删某文档的全部内容块（4.2.9：删文档时同步失效其向量块，RAG 不再检索/引用）。 */
+export async function deleteChunksByDocument(
+  _ctx: RequestContext,
+  documentId: string,
+): Promise<void> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('chunks')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('document_id', documentId)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+}
+
 export type MatchedChunk = {
   id: string
   documentId: string
@@ -44,16 +58,24 @@ export type MatchedChunk = {
   similarity: number
 }
 
-/** 向量检索（4.2.3）：调 match_chunks RPC，请求级客户端 → RLS 只返回本租户块。 */
+/**
+ * 向量检索（4.2.3 / 4.2.8）：调 match_chunks RPC，请求级客户端 → RLS 只返回本租户块。
+ * kbIds 传入时按可访问知识库范围过滤（4.2.8）：
+ * - undefined → 不过滤（全租户范围，向后兼容）
+ * - [] 空数组 → 无可访问 KB，直接返回空（不检索）
+ */
 export async function searchChunks(
   _ctx: RequestContext,
   queryEmbedding: number[],
   topK = 5,
+  kbIds?: string[],
 ): Promise<MatchedChunk[]> {
+  if (kbIds && kbIds.length === 0) return []
   const supabase = await createClient()
   const { data, error } = await supabase.rpc('match_chunks', {
     query_embedding: `[${queryEmbedding.join(',')}]`,
     match_count: topK,
+    filter_kb_ids: kbIds ?? null,
   })
   if (error) throw new Error(error.message)
   return ((data as {

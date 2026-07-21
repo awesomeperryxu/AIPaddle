@@ -62,9 +62,8 @@ test.describe('S2-UPL 文档上传 @stage2', () => {
 test.describe('S2-IDX 检索测试 @stage2', () => {
   stageGate(2);
 
-  // 原型「测试召回」当前仅为按钮占位，尚无检索评分面板（retrieval-score）。
-  // 待实现检索面板后再落地本用例；先校验入口按钮存在，评分断言标记 fixme。
-  test.fixme('S2-IDX-04 检索测试入口返回相关块且评分降序', async ({ page }) => {
+  // 4.2.5 检索测试面板已实现：测试召回 → 输入查询 → 召回分段带 retrieval-score（降序）
+  test('S2-IDX-04 检索测试入口返回相关块且评分降序', async ({ page }) => {
     await login(page, 'devA');
     await page.goto('/knowledge-admin');
     await selectKb(page, KNOWLEDGE_DOCS[0].kb);

@@ -2,6 +2,7 @@ import 'server-only'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { deleteChunksByDocument } from '@/lib/data/chunks'
 
 // 文档数据层（ADR-008）：元数据行走请求级客户端（RLS 隔离）；
 // 文件对象存 Supabase Storage 私有桶，路径以 org_id 前缀隔离，存取用服务级客户端（系统级文件操作）。
@@ -152,6 +153,9 @@ export async function deleteDocument(ctx: RequestContext, id: string): Promise<v
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', id)
   if (updErr) throw new Error(updErr.message)
+
+  // 4.2.9：同步软删该文档的内容块，使 RAG 检索不再命中/引用已删文档
+  await deleteChunksByDocument(ctx, id)
 
   // 移除存储对象（系统级）
   const admin = createAdminClient()
