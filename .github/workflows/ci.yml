@@ -12,6 +12,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── 机密文件守卫：阻止机密文档回流公开仓库（2026-07-21）──
+      # 若任何分支重新跟踪了已停止同步的机密文件，CI 失败 → 分支保护挡住合并。
+      # 修复：在该分支对这些文件执行 `git rm --cached`（本地保留），再提交。
+      - name: 机密文件守卫
+        run: |
+          CONFIDENTIAL=$(git ls-files -- \
+            docs/requirements docs/visily docs/design docs/templates docs/adr _legacy \
+            docs/IMPLEMENTATION_AUDIT.md docs/PARALLEL_EXECUTION_PLAN.md ROADMAP.md docs/ISSUES.md \
+            'docs/*.docx' 'docs/AIPaddle-*.xlsx' 'docs/~$*')
+          if [ -n "$CONFIDENTIAL" ]; then
+            echo "::error::检测到机密文档被重新跟踪，禁止合并到公开仓库。请对以下文件执行 git rm --cached（本地保留）后再提交："
+            echo "$CONFIDENTIAL"
+            exit 1
+          fi
+          echo "✅ 无机密文档回流"
+
       - uses: pnpm/action-setup@v4
         with:
           version: 9
