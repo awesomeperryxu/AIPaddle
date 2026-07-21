@@ -18,6 +18,10 @@ export type Action =
   | 'tenant:read'
   | 'tenant:manage'
   | 'audit:read'
+  | 'workflow:create'
+  | 'workflow:read'
+  | 'workflow:update'
+  | 'workflow:run'
 
 // 每个 action 允许的角色集合；未列入矩阵的 action 视为无人允许（默认拒绝）。
 const MATRIX: Record<Action, Role[]> = {
@@ -35,6 +39,10 @@ const MATRIX: Record<Action, Role[]> = {
   'tenant:read': ['Admin', 'Auditor'],
   'tenant:manage': ['Admin'],
   'audit:read': ['Admin', 'Auditor'],
+  'workflow:create': ['Admin', 'Developer'],
+  'workflow:read': ['Admin', 'Developer', 'User', 'Auditor'],
+  'workflow:update': ['Admin', 'Developer'], // Developer 仅 own，归属校验在应用层
+  'workflow:run': ['Admin', 'Developer', 'User'],
 }
 
 /** 多角色取并集：任一角色被允许即允许。默认拒绝。 */
