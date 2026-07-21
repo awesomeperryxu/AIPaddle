@@ -13,10 +13,11 @@ import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const DEFAULT_PASSWORD = 'AIPaddle@2026'
+// 密码从环境变量读取，绝不硬编码进 git（仓库公开后的安全铁律）
+const DEFAULT_PASSWORD = process.env.SEED_PASSWORD!
 
-if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  console.error('缺少环境变量 NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY')
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !DEFAULT_PASSWORD) {
+  console.error('缺少环境变量 NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / SEED_PASSWORD')
   process.exit(1)
 }
 
@@ -131,7 +132,7 @@ async function main() {
   await ensureAgent(tenantAcme.id, adminAcmeId, 'Acme 内部助手', '综合部')
 
   console.log(`\n=== Seed 完成 ===`)
-  console.log(`默认密码: ${DEFAULT_PASSWORD}`)
+  console.log(`默认密码: 见环境变量 SEED_PASSWORD（不打印）`)
 }
 
 main().catch(e => {
