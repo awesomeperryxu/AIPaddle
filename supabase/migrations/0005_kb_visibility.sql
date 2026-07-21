@@ -10,6 +10,10 @@ alter table public.knowledge_bases
   add column if not exists visibility text not null default 'org'
     check (visibility in ('org', 'restricted'));
 
+-- 先删 0004 的 2 参旧版：加了参数的 create or replace 会建成重载而非替换，
+-- 残留旧版会造成 2 参调用歧义。删后仅保留下面的 3 参版。
+drop function if exists public.match_chunks(vector, int);
+
 create or replace function public.match_chunks(
   query_embedding vector(1536),
   match_count int default 5,
