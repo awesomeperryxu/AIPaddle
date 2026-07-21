@@ -30,6 +30,18 @@ export type Skill = {
   createdAt: string
   updatedAt: string
   mine: boolean // 是否本人发布（区分"我创建"与"从市场安装"）
+  origin: SkillOrigin // 平台/用户
+  mandatory: boolean // 类一 平台内置强制
+  category: SkillCategory // 四类派生
+}
+
+// Skill 四类来源分类（#46）
+export type SkillOrigin = 'platform' | 'user'
+export type SkillCategory = 'platform-builtin' | 'platform-market' | 'user-private' | 'user-shared'
+
+function deriveCategory(origin: SkillOrigin, mandatory: boolean, status: SkillStatus): SkillCategory {
+  if (origin === 'platform') return mandatory ? 'platform-builtin' : 'platform-market'
+  return status === 'draft' ? 'user-private' : 'user-shared'
 }
 
 type Row = {
@@ -45,15 +57,19 @@ type Row = {
   tags: string[] | null
   config: SkillConfig | null
   publisher_id: string
+  origin: SkillOrigin
+  mandatory: boolean
   created_at: string | null
   updated_at: string | null
 }
 
 const COLS =
-  'id,name,description,type,version,installs,rating,risk_level,status,tags,config,publisher_id,created_at,updated_at'
+  'id,name,description,type,version,installs,rating,risk_level,status,tags,config,publisher_id,origin,mandatory,created_at,updated_at'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function mapRow(r: Row, userId?: string): Skill {
+  const origin: SkillOrigin = r.origin === 'platform' ? 'platform' : 'user'
+  const mandatory = !!r.mandatory
   return {
     id: r.id,
     name: r.name,
@@ -69,6 +85,9 @@ function mapRow(r: Row, userId?: string): Skill {
     createdAt: (r.created_at ?? '').slice(0, 10),
     updatedAt: r.updated_at ?? '',
     mine: !!userId && r.publisher_id === userId,
+    origin,
+    mandatory,
+    category: deriveCategory(origin, mandatory, r.status),
   }
 }
 

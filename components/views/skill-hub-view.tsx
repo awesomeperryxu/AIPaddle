@@ -19,10 +19,12 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Plus, Search, Download, Zap, Database, Globe, GitBranch, MessageSquare,
   CheckCircle2, Clock, XCircle, Sparkles,
+  ShieldCheck, Building2, User, Send,
 } from 'lucide-react';
 
 // 客户端 Skill 形状（对齐 /api/skills 响应；不 import 服务端 lib/data）
 type SkillType = 'MCP' | 'API' | 'DB' | 'Workflow' | 'Prompt';
+type SkillCategory = 'platform-builtin' | 'platform-market' | 'user-private' | 'user-shared';
 type Skill = {
   id: string; name: string; description: string; type: SkillType;
   version: string; installs: number; rating: number;
@@ -30,6 +32,9 @@ type Skill = {
   status: 'draft' | 'pending' | 'published';
   tags: string[];
   mine: boolean; // 本人发布（区分"我创建"与"从市场安装"）
+  origin: 'platform' | 'user';
+  mandatory: boolean;
+  category: SkillCategory;
 };
 
 type Props = {
@@ -56,6 +61,13 @@ const statusConfig = {
   draft: { label: '草稿', icon: XCircle, className: 'bg-muted text-muted-foreground' },
   pending: { label: '待审核', icon: Clock, className: 'bg-warning/10 text-warning' },
   published: { label: '已发布', icon: CheckCircle2, className: 'bg-green-500/10 text-green-600' },
+};
+// Skill 四类来源分类（#46）：图标 + 徽章
+const categoryConfig: Record<SkillCategory, { label: string; icon: typeof Globe; className: string }> = {
+  'platform-builtin': { label: '平台内置', icon: ShieldCheck, className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
+  'platform-market': { label: '平台官方', icon: Building2, className: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20' },
+  'user-private': { label: '自建·私有', icon: User, className: 'bg-muted text-muted-foreground border-border' },
+  'user-shared': { label: '自建·已推送', icon: Send, className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
 };
 
 const emptyForm = { name: '', type: 'API' as SkillType, riskLevel: 'low' as Skill['riskLevel'], description: '', mcpServerId: '' };
@@ -92,7 +104,6 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
   const mySkills = filtered.filter((s) => s.mine || installed.has(s.id));
   const pendingSkills = filtered.filter((s) => s.status === 'pending');
   // 来源标签：自建优先，其次已安装
-  const sourceOf = (s: Skill) => (s.mine ? { label: '自建', className: 'bg-primary/10 text-primary' } : installed.has(s.id) ? { label: '已安装', className: 'bg-blue-500/10 text-blue-600' } : null);
 
   const stats = {
     total: skills.length,
@@ -212,8 +223,12 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
               <Badge className={`text-[10px] gap-1 ${statusConfig[skill.status].className}`}>
                 <StatusIcon className="h-3 w-3" />{statusConfig[skill.status].label}
               </Badge>
-              {sourceOf(skill) && (
-                <Badge className={`text-[10px] ${sourceOf(skill)!.className}`}>{sourceOf(skill)!.label}</Badge>
+              <Badge variant="outline" className={`text-[10px] gap-1 ${categoryConfig[skill.category].className}`}>
+                {(() => { const Ic = categoryConfig[skill.category].icon; return <Ic className="h-3 w-3" />; })()}
+                {categoryConfig[skill.category].label}
+              </Badge>
+              {installed.has(skill.id) && !skill.mine && (
+                <span className="text-[10px] text-blue-600 flex items-center gap-0.5"><Download className="h-2.5 w-2.5" />已安装</span>
               )}
               <Badge variant="outline" className={`text-[10px] ${riskConfig[skill.riskLevel].className}`}>
                 {riskConfig[skill.riskLevel].label}风险
