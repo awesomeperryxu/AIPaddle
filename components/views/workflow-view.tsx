@@ -37,7 +37,6 @@ import {
   Save,
   Undo2,
   Redo2,
-  Eye,
   History,
   Variable,
   Braces,
@@ -56,6 +55,12 @@ import {
   Hand,
   GripVertical,
   Trash,
+  Download,
+  AlertTriangle,
+  XCircle,
+  Clock,
+  Send,
+  Lock,
   LucideIcon
 } from 'lucide-react';
 
@@ -208,6 +213,118 @@ const initialConnections: NodeConnection[] = [
   { id: 'conn-2', sourceId: 'llm-1', targetId: 'end-1' }
 ];
 
+// ===== 编辑器功能面板 mock 数据（原型对齐，纯前端演示）=====
+
+type RunStatus = 'succeeded' | 'failed' | 'skipped';
+interface RunStep {
+  node: string;
+  status: RunStatus;
+  ms: number;
+  tokens: number;
+  detail: string;
+  sub?: string[];
+}
+interface RunResult {
+  status: 'succeeded' | 'failed';
+  elapsed: string;
+  tokens: number;
+  cost: string;
+  started: string;
+  input: string;
+  output: string;
+  steps: RunStep[];
+}
+
+const runResultOk: RunResult = {
+  status: 'succeeded',
+  elapsed: '3.42s',
+  tokens: 2841,
+  cost: '¥0.0312',
+  started: '2026-07-17 11:24:05',
+  input: '{ "query": "昨天 Github Trending 前 5 名" }',
+  output: '{ "report": "## Github 热榜日报（07-16）\n1. deepseek-ai/Janus — 14.2k ★ …" }',
+  steps: [
+    { node: '开始', status: 'succeeded', ms: 2, tokens: 0, detail: '输入变量校验通过' },
+    { node: 'HTTP 请求', status: 'succeeded', ms: 486, tokens: 0, detail: 'GET https://api.github.com/trending → 200，重试 0/3' },
+    { node: '列表操作', status: 'succeeded', ms: 4, tokens: 0, detail: '取 Top 5，按 stars 降序' },
+    { node: '迭代 ×5', status: 'succeeded', ms: 1730, tokens: 1968, detail: '5/5 项成功 · 并行度 3 · 子节点：LLM 摘要', sub: ['第 1 项 · 342ms · 402 tok ✓', '第 2 项 · 371ms · 396 tok ✓', '第 3 项 · 355ms · 388 tok ✓', '第 4 项 · 348ms · 391 tok ✓', '第 5 项 · 314ms · 391 tok ✓'] },
+    { node: 'LLM 汇总', status: 'succeeded', ms: 1140, tokens: 873, detail: 'GPT-4-Turbo · temp 0.3 · 输出 812 字' },
+    { node: '模板转换', status: 'succeeded', ms: 6, tokens: 0, detail: 'Markdown 日报模板渲染' },
+    { node: '结束', status: 'succeeded', ms: 1, tokens: 0, detail: '输出 report (string)' }
+  ]
+};
+
+const runResultFail: RunResult = {
+  status: 'failed',
+  elapsed: '10.87s',
+  tokens: 402,
+  cost: '¥0.0044',
+  started: '2026-07-17 10:02:41',
+  input: '{ "query": "昨日热榜" }',
+  output: 'HTTPError: 503 Service Unavailable（已重试 3 次，间隔 1000ms）',
+  steps: [
+    { node: '开始', status: 'succeeded', ms: 2, tokens: 0, detail: '输入变量校验通过' },
+    { node: 'HTTP 请求', status: 'failed', ms: 10462, tokens: 0, detail: '503 × 4 次（重试 3/3 已用尽）· 错误处理：无 → 流程中断' },
+    { node: '列表操作', status: 'skipped', ms: 0, tokens: 0, detail: '未执行' }
+  ]
+};
+
+interface WorkflowVersion {
+  ver: string;
+  time: string;
+  author: string;
+  tag: 'draft' | 'published' | '';
+}
+const workflowVersions: WorkflowVersion[] = [
+  { ver: '当前草稿', time: '2026-07-17 11:20', author: '你', tag: 'draft' },
+  { ver: 'v12', time: '2026-05-04 00:17', author: 'PERRY', tag: 'published' },
+  { ver: 'v11', time: '2026-05-03 22:40', author: 'PERRY', tag: '' },
+  { ver: 'v10', time: '2026-05-01 16:08', author: 'Alice', tag: '' },
+  { ver: 'v9', time: '2026-04-28 10:33', author: 'PERRY', tag: '' }
+];
+
+interface EnvVar { name: string; type: string; secret: boolean; value: string; }
+const envVars: EnvVar[] = [
+  { name: 'API_BASE_URL', type: 'string', secret: false, value: 'https://api.pinqi.cn/v1' },
+  { name: 'GITHUB_TOKEN', type: 'secret', secret: true, value: 'ghp_************3f8a' },
+  { name: 'MAX_RETRY', type: 'number', secret: false, value: '3' }
+];
+
+interface ConvVar { name: string; type: string; def: string; desc: string; refs: number; }
+const convVars: ConvVar[] = [
+  { name: 'user_intent', type: 'string', def: '""', desc: '最近一次识别的用户意图', refs: 3 },
+  { name: 'order_no', type: 'string', def: '""', desc: '会话中提取的订单号', refs: 2 },
+  { name: 'retry_count', type: 'number', def: '0', desc: '澄清追问次数', refs: 1 }
+];
+
+interface SysVar { name: string; type: string; desc: string; }
+const sysVars: SysVar[] = [
+  { name: 'sys.query', type: 'string', desc: '用户最新输入' },
+  { name: 'sys.files', type: 'array[file]', desc: '用户上传的文件' },
+  { name: 'sys.user_id', type: 'string', desc: '用户唯一标识' },
+  { name: 'sys.conversation_id', type: 'string', desc: '会话 ID（Chatflow）' },
+  { name: 'sys.dialogue_count', type: 'number', desc: '对话轮次（Chatflow）' },
+  { name: 'sys.timestamp', type: 'number', desc: '触发时间戳' }
+];
+
+interface ChecklistItem { label: string; ok: boolean; }
+const publishChecklist: ChecklistItem[] = [
+  { label: '所有节点均已连接', ok: true },
+  { label: 'LLM 节点已配置模型与提示词', ok: true },
+  { label: 'End 节点已声明输出变量', ok: true },
+  { label: 'HTTP 请求缺少失败分支（建议配置错误处理）', ok: false },
+  { label: '插件依赖：serpapi ≥ 1.2 已安装', ok: true }
+];
+
+interface ChatMsg { role: 'user' | 'flow' | 'assistant'; content: string; time: string; }
+const chatPreviewMsgs: ChatMsg[] = [
+  { role: 'user', content: '帮我查一下订单 ORD-2026-0715 到哪了', time: '11:26:01' },
+  { role: 'flow', content: '问题分类器 → 订单查询分支 · 参数提取器 → order_no = "ORD-2026-0715"', time: '11:26:02' },
+  { role: 'assistant', content: '您的订单 ORD-2026-0715 正在配送中 🚚\n当前位置：杭州转运中心\n预计送达：明天 12:00 前\n\n对话变量已更新：conversation.order_no = ORD-2026-0715', time: '11:26:03' }
+];
+
+type EditorPanel = 'run' | 'versions' | 'vars' | 'preview' | null;
+
 export function WorkflowView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<AppType>('all');
@@ -218,6 +335,38 @@ export function WorkflowView() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [canvasTool, setCanvasTool] = useState<'select' | 'pan'>('select');
+
+  // 节点库搜索（本地过滤）
+  const [nodeSearch, setNodeSearch] = useState('');
+
+  // 编辑器右侧功能面板
+  const [activePanel, setActivePanel] = useState<EditorPanel>(null);
+  const [runTab, setRunTab] = useState<'result' | 'detail' | 'trace'>('result');
+  const [runCase, setRunCase] = useState<'ok' | 'fail'>('ok');
+  const [varsTab, setVarsTab] = useState<'env' | 'conv' | 'sys'>('env');
+  const [chatInput, setChatInput] = useState('');
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [toast, setToast] = useState('');
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 打开功能面板：清空节点选择，避免右侧配置面板与功能面板同时出现
+  const openPanel = useCallback((panel: Exclude<EditorPanel, null>) => {
+    setActivePanel(panel);
+    setSelectedNode(null);
+    if (panel === 'run') setRunTab('result');
+    if (panel === 'vars') setVarsTab('env');
+  }, []);
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 2600);
+  }, []);
+
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  const isChatflow = selectedApp?.type === 'chatflow';
+  const runResult = runCase === 'ok' ? runResultOk : runResultFail;
   
   // Workflow state
   const [workflowNodes, setWorkflowNodes] = useState<WorkflowNode[]>(initialWorkflowNodes);
@@ -250,6 +399,29 @@ export function WorkflowView() {
     setWorkflowNodes(initialWorkflowNodes);
     setConnections(initialConnections);
     setSelectedNode(null);
+    setActivePanel(null);
+  };
+
+  // 创建空白应用（Workflow / Chatflow）— 原型创建对话框前两个入口
+  const handleCreateBlank = (type: 'workflow' | 'chatflow') => {
+    setIsCreateDialogOpen(false);
+    setSelectedApp({
+      id: 'new',
+      name: type === 'chatflow' ? '新建 Chatflow' : '新建工作流',
+      description: '',
+      type,
+      tags: [],
+      lastEditedBy: 'You',
+      lastEditedAt: new Date().toLocaleString('zh-CN'),
+      status: 'draft',
+      executions: 0,
+      successRate: 0
+    });
+    setWorkflowNodes([{ id: 'start-1', type: 'start', label: '开始', position: { x: 250, y: 50 } }]);
+    setConnections([]);
+    setSelectedNode(null);
+    setActivePanel(null);
+    setIsEditorOpen(true);
   };
 
   // Generate unique node ID
@@ -304,6 +476,7 @@ export function WorkflowView() {
       
       setWorkflowNodes(prev => [...prev, newNode]);
       setSelectedNode(newNode);
+      setActivePanel(null);
     }
     
     setIsDraggingFromSidebar(false);
@@ -323,6 +496,7 @@ export function WorkflowView() {
       y: e.clientY - node.position.y * scale - canvasOffset.y
     });
     setSelectedNode(node);
+    setActivePanel(null);
   }, [canvasTool, zoomLevel, canvasOffset]);
 
   // Handle mouse move for node dragging
@@ -424,31 +598,119 @@ export function WorkflowView() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => openPanel('versions')}
+            >
               <History className="h-4 w-4" />
-              历史版本
+              版本
             </Button>
-            <Button variant="ghost" size="sm" className="gap-1.5">
-              <Eye className="h-4 w-4" />
-              预览
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => openPanel('vars')}
+            >
+              <Variable className="h-4 w-4" />
+              变量
             </Button>
+            {isChatflow && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => openPanel('preview')}
+              >
+                <MessageSquare className="h-4 w-4" />
+                对话预览
+              </Button>
+            )}
+            {/* DSL 导入 / 导出菜单 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  onClick={() => showToast('DSL 导入：解析 YAML → 校验节点/插件依赖 → 生成画布（原型模拟）')}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  导入 DSL（YAML）
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => showToast(`已导出 ${selectedApp?.name ?? ''}.yml（DSL v0.5）`)}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  导出 DSL（YAML）
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <div className="h-4 w-px bg-border mx-1" />
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-8 w-8" title="撤销 ⌘Z">
               <Undo2 className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-8 w-8" title="重做 ⇧⌘Z">
               <Redo2 className="h-4 w-4" />
             </Button>
             <div className="h-4 w-px bg-border mx-1" />
-            <Button variant="outline" size="sm" className="gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => openPanel('run')}
+            >
               <Play className="h-4 w-4" />
               运行
             </Button>
-            <Button size="sm" className="gap-1.5">
-              <Save className="h-4 w-4" />
-              发布
-            </Button>
+            {/* 发布 · 带发布前检查清单 */}
+            <DropdownMenu open={publishOpen} onOpenChange={setPublishOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" className="gap-1.5">
+                  <Save className="h-4 w-4" />
+                  发布
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80 p-4">
+                <h4 className="text-sm font-semibold text-foreground mb-3">发布前检查清单</h4>
+                <div className="space-y-2 mb-3">
+                  {publishChecklist.map((c) => (
+                    <div key={c.label} className="flex items-start gap-2">
+                      {c.ok ? (
+                        <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                      )}
+                      <span className="text-xs text-foreground leading-relaxed">{c.label}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setPublishOpen(false)}
+                  >
+                    先去修复
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      setPublishOpen(false);
+                      showToast('已发布新版本 v13 · 线上流量已切换');
+                    }}
+                  >
+                    仍要发布
+                  </Button>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -456,15 +718,41 @@ export function WorkflowView() {
           {/* Left Sidebar - Node Library */}
           <div className={`border-r border-border bg-card transition-all duration-200 ${isSidebarCollapsed ? 'w-12' : 'w-60'}`}>
             <div className="h-10 border-b border-border flex items-center justify-between px-3">
-              {!isSidebarCollapsed && <span className="text-xs font-medium text-muted-foreground">节点库</span>}
+              {!isSidebarCollapsed && (
+                <span className="text-xs font-medium text-muted-foreground">
+                  节点库（{Object.keys(nodeTypeConfig).length} 种）
+                </span>
+              )}
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}>
                 {isSidebarCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
               </Button>
             </div>
             {!isSidebarCollapsed && (
-              <ScrollArea className="h-[calc(100%-40px)]">
+              <>
+                <div className="px-3 pt-2.5">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="搜索节点..."
+                      value={nodeSearch}
+                      onChange={(e) => setNodeSearch(e.target.value)}
+                      className="h-7 pl-7 text-xs bg-muted/40"
+                    />
+                  </div>
+                </div>
+              <ScrollArea className="h-[calc(100%-72px)]">
                 <div className="p-3 space-y-4">
-                  {nodeCategories.map((category) => (
+                  {nodeCategories
+                    .map((category) => ({
+                      ...category,
+                      types: category.types.filter((type) => {
+                        const q = nodeSearch.trim().toLowerCase();
+                        if (!q) return true;
+                        return nodeTypeConfig[type].label.toLowerCase().includes(q) || type.includes(q);
+                      })
+                    }))
+                    .filter((category) => category.types.length > 0)
+                    .map((category) => (
                     <div key={category.id}>
                       <p className="text-xs font-medium text-muted-foreground mb-2">{category.label}</p>
                       <div className="space-y-1">
@@ -493,11 +781,12 @@ export function WorkflowView() {
                   {/* Drag hint */}
                   <div className="pt-4 border-t border-border">
                     <p className="text-xs text-muted-foreground text-center">
-                      拖拽节点到画布中添加
+                      拖拽到画布添加 · ⌘C/⌘V 复制粘贴 · Delete 删除
                     </p>
                   </div>
                 </div>
               </ScrollArea>
+              </>
             )}
           </div>
 
@@ -632,6 +921,7 @@ export function WorkflowView() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedNode(node);
+                          setActivePanel(null);
                         }}
                       >
                         {/* Start/End nodes - 设计规范: 240px宽, 80px高, rounded-xl */}
@@ -701,8 +991,8 @@ export function WorkflowView() {
           </div>
 
           {/* Right Sidebar - Node Config - 设计规范: 380px */}
-          {selectedNode && (
-            <div className="border-l border-gray-200 bg-white shadow-xl" style={{ width: 380 }}>
+          {selectedNode && !activePanel && (
+            <div className="border-l border-border bg-card shadow-xl" style={{ width: 380 }}>
               <div className="h-10 border-b border-gray-200 flex items-center justify-between px-3">
                 <span className="text-xs font-medium text-muted-foreground">节点配置</span>
                 <div className="flex items-center gap-1">
@@ -943,7 +1233,333 @@ export function WorkflowView() {
               </ScrollArea>
             </div>
           )}
+
+          {/* 功能面板 · 运行调试 */}
+          {activePanel === 'run' && (
+            <div className="border-l border-border bg-card flex flex-col" style={{ width: 420 }}>
+              <div className="border-b border-border p-3 px-4">
+                <div className="flex items-center justify-between mb-2.5">
+                  <h3 className="text-sm font-semibold text-foreground">运行调试</h3>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant={runCase === 'ok' ? 'secondary' : 'outline'}
+                      size="sm"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => setRunCase('ok')}
+                    >
+                      成功示例
+                    </Button>
+                    <Button
+                      variant={runCase === 'fail' ? 'secondary' : 'outline'}
+                      size="sm"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => setRunCase('fail')}
+                    >
+                      失败示例
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setActivePanel(null)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <Tabs value={runTab} onValueChange={(v) => setRunTab(v as 'result' | 'detail' | 'trace')}>
+                  <TabsList className="h-7 w-full bg-muted/50">
+                    <TabsTrigger value="result" className="flex-1 text-xs">结果</TabsTrigger>
+                    <TabsTrigger value="detail" className="flex-1 text-xs">详情</TabsTrigger>
+                    <TabsTrigger value="trace" className="flex-1 text-xs">追踪</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="p-4 space-y-3">
+                  <div
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg ${runResult.status === 'succeeded' ? 'bg-green-500/10' : 'bg-destructive/10'}`}
+                  >
+                    <span className={`text-sm font-semibold ${runResult.status === 'succeeded' ? 'text-green-500' : 'text-destructive'}`}>
+                      {runResult.status === 'succeeded' ? '运行成功' : '运行失败'}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{runResult.started}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2 rounded-md bg-muted/40 text-center">
+                      <p className="text-sm font-semibold text-foreground">{runResult.elapsed}</p>
+                      <p className="text-[11px] text-muted-foreground">耗时</p>
+                    </div>
+                    <div className="p-2 rounded-md bg-muted/40 text-center">
+                      <p className="text-sm font-semibold text-foreground">{runResult.tokens.toLocaleString('en-US')}</p>
+                      <p className="text-[11px] text-muted-foreground">Tokens</p>
+                    </div>
+                    <div className="p-2 rounded-md bg-muted/40 text-center">
+                      <p className="text-sm font-semibold text-foreground">{runResult.cost}</p>
+                      <p className="text-[11px] text-muted-foreground">成本</p>
+                    </div>
+                  </div>
+
+                  {runTab === 'result' && (
+                    <>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5">INPUT</p>
+                        <pre className="p-2.5 rounded-md bg-muted/50 text-[11px] text-foreground font-mono whitespace-pre-wrap break-all">{runResult.input}</pre>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5">OUTPUT</p>
+                        <pre className={`p-2.5 rounded-md bg-muted/50 text-[11px] font-mono whitespace-pre-wrap break-all ${runResult.status === 'succeeded' ? 'text-green-500' : 'text-destructive'}`}>{runResult.output}</pre>
+                      </div>
+                    </>
+                  )}
+
+                  {runTab === 'detail' && (
+                    <div className="space-y-1.5">
+                      {runResult.steps.map((s, i) => (
+                        <div key={i} className="flex items-center gap-2.5 px-2.5 py-2 rounded-md bg-muted/[0.35]">
+                          <span className="text-sm text-foreground flex-1 min-w-0 truncate">{s.node}</span>
+                          <span className="text-[11px] text-muted-foreground shrink-0">{s.ms}ms · {s.tokens} tok</span>
+                          {s.status === 'succeeded' ? (
+                            <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                          ) : s.status === 'failed' ? (
+                            <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />
+                          ) : (
+                            <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {runTab === 'trace' && (
+                    <div className="space-y-2">
+                      {runResult.steps.map((s, i) => (
+                        <div
+                          key={i}
+                          className="px-3 py-2.5 rounded-md bg-muted/[0.35] border-l-[3px]"
+                          style={{ borderLeftColor: s.status === 'succeeded' ? '#22c55e' : s.status === 'failed' ? 'hsl(var(--destructive))' : '#94a3b8' }}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            {s.status === 'succeeded' ? (
+                              <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                            ) : s.status === 'failed' ? (
+                              <XCircle className="h-3.5 w-3.5 text-destructive" />
+                            ) : (
+                              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
+                            <span className="text-sm font-medium text-foreground">{s.node}</span>
+                            <span className="text-[11px] text-muted-foreground ml-auto">{s.ms}ms</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-relaxed">{s.detail}</p>
+                          {s.sub && s.sub.length > 0 && (
+                            <div className="mt-1.5 pl-2.5 border-l border-border space-y-1">
+                              {s.sub.map((sub, j) => (
+                                <p key={j} className="text-[11px] text-muted-foreground font-mono">{sub}</p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+
+          {/* 功能面板 · 版本历史 */}
+          {activePanel === 'versions' && (
+            <div className="border-l border-border bg-card flex flex-col" style={{ width: 340 }}>
+              <div className="h-11 border-b border-border flex items-center justify-between px-4">
+                <h3 className="text-sm font-semibold text-foreground">版本历史</h3>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setActivePanel(null)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="p-3 space-y-2">
+                  {workflowVersions.map((v) => (
+                    <div key={v.ver} className="px-3 py-2.5 rounded-lg border border-border bg-muted/[0.25]">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-semibold text-foreground">{v.ver}</span>
+                        {v.tag === 'draft' && <Badge className="bg-primary/15 text-primary text-[10px] px-1.5 py-0">编辑中</Badge>}
+                        {v.tag === 'published' && <Badge className="bg-green-500/15 text-green-500 text-[10px] px-1.5 py-0">线上版本</Badge>}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="ml-auto h-6 px-2 text-[11px] text-primary border-primary/35"
+                          onClick={() => showToast(`已恢复到 ${v.ver}（生成新草稿，不影响线上版本）`)}
+                        >
+                          恢复
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{v.author} · {v.time}</p>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+
+          {/* 功能面板 · 变量管理 */}
+          {activePanel === 'vars' && (
+            <div className="border-l border-border bg-card flex flex-col" style={{ width: 380 }}>
+              <div className="border-b border-border p-3 px-4">
+                <div className="flex items-center justify-between mb-2.5">
+                  <h3 className="text-sm font-semibold text-foreground">变量管理</h3>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setActivePanel(null)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Tabs value={varsTab} onValueChange={(v) => setVarsTab(v as 'env' | 'conv' | 'sys')}>
+                  <TabsList className="h-7 w-full bg-muted/50">
+                    <TabsTrigger value="env" className="flex-1 text-xs">环境变量</TabsTrigger>
+                    <TabsTrigger value="conv" className="flex-1 text-xs">对话变量</TabsTrigger>
+                    <TabsTrigger value="sys" className="flex-1 text-xs">系统变量</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="p-4 space-y-2">
+                  {varsTab === 'env' && (
+                    <>
+                      {envVars.map((ev) => (
+                        <div key={ev.name} className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-muted/[0.35] border border-border">
+                          <span className="w-6 h-6 rounded bg-primary/15 flex items-center justify-center shrink-0">
+                            <Lock className="h-3 w-3 text-primary" />
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-medium text-foreground font-mono">{ev.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono truncate">{ev.value}</p>
+                          </div>
+                          {ev.secret && <Badge className="bg-amber-500/15 text-amber-500 text-[10px] px-1.5 py-0 shrink-0">加密</Badge>}
+                          <span className="text-[11px] text-muted-foreground shrink-0">{ev.type}</span>
+                        </div>
+                      ))}
+                      <Button
+                        variant="outline"
+                        className="w-full h-8 gap-1.5 text-[13px] border-dashed"
+                        onClick={() => showToast('新增环境变量（secret 类型加密存储，导出 DSL 时脱敏）')}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        新增环境变量
+                      </Button>
+                    </>
+                  )}
+                  {varsTab === 'conv' && (
+                    <>
+                      <p className="text-xs text-muted-foreground mb-1">Chatflow 专属 · 跨轮次持久化 · 重命名自动更新节点引用</p>
+                      {convVars.map((cv) => (
+                        <div key={cv.name} className="px-3 py-2.5 rounded-lg bg-muted/[0.35] border border-border">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium text-foreground font-mono">conversation.{cv.name}</span>
+                            <span className="text-[11px] text-muted-foreground">{cv.type}</span>
+                            <Badge className="ml-auto bg-teal-500/15 text-teal-500 text-[10px] px-1.5 py-0">{cv.refs} 处引用</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">{cv.desc} · 默认 {cv.def}</p>
+                        </div>
+                      ))}
+                      <Button
+                        variant="outline"
+                        className="w-full h-8 gap-1.5 text-[13px] border-dashed"
+                        onClick={() => showToast('新增对话变量；重命名会自动更新 3 处节点引用（影响分析）')}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        新增对话变量
+                      </Button>
+                    </>
+                  )}
+                  {varsTab === 'sys' && (
+                    <>
+                      <p className="text-xs text-muted-foreground mb-1">全局只读，所有节点可引用</p>
+                      {sysVars.map((sv) => (
+                        <div key={sv.name} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-muted/[0.35]">
+                          <span className="text-[13px] text-foreground font-mono shrink-0">{sv.name}</span>
+                          <span className="text-[11px] text-teal-500 shrink-0">{sv.type}</span>
+                          <span className="text-xs text-muted-foreground ml-auto text-right">{sv.desc}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+
+          {/* 功能面板 · 对话预览（仅 Chatflow） */}
+          {activePanel === 'preview' && (
+            <div className="border-l border-border bg-card flex flex-col" style={{ width: 400 }}>
+              <div className="h-11 border-b border-border flex items-center justify-between px-4">
+                <h3 className="text-sm font-semibold text-foreground">
+                  对话预览 <span className="text-[11px] font-normal text-muted-foreground">流式输出 · 当前草稿</span>
+                </h3>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setActivePanel(null)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="p-4 flex flex-col gap-3">
+                  {chatPreviewMsgs.map((m, i) => {
+                    if (m.role === 'user') {
+                      return (
+                        <div key={i} className="self-end max-w-[85%]">
+                          <div className="px-3 py-2.5 rounded-xl rounded-br-sm bg-primary">
+                            <p className="text-[13px] text-primary-foreground whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground text-right mt-1">{m.time}</p>
+                        </div>
+                      );
+                    }
+                    if (m.role === 'flow') {
+                      return (
+                        <div key={i} className="self-stretch px-2.5 py-2 rounded-md bg-teal-500/[0.08] border border-dashed border-teal-500/35">
+                          <p className="text-[11px] text-teal-500 font-mono leading-relaxed">⚙ {m.content}</p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={i} className="self-start max-w-[85%]">
+                        <div className="px-3 py-2.5 rounded-xl rounded-bl-sm bg-muted/50 border border-border">
+                          <p className="text-[13px] text-foreground whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1">{m.time}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+              <div className="p-3 border-t border-border flex gap-2">
+                <Input
+                  placeholder="输入消息测试当前流程..."
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && chatInput.trim()) {
+                      setChatInput('');
+                      showToast('对话预览：消息已发送（流式输出模拟）');
+                    }
+                  }}
+                  className="flex-1 h-9 text-[13px]"
+                />
+                <Button
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={() => {
+                    if (chatInput.trim()) {
+                      setChatInput('');
+                      showToast('对话预览：消息已发送（流式输出模拟）');
+                    }
+                  }}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Toast 提示（原型模拟反馈） */}
+        {toast && (
+          <div className="fixed bottom-6 right-6 z-[400] flex items-center gap-2 rounded-lg border border-green-500/40 bg-card px-4 py-3 shadow-2xl">
+            <CheckCircle className="h-4 w-4 text-green-500" />
+            <span className="text-[13px] text-foreground">{toast}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -970,55 +1586,48 @@ export function WorkflowView() {
               <DialogDescription>选择创建方式开始构建你的 AI 应用</DialogDescription>
             </DialogHeader>
             <div className="grid gap-3 py-4">
-              <div 
+              {/* ① Workflow（批处理 / API） */}
+              <div
+                className="flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors"
+                onClick={() => handleCreateBlank('workflow')}
+              >
+                <div className="w-11 h-11 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                  <GitBranch className="h-5 w-5 text-blue-500" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-foreground">Workflow（批处理 / API）</h3>
+                  <p className="text-sm text-muted-foreground">以 End 节点输出，支持 Webhook / 定时 / 插件触发</p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground ml-auto" />
+              </div>
+              {/* ② Chatflow（对话场景） */}
+              <div
+                className="flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors"
+                onClick={() => handleCreateBlank('chatflow')}
+              >
+                <div className="w-11 h-11 rounded-lg bg-green-500/10 flex items-center justify-center">
+                  <MessageSquare className="h-5 w-5 text-green-500" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-foreground">Chatflow（对话场景）</h3>
+                  <p className="text-sm text-muted-foreground">以 Answer 节点流式输出，支持多轮上下文与对话变量</p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground ml-auto" />
+              </div>
+              {/* ③ 导入 DSL 文件 */}
+              <div
                 className="flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors"
                 onClick={() => {
                   setIsCreateDialogOpen(false);
-                  setSelectedApp({
-                    id: 'new',
-                    name: '新建工作流',
-                    description: '',
-                    type: 'workflow',
-                    tags: [],
-                    lastEditedBy: 'You',
-                    lastEditedAt: new Date().toLocaleString('zh-CN'),
-                    status: 'draft',
-                    executions: 0,
-                    successRate: 0
-                  });
-                  setWorkflowNodes([
-                    { id: 'start-1', type: 'start', label: '开始', position: { x: 250, y: 50 } }
-                  ]);
-                  setConnections([]);
-                  setIsEditorOpen(true);
+                  showToast('DSL 导入：解析 YAML → 校验节点/插件依赖 → 生成画布（原型模拟）');
                 }}
               >
-                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <FileText className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-medium text-foreground">创建空白应用</h3>
-                  <p className="text-sm text-muted-foreground">从零开始构建你的工作流</p>
-                </div>
-                <ChevronRight className="h-5 w-5 text-muted-foreground ml-auto" />
-              </div>
-              <div className="flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center">
-                  <Copy className="h-6 w-6 text-accent" />
-                </div>
-                <div>
-                  <h3 className="font-medium text-foreground">从应用模板创建</h3>
-                  <p className="text-sm text-muted-foreground">使用预设模板快速开始</p>
-                </div>
-                <ChevronRight className="h-5 w-5 text-muted-foreground ml-auto" />
-              </div>
-              <div className="flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                <div className="w-12 h-12 rounded-lg bg-green-500/10 flex items-center justify-center">
-                  <Upload className="h-6 w-6 text-green-500" />
+                <div className="w-11 h-11 rounded-lg bg-teal-500/10 flex items-center justify-center">
+                  <Upload className="h-5 w-5 text-teal-500" />
                 </div>
                 <div>
                   <h3 className="font-medium text-foreground">导入 DSL 文件</h3>
-                  <p className="text-sm text-muted-foreground">导入已有的工作流配置</p>
+                  <p className="text-sm text-muted-foreground">导入 YAML 格式的工作流配置</p>
                 </div>
                 <ChevronRight className="h-5 w-5 text-muted-foreground ml-auto" />
               </div>
@@ -1026,7 +1635,7 @@ export function WorkflowView() {
             {/* Drop zone */}
             <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
               <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">拖放 DSL 文件到此处创建应用</p>
+              <p className="text-sm text-muted-foreground">拖放 DSL（.yml）文件到此处创建应用</p>
             </div>
           </DialogContent>
         </Dialog>
@@ -1166,6 +1775,14 @@ export function WorkflowView() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Toast 提示（原型模拟反馈） */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[400] flex items-center gap-2 rounded-lg border border-green-500/40 bg-card px-4 py-3 shadow-2xl">
+          <CheckCircle className="h-4 w-4 text-green-500" />
+          <span className="text-[13px] text-foreground">{toast}</span>
+        </div>
+      )}
     </div>
   );
 }
