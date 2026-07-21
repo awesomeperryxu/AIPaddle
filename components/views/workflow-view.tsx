@@ -981,7 +981,7 @@ export function WorkflowView() {
                           <path
                             d={getConnectionPath(sourceNode, targetNode)}
                             fill="none"
-                            stroke="hsl(var(--border))"
+                            stroke="var(--border)"
                             strokeWidth="2"
                             className="transition-colors"
                           />
@@ -990,7 +990,7 @@ export function WorkflowView() {
                             cx={targetNode.position.x + 100}
                             cy={targetNode.position.y - 4}
                             r="3"
-                            fill="hsl(var(--border))"
+                            fill="var(--border)"
                           />
                         </g>
                       );
@@ -1427,7 +1427,7 @@ export function WorkflowView() {
                         <div
                           key={i}
                           className="px-3 py-2.5 rounded-md bg-muted/[0.35] border-l-[3px]"
-                          style={{ borderLeftColor: s.status === 'succeeded' ? '#22c55e' : s.status === 'failed' ? 'hsl(var(--destructive))' : '#94a3b8' }}
+                          style={{ borderLeftColor: s.status === 'succeeded' ? '#22c55e' : s.status === 'failed' ? 'var(--destructive)' : '#94a3b8' }}
                         >
                           <div className="flex items-center gap-2 mb-1">
                             {s.status === 'succeeded' ? (
