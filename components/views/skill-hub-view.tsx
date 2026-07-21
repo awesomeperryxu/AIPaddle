@@ -15,9 +15,10 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiFetch } from '@/lib/api/client';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Plus, Search, Download, Zap, Database, Globe, GitBranch, MessageSquare,
-  CheckCircle2, Clock, XCircle,
+  CheckCircle2, Clock, XCircle, Sparkles,
 } from 'lucide-react';
 
 // 客户端 Skill 形状（对齐 /api/skills 响应；不 import 服务端 lib/data）
@@ -71,6 +72,10 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [creating, setCreating] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotDesc, setCopilotDesc] = useState('');
+  const [copiloting, setCopiloting] = useState(false);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
 
   const installed = new Set(installedIds);
@@ -131,6 +136,21 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
       setTestResult({ ok: false, text: e instanceof Error ? e.message : '试跑失败' });
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function handleCopilot() {
+    setCopiloting(true);
+    setCopilotError(null);
+    try {
+      await apiFetch('/api/skills/copilot', { method: 'POST', body: JSON.stringify({ description: copilotDesc }) });
+      setCopilotOpen(false);
+      setCopilotDesc('');
+      router.refresh();
+    } catch (e) {
+      setCopilotError(e instanceof Error ? e.message : '生成失败');
+    } finally {
+      setCopiloting(false);
     }
   }
 
@@ -208,10 +228,16 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
             <p className="text-sm text-muted-foreground mt-0.5">企业 AI 能力市场</p>
           </div>
           {canCreate && (
-            <Button className="gap-2 shadow-sm" data-testid="create-skill" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" />
-              创建 Skill
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" className="gap-2" data-testid="skill-copilot" onClick={() => setCopilotOpen(true)}>
+                <Sparkles className="h-4 w-4" />
+                AI 帮我建
+              </Button>
+              <Button className="gap-2 shadow-sm" data-testid="create-skill" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4" />
+                创建 Skill
+              </Button>
+            </div>
           )}
         </div>
 
@@ -396,6 +422,31 @@ export function SkillHubView({ skills, installedIds, mcpServers, canCreate, canR
           </Card>
         </div>
       )}
+
+      {/* AI 帮我建（Skill Copilot，4.3.3）*/}
+      <Dialog open={copilotOpen} onOpenChange={setCopilotOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>AI 帮我建 Skill</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="copilot-desc">描述你想要的 Skill</Label>
+            <Textarea
+              id="copilot-desc" data-testid="copilot-desc" rows={4}
+              placeholder="例如：一个查询企业通讯录的只读工具"
+              value={copilotDesc} onChange={(e) => setCopilotDesc(e.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground">生成物为草稿，需人工审核发布；MCP 型只会封装你有权限的已审批 Server。</p>
+            {copilotError && <p className="text-xs text-destructive">{copilotError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCopilotOpen(false)}>取消</Button>
+            <Button disabled={copiloting || copilotDesc.trim().length < 4} onClick={handleCopilot}>
+              {copiloting ? '生成中...' : '生成草稿'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 创建 Skill 对话框 */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
