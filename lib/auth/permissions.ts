@@ -11,6 +11,12 @@ export type Action =
   | 'agent:submit'
   | 'agent:review'
   | 'agent:chat'
+  | 'mcp:create'
+  | 'mcp:update'
+  | 'mcp:delete'
+  | 'mcp:submit'
+  | 'mcp:review'
+  | 'mcp:read'
   | 'knowledge:create'
   | 'knowledge:read'
   | 'knowledge:delete'
@@ -32,6 +38,13 @@ const MATRIX: Record<Action, Role[]> = {
   'agent:submit': ['Admin', 'Developer'],
   'agent:review': ['Admin', 'Auditor'],
   'agent:chat': ['Admin', 'Developer', 'User', 'Auditor'],
+  // MCP 管理中心（4.3.0，ADR-004）：注册/编辑=Admin/Developer；审批·启停=Admin/Auditor（治理动作）
+  'mcp:create': ['Admin', 'Developer'],
+  'mcp:update': ['Admin', 'Developer'],
+  'mcp:delete': ['Admin'],
+  'mcp:submit': ['Admin', 'Developer'],
+  'mcp:review': ['Admin', 'Auditor'],
+  'mcp:read': ['Admin', 'Auditor'], // 管理端全量清单（含 draft/pending）；my_mcp_servers 视图另走
   'knowledge:create': ['Admin', 'Developer'],
   'knowledge:read': ['Admin', 'Developer', 'User', 'Auditor'],
   'knowledge:delete': ['Admin', 'Developer'],
