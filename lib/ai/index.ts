@@ -7,6 +7,8 @@ import 'server-only'
 const BASE = (process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1').replace(/\/$/, '')
 const KEY = process.env.DASHSCOPE_API_KEY
 const LLM_MODEL = process.env.LLM_MODEL || 'qwen-plus'
+// 多模态视觉模型（#55 · Block C）：含图片附件的消息改走 qwen-vl（DashScope 兼容多模态 content 数组）。
+export const VL_MODEL = process.env.VL_MODEL || 'qwen-vl-max'
 const EMBED_MODEL = process.env.EMBEDDING_MODEL || 'text-embedding-v4'
 export const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM || 1536)
 
@@ -53,7 +55,11 @@ export async function embedOne(text: string): Promise<number[]> {
 }
 
 // ── 对话 ─────────────────────────────────────────────────────
-export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+// content 支持纯字符串或多模态数组（DashScope OpenAI 兼容：text + image_url）。
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string | ContentPart[] }
 
 export async function chat(
   messages: ChatMessage[],

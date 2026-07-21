@@ -5,23 +5,27 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { apiFetch } from '@/lib/api/client';
 import {
   Send, Bot, User, Sparkles, Plus, Zap, FileText, Image as ImageIcon,
-  Loader2, Trash2, MessageSquare,
+  Loader2, Trash2, MessageSquare, X,
 } from 'lucide-react';
 
 type Citation = { documentId: string; filename: string; snippet: string; similarity: number };
-type Msg = { id: string; role: 'user' | 'assistant' | 'system'; content: string; citations: Citation[] };
+// 消息附件（#55）：仅用于气泡展示（doc 只留文件名，image 可缩略）
+type MsgAttachment = { kind: 'doc' | 'image'; filename: string; dataUrl?: string };
+type Msg = { id: string; role: 'user' | 'assistant' | 'system'; content: string; citations: Citation[]; attachments?: MsgAttachment[] };
 type Conversation = { id: string; title: string; updatedAt: string };
 type Res = { id: string; name: string };
+// 待发送附件（#55 · Block B/C）：doc 携带解析文本；image 携带 base64 data URL
+type ClientAttachment =
+  | { kind: 'doc'; filename: string; text: string }
+  | { kind: 'image'; filename: string; dataUrl: string };
 
-// 快捷动作（切片1 暂不实现，置灰；切片3 接工具能力）
-const QUICK_ACTIONS = [
-  { icon: FileText, label: '总结文档' },
-  { icon: Zap, label: '创建 Skill' },
-  { icon: ImageIcon, label: '分析图片' },
-];
+const MAX_ATTACHMENTS = 8; // 单条最多附件数
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 图片单文件 10MB
 
 export function AssistantView() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -37,12 +41,73 @@ export function AssistantView() {
   const [resources, setResources] = useState<{ agents: Res[]; skills: Res[]; knowledgeBases: (Res & { documentCount?: number })[] }>({ agents: [], skills: [], knowledgeBases: [] });
   const [pickedAgent, setPickedAgent] = useState<Res | null>(null);
   const [pickedSkill, setPickedSkill] = useState<Res | null>(null);
+  // #55 Block A：/skill、@agent 引用列表（插入文本 token）
+  const [skillList, setSkillList] = useState<Res[]>([]);
+  const [agentList, setAgentList] = useState<Res[]>([]);
+  // #55 Block B/C：待发送附件 + 上传态 + 文件选择器
+  const [attachments, setAttachments] = useState<ClientAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const imgInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     apiFetch<typeof resources>('/api/assistant/resources')
       .then(setResources)
       .catch(() => {});
+    apiFetch<{ skills: Res[] }>('/api/skills').then((r) => setSkillList(r.skills ?? [])).catch(() => {});
+    apiFetch<{ agents: Res[] }>('/api/agents').then((r) => setAgentList(r.agents ?? [])).catch(() => {});
   }, []);
+
+  // 在输入框末尾插入 /{name} 或 @{name} 引用 token（Block A）
+  function insertToken(token: string) {
+    setInput((v) => `${v}${v && !v.endsWith(' ') ? ' ' : ''}${token} `);
+  }
+
+  // 选文档 → 上传 /api/assistant/attachments 解析为文本（Block B）
+  async function onPickDocs(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const room = MAX_ATTACHMENTS - attachments.length;
+    const picked = Array.from(files).slice(0, room);
+    if (picked.length === 0) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      picked.forEach((f) => fd.append('files', f));
+      const res = await fetch('/api/assistant/attachments', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message ?? '上传失败');
+      const { attachments: parsed } = (await res.json()) as { attachments: ClientAttachment[] };
+      setAttachments((a) => [...a, ...parsed].slice(0, MAX_ATTACHMENTS));
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '文档解析失败');
+    } finally {
+      setUploading(false);
+      if (docInputRef.current) docInputRef.current.value = '';
+    }
+  }
+
+  // 选图片 → 前端读为 base64 data URL（Block C）
+  async function onPickImages(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const room = MAX_ATTACHMENTS - attachments.length;
+    const picked = Array.from(files).slice(0, room);
+    const next: ClientAttachment[] = [];
+    for (const f of picked) {
+      if (f.size > MAX_IMAGE_SIZE) { window.alert(`「${f.name}」超出 10MB 限制`); continue; }
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('读取失败'));
+        reader.readAsDataURL(f);
+      }).catch(() => '');
+      if (dataUrl) next.push({ kind: 'image', filename: f.name, dataUrl });
+    }
+    setAttachments((a) => [...a, ...next].slice(0, MAX_ATTACHMENTS));
+    if (imgInputRef.current) imgInputRef.current.value = '';
+  }
+
+  function removeAttachment(i: number) {
+    setAttachments((a) => a.filter((_, idx) => idx !== i));
+  }
 
   // 输入以 @ 或 / 开头时显示资源选择器
   const pickerMode: 'agent' | 'skill' | null =
@@ -102,18 +167,23 @@ export function AssistantView() {
   }
 
   async function send() {
-    const text = input.trim();
-    if (!text || sending) return;
+    let text = input.trim();
+    const atts = attachments;
+    if ((!text && atts.length === 0) || sending) return;
+    // 仅附件无提问：给个默认指令，后端要求 content 非空
+    if (!text) text = atts.some((a) => a.kind === 'image') ? '请分析这些图片' : '请总结这些文档';
     const agent = pickedAgent, skill = pickedSkill;
     setInput('');
+    setAttachments([]);
     setSending(true); setStreamText(''); setStreamCitations([]);
     const convId = await ensureConversation();
     const prefix = agent ? `@${agent.name} ` : skill ? `/${skill.name} ` : '';
-    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: prefix + text, citations: [] }]);
+    const msgAtts: MsgAttachment[] = atts.map((a) => ({ kind: a.kind, filename: a.filename, dataUrl: a.kind === 'image' ? a.dataUrl : undefined }));
+    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: prefix + text, citations: [], attachments: msgAtts }]);
     try {
       const res = await fetch(`/api/assistant/conversations/${convId}/messages`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content: text, agentId: agent?.id, skillId: skill?.id }),
+        body: JSON.stringify({ content: text, agentId: agent?.id, skillId: skill?.id, attachments: atts }),
       });
       if (!res.ok || !res.body) throw new Error('发送失败');
       const reader = res.body.getReader();
@@ -210,7 +280,7 @@ export function AssistantView() {
           )}
 
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} role={msg.role} content={msg.content} citations={msg.citations} />
+            <MessageBubble key={msg.id} role={msg.role} content={msg.content} citations={msg.citations} attachments={msg.attachments} />
           ))}
 
           {sending && (
@@ -239,14 +309,37 @@ export function AssistantView() {
               ))}
             </div>
           )}
-          <div className="flex gap-2 items-center">
-            {QUICK_ACTIONS.map((a) => (
-              <Button key={a.label} variant="outline" size="sm" className="gap-2" disabled title="即将支持">
-                <a.icon className="h-4 w-4" />{a.label}
-              </Button>
-            ))}
-            <span className="ml-auto text-xs text-muted-foreground">输入 @ 调 Agent，/ 调 Skill</span>
+          {/* 隐藏文件选择器 */}
+          <input ref={docInputRef} type="file" multiple accept=".doc,.docx,.pdf,.ppt,.pptx,.xls,.xlsx,.txt,.md" className="hidden"
+            onChange={(e) => onPickDocs(e.target.files)} />
+          <input ref={imgInputRef} type="file" multiple accept="image/*" className="hidden"
+            onChange={(e) => onPickImages(e.target.files)} />
+          {/* 快捷动作（#55 Block A）：总结文档 / 分析图片 / /skill / @agent */}
+          <div className="flex gap-2 items-center flex-wrap">
+            <Button variant="outline" size="sm" className="gap-2" disabled={uploading || attachments.length >= MAX_ATTACHMENTS}
+              onClick={() => docInputRef.current?.click()}>
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}📄 总结文档
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2" disabled={attachments.length >= MAX_ATTACHMENTS}
+              onClick={() => imgInputRef.current?.click()}>
+              <ImageIcon className="h-4 w-4" />🖼 分析图片
+            </Button>
+            <RefPicker kind="skill" items={skillList} onInsert={insertToken} />
+            <RefPicker kind="agent" items={agentList} onInsert={insertToken} />
+            <span className="ml-auto text-xs text-muted-foreground">@ 调 Agent，/ 调 Skill</span>
           </div>
+          {/* 待发送附件 chips（#55 Block B/C）*/}
+          {attachments.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {attachments.map((a, i) => (
+                <Badge key={`${a.filename}-${i}`} variant="secondary" className="gap-1 max-w-[16rem]">
+                  {a.kind === 'image' ? <ImageIcon className="h-3 w-3 shrink-0" /> : <FileText className="h-3 w-3 shrink-0" />}
+                  <span className="truncate">{a.filename}</span>
+                  <button onClick={() => removeAttachment(i)} aria-label="移除附件" className="ml-0.5 shrink-0"><X className="h-3 w-3" /></button>
+                </Badge>
+              ))}
+            </div>
+          )}
           {(pickedAgent || pickedSkill) && (
             <div>
               <Badge variant="secondary" className="gap-1">
@@ -265,58 +358,52 @@ export function AssistantView() {
               disabled={sending}
               className="py-6 bg-card border-border"
             />
-            <Button size="icon" aria-label="发送" className="h-12 w-12 rounded-xl" onClick={send} disabled={sending || !input.trim()}>
+            <Button size="icon" aria-label="发送" className="h-12 w-12 rounded-xl" onClick={send} disabled={sending || (!input.trim() && attachments.length === 0)}>
               {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
             </Button>
           </div>
         </div>
       </div>
-
-      {/* 可用资源（切片3）：真实 Agent / Skill / 知识库 */}
-      <div className="w-72 flex flex-col gap-4 min-h-0 overflow-y-auto">
-        <ResourceGroup kind="agent" title="可调取 Agent（@）" icon={Bot} items={resources.agents}
-          hint="点击 @ 该 Agent 回答本条" onPick={(it) => { setPickedSkill(null); setPickedAgent(it); }} />
-        <ResourceGroup kind="skill" title="可调取 Skill（/）" icon={Zap} items={resources.skills}
-          hint="点击 / 触发该 Skill 试跑" onPick={(it) => { setPickedAgent(null); setPickedSkill(it); }} />
-        <div>
-          <h3 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5"><FileText className="h-4 w-4 text-primary" />知识库（自动检索）</h3>
-          <div className="space-y-1.5">
-            {resources.knowledgeBases.length === 0 && <p className="px-1 text-xs text-muted-foreground">暂无知识库</p>}
-            {resources.knowledgeBases.map((k) => (
-              <div key={k.id} className="rounded-lg bg-card border border-border p-2 text-xs text-foreground flex items-center justify-between">
-                <span className="truncate">{k.name}</span>
-                {typeof k.documentCount === 'number' && <span className="text-muted-foreground shrink-0 ml-1">{k.documentCount} 文档</span>}
-              </div>
-            ))}
-          </div>
-          <p className="px-1 mt-1 text-[11px] text-muted-foreground">提问时自动检索全员可见知识库并带引用</p>
-        </div>
-      </div>
     </div>
   );
 }
 
-function ResourceGroup({ kind, title, icon: Icon, items, hint, onPick }: {
-  kind: 'agent' | 'skill'; title: string; icon: typeof Bot; items: Res[]; hint: string; onPick: (it: Res) => void;
+// #55 Block A：/skill、@agent 引用选择器 —— Popover + Command 搜索，选中插入文本 token
+function RefPicker({ kind, items, onInsert }: {
+  kind: 'agent' | 'skill'; items: Res[]; onInsert: (token: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const isAgent = kind === 'agent';
+  const prefix = isAgent ? '@' : '/';
   return (
-    <div>
-      <h3 className="text-sm font-medium text-foreground mb-2 flex items-center gap-1.5"><Icon className="h-4 w-4 text-primary" />{title}</h3>
-      <div className="space-y-1.5">
-        {items.length === 0 && <p className="px-1 text-xs text-muted-foreground">暂无</p>}
-        {items.map((it) => (
-          <button key={it.id} data-testid={`res-${kind}`} onClick={() => onPick(it)} title={hint}
-            className="w-full rounded-lg bg-card border border-border p-2 text-xs text-left text-foreground hover:border-primary/50 truncate">
-            {it.name}
-          </button>
-        ))}
-      </div>
-    </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2" data-testid={`ref-${kind}`}>
+          {isAgent ? <Bot className="h-4 w-4" /> : <Zap className="h-4 w-4" />}{isAgent ? '@agent' : '/skill'}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <Command>
+          <CommandInput placeholder={isAgent ? '搜索 Agent…' : '搜索 Skill…'} />
+          <CommandList>
+            <CommandEmpty>无匹配</CommandEmpty>
+            <CommandGroup heading={isAgent ? '插入 @Agent 引用' : '插入 /Skill 引用'}>
+              {items.map((it) => (
+                <CommandItem key={it.id} value={it.name} onSelect={() => { onInsert(`${prefix}${it.name}`); setOpen(false); }}>
+                  {isAgent ? <Bot className="h-4 w-4 text-primary" /> : <Zap className="h-4 w-4 text-primary" />}
+                  {it.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
-function MessageBubble({ role, content, citations, streaming }: {
-  role: Msg['role']; content: string; citations: Citation[]; streaming?: boolean;
+function MessageBubble({ role, content, citations, streaming, attachments }: {
+  role: Msg['role']; content: string; citations: Citation[]; streaming?: boolean; attachments?: MsgAttachment[];
 }) {
   const isUser = role === 'user';
   return (
@@ -332,6 +419,16 @@ function MessageBubble({ role, content, citations, streaming }: {
           <p className={`text-sm whitespace-pre-wrap leading-relaxed ${isUser ? 'text-primary-foreground' : 'text-foreground'}`}>
             {content}{streaming && <span className="inline-block w-1.5 h-4 ml-0.5 align-middle bg-primary animate-pulse" />}
           </p>
+          {attachments && attachments.length > 0 && (
+            <div className={`mt-2 flex gap-1.5 flex-wrap ${isUser ? 'justify-end' : ''}`}>
+              {attachments.map((a, i) => (
+                <span key={`${a.filename}-${i}`} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] max-w-[12rem] ${isUser ? 'bg-primary-foreground/15' : 'bg-muted'}`}>
+                  {a.kind === 'image' ? <ImageIcon className="h-3 w-3 shrink-0" /> : <FileText className="h-3 w-3 shrink-0" />}
+                  <span className="truncate">{a.filename}</span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         {!isUser && citations.length > 0 && (
           <div className="mt-2 space-y-1 text-left">

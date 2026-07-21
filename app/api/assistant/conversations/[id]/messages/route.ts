@@ -1,5 +1,6 @@
 import { getRequestContext } from '@/lib/context'
-import { chatStream, type ChatMessage } from '@/lib/ai'
+import { chatStream, VL_MODEL, type ChatMessage } from '@/lib/ai'
+import { parseAttachments, buildDocPreface, buildUserContent } from '@/lib/assistant/attachments'
 import { retrieveSegments } from '@/lib/kb/rag'
 import { classifyIntent, INTENT_ROUTE, INTENT_LABEL } from '@/lib/assistant/intent'
 import { getAgentForChat } from '@/lib/data/agents'
@@ -59,6 +60,10 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!content) return Response.json({ error: { code: 'invalid', message: '消息不能为空' } }, { status: 400 })
   const agentId = typeof body?.agentId === 'string' ? body.agentId : undefined // @Agent 单条借答（切片3）
   const skillId = typeof body?.skillId === 'string' ? body.skillId : undefined // /Skill 触发试跑（切片3）
+  // 附件（#55）：doc 解析文本注入 prompt；image 走多模态 qwen-vl
+  const attachments = parseAttachments(body?.attachments)
+  const docs = attachments.filter((a) => a.kind === 'doc') as import('@/lib/assistant/attachments').DocAttachment[]
+  const images = attachments.filter((a) => a.kind === 'image') as import('@/lib/assistant/attachments').ImageAttachment[]
 
   // 历史（存用户消息前取，用于判首条 + 组装上下文）
   const prior = await listMessages(ctx, id)
@@ -88,8 +93,9 @@ export async function POST(req: Request, { params }: Ctx) {
       || `你是企业数字员工「${agent.name}」，围绕职责用简洁专业的简体中文回答。你由通义千问（Qwen）驱动，勿编造自研模型或虚假承诺。`
   }
 
-  // 意图分类（切片2）：仅普通对话（无 @Agent/@Skill）时判定创建意图
-  const intent = agentId ? { kind: 'chat' as const, description: '' } : await classifyIntent(content)
+  // 意图分类（切片2）：仅普通对话（无 @Agent/@Skill，且无附件）时判定创建意图；
+  // 带附件时用户明确是要总结/分析，跳过创建跳转。
+  const intent = (agentId || attachments.length) ? { kind: 'chat' as const, description: '' } : await classifyIntent(content)
   if (intent.kind !== 'chat') {
     const label = INTENT_LABEL[intent.kind]
     const target = INTENT_ROUTE[intent.kind]
@@ -124,10 +130,16 @@ export async function POST(req: Request, { params }: Ctx) {
     }
   } catch { /* 检索失败不阻断对话 */ }
 
+  // 附件（#55）：文档文本作前言注入本条用户提问；图片走多模态 content 数组。
+  const docPreface = buildDocPreface(docs)
+  const userText = docPreface ? `${docPreface}\n\n用户的问题：${content}` : content
+  const userContent = buildUserContent(userText, images)
+  const useVL = images.length > 0
+
   const llmMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt + ragContext },
     ...prior.slice(-HISTORY_LIMIT).map((m) => ({ role: m.role, content: m.content }) as ChatMessage),
-    { role: 'user', content },
+    { role: 'user', content: userContent },
   ]
 
   const encoder = new TextEncoder()
@@ -138,7 +150,7 @@ export async function POST(req: Request, { params }: Ctx) {
         if (citations.length) send({ type: 'citations', citations })
         let full = ''
         let tokensOut = 0
-        for await (const chunk of chatStream(llmMessages, { temperature: 0.4 })) {
+        for await (const chunk of chatStream(llmMessages, { temperature: 0.4, model: useVL ? VL_MODEL : undefined })) {
           if (chunk.delta) {
             full += chunk.delta
             send({ type: 'delta', text: chunk.delta })
