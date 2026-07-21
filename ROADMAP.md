@@ -82,7 +82,7 @@
 | 2.5 | 统一 API 客户端与数据层设计（替换组件直接消费 mock 的现状） | ✅ | **ADR-008 已拍板（2026-07-20）**：四层单向依赖（组件→API/Action→`lib/data/*`→Supabase 客户端）；组件禁直连 mock/supabase；`lib/data/*` 唯一碰库、首参 `ctx`、`server-only`；Repository 模式包 mock 逐页切（配合 3.5）；命名对齐现状 `lib/supabase/`。铁律已写入 CLAUDE.md。详见 `docs/adr/ADR-008-data-access-layer.md` |
 | 2.6 | 「不自己造的轮子」清单 | ✅ | 认证 = Supabase Auth、存储 = Supabase Storage、向量库 = pgvector（ADR-001）；模型网关 = 首版不引入，直连 Moonshot（ADR-003）；支付 = 阶段 6 再选 |
 | 2.8 | Vibe Coding 执行架构（ADR-005） | ✅ | **已拍板（2026-07-18，范围收缩版）**：仅限对话创建 Skill/Workflow/Agent 资产，无通用软件开发能力 → **无需沙盒、无独立执行服务、服务器不部署 Claude Code**，回归单体；四道防线替代隔离；Code 节点首版禁用；Copilot 任务并入切片 1/3/4（4.1.6/4.3.3/4.4.5）；PRD 升 v1.07 增 2.11 章 |
-| 2.7 | 大模型接入方案 | ✅ | **ADR-003 已拍板并于 2026-07-20 修订：默认 LLM Kimi → 通义 Qwen（qwen-plus）**；Agent 级 config.model 可调配，Key（`DASHSCOPE_API_KEY`）只存服务器环境变量，call_logs 记用量。**嵌入模型结案 → ADR-009**：通义 `text-embedding-v3 @1536 维`，与对话**同供应商同一把 Key**（一家全包），对齐 pgvector `vector(1536)`；解锁 4.2.2。换模原因：Kimi/DeepSeek 均无 embedding 接口，通义 chat+embedding 一家覆盖 |
+| 2.7 | 大模型接入方案 | ✅ | **ADR-003 已拍板并于 2026-07-20 修订：默认 LLM Kimi → 通义 Qwen（qwen-plus）**；Agent 级 config.model 可调配，Key（`DASHSCOPE_API_KEY`）只存服务器环境变量，call_logs 记用量。**嵌入模型结案 → ADR-009**：通义 `text-embedding-v4 @1536 维`，与对话**同供应商同一把 Key**（一家全包），对齐 pgvector `vector(1536)`；解锁 4.2.2。换模原因：Kimi/DeepSeek 均无 embedding 接口，通义 chat+embedding 一家覆盖 |
 
 **⚠️ 检测关口 2**：2.1-2.4 的每份 ADR 你必须真的看懂并拍板，这是后面验收 AI 代码的基础。
 
@@ -156,12 +156,12 @@
 | 4.4.4 | 版本发布与运行历史 | ⬜ | 可回看历史版本和运行记录 |
 | 4.4.5 | **Workflow/Chatflow Copilot**（ADR-005 交互协议）：意图识别跳转（右对话左画布）→ 流式生成 → **画布下方澄清面板**（缺失配置勾选回填）→ 手动调配双向协同；Dify DSL 硬约束；Code 节点禁用 | ⬜ | 三场景验收（PRD v1.09）：跳转带原文、澄清回填即时上屏、AI 产物与手工编辑同构；含代码节点的图 422 |
 
-### 切片 5：成员与租户管理闭环 ⬜
+### 切片 5：成员与租户管理闭环 🔄
 
 | # | 任务 | 状态 | 检测标准 |
 |---|------|------|---------|
-| 4.5.1 | 成员邀请/编辑/禁用/角色变更 | 🔄 | PR #6（E道 `feat/4.5.1-member-management`，2026-07-21）；47 测试全绿；待合并 + 线上验收 |
-| 4.5.2 | 租户创建/编辑/停用 + 配额基础 | ⬜ | 停用租户的成员无法访问 |
+| 4.5.1 | 成员邀请/编辑/禁用/角色变更 | 🔄 | **代码已合并 main（PR #6）**：成员 API（`api/members`+`[id]`）+ `lib/data/members.ts` + 页面接真实数据；47 测试全绿。待用户线上验收（禁用成员立即无法登录）转 ✅ |
+| 4.5.2 | 租户创建/编辑/停用 + 配额基础 | 🔄 | **代码已在 main（本租户查看+编辑）**：`lib/data/tenant.ts`（`getTenant` 信息+配额+用量 / `updateTenant` 编辑）+ `GET(tenant:read)`/`PATCH(tenant:manage)` `api/tenant` + settings 页；单元测试绿。待用户线上验收转 ✅。**跨租户开通/停用=平台超管，阶段 6**（ADR-007） |
 
 **⚠️ 检测关口 4（每周）**：本周能演示什么新东西？答不上来 = 任务切大了，砍半。
 
