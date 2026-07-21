@@ -17,6 +17,11 @@ export type Action =
   | 'mcp:submit'
   | 'mcp:review'
   | 'mcp:read'
+  | 'skill:create'
+  | 'skill:update'
+  | 'skill:delete'
+  | 'skill:submit'
+  | 'skill:review'
   | 'knowledge:create'
   | 'knowledge:read'
   | 'knowledge:delete'
@@ -45,6 +50,12 @@ const MATRIX: Record<Action, Role[]> = {
   'mcp:submit': ['Admin', 'Developer'],
   'mcp:review': ['Admin', 'Auditor'],
   'mcp:read': ['Admin', 'Auditor'], // 管理端全量清单（含 draft/pending）；my_mcp_servers 视图另走
+  // Skill Hub（4.3.1，ADR-007）：创建/编辑=Admin/Developer(Developer 仅 own)；审核=Admin/Auditor
+  'skill:create': ['Admin', 'Developer'],
+  'skill:update': ['Admin', 'Developer'],
+  'skill:delete': ['Admin', 'Developer'],
+  'skill:submit': ['Admin', 'Developer'],
+  'skill:review': ['Admin', 'Auditor'],
   'knowledge:create': ['Admin', 'Developer'],
   'knowledge:read': ['Admin', 'Developer', 'User', 'Auditor'],
   'knowledge:delete': ['Admin', 'Developer'],
