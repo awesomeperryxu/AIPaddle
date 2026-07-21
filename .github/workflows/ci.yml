@@ -7,14 +7,14 @@ on:
     branches: [main]
 
 jobs:
-  check:
+  # ── 机密文件守卫（独立必需检查，2026-07-21）──
+  # 设为分支保护必需检查后：任何分支不 rebase 到含此 job 的 main，就产生不了
+  # confidential-guard 状态 → 永远无法合并，被迫先 rebase（拿到干净 main + 守卫）。
+  # 修复被拦截：对机密文件执行 `git rm --cached`（本地保留）后再提交。
+  confidential-guard:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # ── 机密文件守卫：阻止机密文档回流公开仓库（2026-07-21）──
-      # 若任何分支重新跟踪了已停止同步的机密文件，CI 失败 → 分支保护挡住合并。
-      # 修复：在该分支对这些文件执行 `git rm --cached`（本地保留），再提交。
       - name: 机密文件守卫
         run: |
           CONFIDENTIAL=$(git ls-files -- \
@@ -27,6 +27,11 @@ jobs:
             exit 1
           fi
           echo "✅ 无机密文档回流"
+
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
