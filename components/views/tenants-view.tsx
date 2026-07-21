@@ -37,6 +37,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { useRouter } from 'next/navigation';
+import { apiFetch } from '@/lib/api/client';
 
 interface Tenant {
   id: string;
@@ -69,17 +75,83 @@ const packageConfig = {
 
 const statusConfig = {
   active: { label: '正常', className: 'bg-green-500/10 text-green-500' },
-  suspended: { label: '已停用', className: 'bg-destructive/10 text-destructive' },
+  suspended: { label: '已暂停', className: 'bg-destructive/10 text-destructive' },
   overdue: { label: '欠费', className: 'bg-yellow-500/10 text-yellow-500' }
 };
 
-export function TenantsView() {
-  const [searchTerm, setSearchTerm] = useState('');
+// 平台真实租户（ADR-010）
+type PlatformTenant = {
+  id: string; name: string; code: string; planType: 'free' | 'standard' | 'pro' | 'enterprise';
+  tokenQuota: number; qpsLimit: number; status: 'active' | 'suspended'; contactName: string; contactEmail: string; createdAt: string;
+};
+const PLAN_TO_PACKAGE: Record<PlatformTenant['planType'], Tenant['package']> = {
+  free: 'trial', standard: 'basic', pro: 'pro', enterprise: 'enterprise',
+};
 
-  const filteredTenants = mockTenants.filter(tenant =>
+export function TenantsView({
+  tenants = [],
+  canManage = false,
+}: {
+  tenants?: PlatformTenant[];
+  canManage?: boolean;
+}) {
+  const router = useRouter();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [busy, setBusy] = useState(false);
+  // 开通企业表单
+  const [provOpen, setProvOpen] = useState(false);
+  const [pName, setPName] = useState('');
+  const [pCode, setPCode] = useState('');
+  const [pContact, setPContact] = useState('');
+  const [pEmail, setPEmail] = useState('');
+  const [pPlan, setPPlan] = useState<PlatformTenant['planType']>('standard');
+  const [pQuota, setPQuota] = useState('1000000');
+  const [pErr, setPErr] = useState<string | null>(null);
+
+  // 真实租户映射到表格展示 shape（用量/账单等分析字段暂缺，置 0）
+  const displayTenants: Tenant[] = tenants.map((t) => ({
+    id: t.id, name: t.name, adminEmail: t.contactEmail || t.code,
+    package: PLAN_TO_PACKAGE[t.planType], status: t.status,
+    members: 0, agents: 0, tokenUsage: 0, tokenQuota: t.tokenQuota, monthlyBill: 0,
+    createdAt: t.createdAt,
+  }));
+
+  const filteredTenants = displayTenants.filter(tenant =>
     tenant.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     tenant.adminEmail.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  async function handleProvision() {
+    if (busy) return;
+    setPErr(null); setBusy(true);
+    try {
+      await apiFetch('/api/tenants', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: pName.trim(), code: pCode.trim(), contactName: pContact.trim(),
+          contactEmail: pEmail.trim(), planType: pPlan, tokenQuota: Number(pQuota),
+        }),
+      });
+      setProvOpen(false);
+      setPName(''); setPCode(''); setPContact(''); setPEmail(''); setPPlan('standard'); setPQuota('1000000');
+      router.refresh();
+    } catch (e) {
+      setPErr(e instanceof Error ? e.message : '开通失败');
+    } finally { setBusy(false); }
+  }
+
+  async function handleSetStatus(id: string, status: 'active' | 'suspended') {
+    if (busy) return;
+    const verb = status === 'suspended' ? '暂停' : '恢复';
+    if (!window.confirm(`确认${verb}该租户？`)) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/api/tenants/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '操作失败');
+    } finally { setBusy(false); }
+  }
 
   const totalRevenue = mockTenants.reduce((acc, t) => acc + t.monthlyBill, 0);
   const totalMembers = mockTenants.reduce((acc, t) => acc + t.members, 0);
@@ -93,10 +165,12 @@ export function TenantsView() {
           <h1 className="text-2xl font-semibold text-foreground">租户管理</h1>
           <p className="text-muted-foreground">管理平台企业租户</p>
         </div>
-        <Button className="gap-2">
-          <Plus className="h-4 w-4" />
-          开通企业
-        </Button>
+        {canManage && (
+          <Button className="gap-2" onClick={() => { setPErr(null); setProvOpen(true); }}>
+            <Plus className="h-4 w-4" />
+            开通企业
+          </Button>
+        )}
       </div>
 
       {/* Stats */}
@@ -108,7 +182,7 @@ export function TenantsView() {
                 <Building2 className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">{mockTenants.length}</p>
+                <p className="text-lg font-semibold text-foreground">{tenants.length}</p>
                 <p className="text-xs text-muted-foreground">企业租户</p>
               </div>
             </div>
@@ -253,10 +327,19 @@ export function TenantsView() {
                           MCP 审批
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem>
-                          <Ban className="h-4 w-4 mr-2" />
-                          停用企业
-                        </DropdownMenuItem>
+                        {canManage && (
+                          tenant.status === 'suspended' ? (
+                            <DropdownMenuItem onClick={() => handleSetStatus(tenant.id, 'active')} disabled={busy}>
+                              <Ban className="h-4 w-4 mr-2" />
+                              恢复服务
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onClick={() => handleSetStatus(tenant.id, 'suspended')} disabled={busy}>
+                              <Ban className="h-4 w-4 mr-2" />
+                              暂停服务
+                            </DropdownMenuItem>
+                          )
+                        )}
                         <DropdownMenuItem className="text-destructive">
                           <Trash2 className="h-4 w-4 mr-2" />
                           删除租户
@@ -328,6 +411,62 @@ export function TenantsView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 开通企业（ADR-010 / PRD 2.9.8）*/}
+      <Dialog open={provOpen} onOpenChange={setProvOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>开通企业</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="t-name">企业名称</Label>
+                <Input id="t-name" value={pName} onChange={e => setPName(e.target.value)} placeholder="示范科技有限公司" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="t-code">企业编码</Label>
+                <Input id="t-code" value={pCode} onChange={e => setPCode(e.target.value)} placeholder="demo-tech" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="t-contact">联系人姓名</Label>
+                <Input id="t-contact" value={pContact} onChange={e => setPContact(e.target.value)} placeholder="张三" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="t-email">邮箱</Label>
+                <Input id="t-email" type="email" value={pEmail} onChange={e => setPEmail(e.target.value)} placeholder="admin@demo.com" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="t-plan">套餐</Label>
+                <select
+                  id="t-plan" value={pPlan}
+                  onChange={e => setPPlan(e.target.value as PlatformTenant['planType'])}
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+                >
+                  <option value="free">免费版</option>
+                  <option value="standard">标准版</option>
+                  <option value="pro">专业版</option>
+                  <option value="enterprise">企业版</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="t-quota">Token 配额</Label>
+                <Input id="t-quota" type="number" value={pQuota} onChange={e => setPQuota(e.target.value)} placeholder="1000000" />
+              </div>
+            </div>
+            {pErr && <p className="text-xs text-destructive">{pErr}</p>}
+          </div>
+          <DialogFooter>
+            <Button onClick={handleProvision} disabled={busy}>
+              {busy ? '开通中…' : '提交开通'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
