@@ -351,6 +351,15 @@ export function AgentsAdminView({
                   placeholder="所属部门"
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="agent-desc">描述</Label>
+                <Input
+                  id="agent-desc"
+                  value={form.description}
+                  onChange={e => setForm({ ...form, description: e.target.value })}
+                  placeholder="Agent 用途描述"
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button onClick={handleCreate} disabled={creating}>
@@ -412,7 +421,7 @@ export function AgentsAdminView({
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{stats.total}</p>
+                  <p className="text-lg font-semibold text-foreground" data-testid="stat-全部">{stats.total}</p>
                   <p className="text-xs text-muted-foreground">全部</p>
                 </div>
               </div>
@@ -425,7 +434,7 @@ export function AgentsAdminView({
                   <CheckCircle2 className="h-4 w-4 text-success" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{stats.published}</p>
+                  <p className="text-lg font-semibold text-foreground" data-testid="stat-已发布">{stats.published}</p>
                   <p className="text-xs text-muted-foreground">已发布</p>
                 </div>
               </div>
@@ -438,7 +447,7 @@ export function AgentsAdminView({
                   <Clock className="h-4 w-4 text-warning" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{stats.pending}</p>
+                  <p className="text-lg font-semibold text-foreground" data-testid="stat-待审核">{stats.pending}</p>
                   <p className="text-xs text-muted-foreground">待审核</p>
                 </div>
               </div>
@@ -451,7 +460,7 @@ export function AgentsAdminView({
                   <XCircle className="h-4 w-4 text-muted-foreground" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">{stats.draft}</p>
+                  <p className="text-lg font-semibold text-foreground" data-testid="stat-草稿">{stats.draft}</p>
                   <p className="text-xs text-muted-foreground">草稿</p>
                 </div>
               </div>
@@ -611,7 +620,7 @@ export function AgentsAdminView({
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2.5 rounded-lg bg-muted/50">
                   <p className="text-xs text-muted-foreground mb-0.5">总调用量{logCount !== null ? '（实时）' : ''}</p>
-                  <p className="text-base font-semibold text-foreground">{(logCount ?? selectedAgent.calls).toLocaleString()}</p>
+                  <p className="text-base font-semibold text-foreground" data-testid="metric-calls">{(logCount ?? selectedAgent.calls).toLocaleString()}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-muted/50">
                   <p className="text-xs text-muted-foreground mb-0.5">成功率</p>

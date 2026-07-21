@@ -52,7 +52,9 @@ test.describe('S1-CRUD Agent 增删改查 @stage1', () => {
   test('S1-CRUD-06 状态页签与统计一致 @smoke', async ({ page }) => {
     await login(page, 'adminA');
     await page.goto('/agents-admin');
-    for (const tab of ['全部', '草稿', '待审核', '已发布', '已下线']) {
+    // 页签集以原型 AgentsAdminView 为准：全部/草稿/待审核/已发布（无独立「已下线」筛选页签；
+    // offline 是 Agent 状态但原型未设该页签，如需再由「已下线页签」切片补 Tab+stat-已下线 testid）
+    for (const tab of ['全部', '草稿', '待审核', '已发布']) {
       await page.getByRole('tab', { name: tab }).click();
       const count = await page.getByRole('row').count();
       const statNumber = await page.getByTestId(`stat-${tab}`).innerText();

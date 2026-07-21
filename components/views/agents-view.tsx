@@ -204,6 +204,7 @@ export function AgentsView({ agents }: { agents?: Agent[] }) {
             {messages.map((msg, index) => (
               <div
                 key={index}
+                data-testid={msg.role === 'assistant' ? 'chat-message-assistant' : undefined}
                 className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
               >
                 <Avatar className="h-8 w-8 shrink-0">
@@ -249,6 +250,7 @@ export function AgentsView({ agents }: { agents?: Agent[] }) {
             <div className="flex items-end gap-2">
               <div className="flex-1 relative">
                 <Input
+                  aria-label="输入消息"
                   placeholder={`向 ${selectedAgent.name} 提问...`}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -267,6 +269,7 @@ export function AgentsView({ agents }: { agents?: Agent[] }) {
               </div>
               <Button
                 size="icon"
+                aria-label="发送"
                 className="h-10 w-10 rounded-lg shadow-sm"
                 onClick={() => handleSend()}
                 disabled={sending || !message.trim()}
