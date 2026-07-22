@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Search, X, Bot, MessageSquare, Workflow, FileText, Cpu } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import type { Template, TemplateType } from '@/lib/data/templates'
+import { apiFetch } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
 
 const CATEGORIES = [
@@ -61,6 +71,12 @@ export function TemplatesView({ initialTemplates }: Props) {
   const [category, setCategory]     = useState('全部')
   const [typeFilter, setTypeFilter] = useState<TemplateType | 'all'>('all')
   const [selected, setSelected]     = useState<Template | null>(null)
+  const [useTarget, setUseTarget]   = useState<Template | null>(null)
+
+  function openUseDialog(tpl: Template) {
+    setSelected(null)
+    setUseTarget(tpl)
+  }
 
   const filtered = useMemo(() => {
     return initialTemplates.filter(t => {
@@ -152,7 +168,7 @@ export function TemplatesView({ initialTemplates }: Props) {
             <TemplateCard
               key={tpl.id}
               template={tpl}
-              onUse={() => setSelected(tpl)}
+              onUse={() => openUseDialog(tpl)}
               onDetail={() => setSelected(tpl)}
             />
           ))}
@@ -162,9 +178,22 @@ export function TemplatesView({ initialTemplates }: Props) {
       {/* ── 详情抽屉 ── */}
       <Sheet open={!!selected} onOpenChange={open => !open && setSelected(null)}>
         <SheetContent side="right" className="w-[420px] overflow-y-auto">
-          {selected && <TemplateDetail template={selected} onClose={() => setSelected(null)} />}
+          {selected && (
+            <TemplateDetail
+              template={selected}
+              onClose={() => setSelected(null)}
+              onUse={() => openUseDialog(selected)}
+            />
+          )}
         </SheetContent>
       </Sheet>
+
+      {/* ── 使用模板弹窗 ── */}
+      <UseTemplateDialog
+        template={useTarget}
+        open={!!useTarget}
+        onOpenChange={open => !open && setUseTarget(null)}
+      />
     </div>
   )
 }
@@ -222,9 +251,124 @@ function TemplateCard({
   )
 }
 
+// ── 使用模板弹窗 ─────────────────────────────────────────────────────────────
+
+function UseTemplateDialog({
+  template,
+  open,
+  onOpenChange,
+}: {
+  template: Template | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const router = useRouter()
+  const [name, setName]       = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+
+  useEffect(() => {
+    setName(template?.name ?? '')
+    setError(null)
+  }, [template])
+
+  async function handleCreate() {
+    if (!template || !name.trim()) { setError('名称不能为空'); return }
+    setLoading(true)
+    setError(null)
+    try {
+      const t = template.type
+      if (t === 'agent' || t === 'assistant') {
+        const { agent } = await apiFetch<{ agent: { id: string } }>('/api/agents', {
+          method: 'POST',
+          body: JSON.stringify({ name: name.trim(), description: template.description }),
+        })
+        onOpenChange(false)
+        router.push(`/agents-admin/${agent.id}`)
+      } else if (t === 'chatflow' || t === 'workflow') {
+        const { workflow } = await apiFetch<{ workflow: { id: string } }>('/api/workflows', {
+          method: 'POST',
+          body: JSON.stringify({ name: name.trim(), type: t }),
+        })
+        onOpenChange(false)
+        router.push(`/workflows/${workflow.id}`)
+      } else {
+        // text-generation → Prompt Skill
+        await apiFetch('/api/skills', {
+          method: 'POST',
+          body: JSON.stringify({ name: name.trim(), type: 'Prompt', description: template.description }),
+        })
+        onOpenChange(false)
+        router.push('/my-skills')
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '创建失败，请重试')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const TARGET_LABEL: Record<TemplateType, string> = {
+    agent:            'Agent',
+    assistant:        'Agent（聊天助手）',
+    chatflow:         'Chatflow 工作流',
+    workflow:         '工作流',
+    'text-generation':'Prompt Skill',
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>使用模板创建</DialogTitle>
+          {template && (
+            <DialogDescription asChild>
+              <div className="flex items-center gap-2 mt-1">
+                <span
+                  className="h-6 w-6 rounded text-sm flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: template.iconBackground }}
+                >
+                  {template.icon}
+                </span>
+                <span>{template.name}</span>
+                <Badge className={cn('text-[11px]', TYPE_COLORS[template.type])}>
+                  → {TARGET_LABEL[template.type]}
+                </Badge>
+              </div>
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        <div className="space-y-3 py-2">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">名称</label>
+            <Input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !loading && handleCreate()}
+              placeholder="为新建的应用取个名字..."
+              autoFocus
+            />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
+            取消
+          </Button>
+          <Button onClick={handleCreate} disabled={loading || !name.trim()}>
+            {loading ? '创建中...' : '确认创建'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── 详情面板 ────────────────────────────────────────────────────────────────
 
-function TemplateDetail({ template: tpl, onClose }: { template: Template; onClose: () => void }) {
+function TemplateDetail({ template: tpl, onClose, onUse }: { template: Template; onClose: () => void; onUse: () => void }) {
   return (
     <>
       <SheetHeader className="pb-4 border-b">
@@ -302,7 +446,7 @@ function TemplateDetail({ template: tpl, onClose }: { template: Template; onClos
 
       {/* 底部操作 */}
       <div className="border-t pt-4 flex gap-3">
-        <Button className="flex-1" onClick={onClose}>使用该模板</Button>
+        <Button className="flex-1" onClick={onUse}>使用该模板</Button>
         <Button variant="outline" onClick={onClose}>关闭</Button>
       </div>
     </>
