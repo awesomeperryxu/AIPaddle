@@ -313,8 +313,8 @@ export function AssistantView() {
           )}
         </div>
 
-        {/* 输入区 */}
-        <div className="relative pt-4 border-t border-border space-y-3">
+        {/* 输入区（#61：整体上抬，加下内边距不再贴底）*/}
+        <div className="relative pt-4 pb-6 border-t border-border space-y-3">
           {/* @Agent / /Skill 选择器（切片3）*/}
           {pickerMode && pickerItems.length > 0 && (
             <div className="absolute bottom-full left-0 mb-1 w-80 max-h-56 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg z-20 p-1">
