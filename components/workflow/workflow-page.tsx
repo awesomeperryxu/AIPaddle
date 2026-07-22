@@ -38,6 +38,7 @@ import { WorkflowSubNav, type WorkflowTab } from './pages/workflow-subnav';
 import { WorkflowLogsPage } from './pages/workflow-logs-page';
 import { WorkflowPlaceholderPage } from './pages/workflow-placeholder-page';
 import { WorkflowApiPage } from './pages/workflow-api-page';
+import { WorkflowMonitorPage } from './pages/workflow-monitor-page';
 import { WorkflowRunDrawer } from './pages/workflow-run-drawer';
 
 // ReactFlow 节点 data 的形状
@@ -527,12 +528,16 @@ function WorkflowPageInner({
           )}
           {activeTab === 'monitor' && (
             <div className="absolute inset-0 z-10">
-              <WorkflowPlaceholderPage
-                icon={Activity}
-                title="监测"
-                desc="工作流运行的指标看板：调用次数、成功率、平均耗时、token 消耗与时间趋势。"
-                bullets={['调用次数 / 成功率', '平均耗时 / P95', 'token 消耗与成本', '时间趋势图']}
-              />
+              {workflowId ? (
+                <WorkflowMonitorPage workflowId={workflowId} />
+              ) : (
+                <WorkflowPlaceholderPage
+                  icon={Activity}
+                  title="监测"
+                  desc="保存并运行工作流后，这里展示调用次数、成功率、平均耗时与趋势。"
+                  bullets={['先保存并测试运行以产生指标']}
+                />
+              )}
             </div>
           )}
           {activeTab === 'annotations' && (
