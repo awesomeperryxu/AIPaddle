@@ -1,6 +1,8 @@
 import 'server-only'
 import { chat } from '@/lib/ai'
 import { validateGraph, type WorkflowGraph } from '@/lib/workflow/validate'
+import { retrieveSegments } from '@/lib/kb/rag'
+import type { RequestContext } from '@/lib/context'
 
 // 最小执行引擎（4.4.3）：拓扑串行执行 2-3 种节点（start / llm / end）。
 // Tool/Skill 等节点属 4.4.2（硬等 C 道 Skill 发布），本引擎标记为 skipped、透传输入。
@@ -23,7 +25,21 @@ export type ExecResult = {
 type GNode = { id: string; type: string; data?: { config?: Record<string, unknown>; label?: string } }
 type GEdge = { source: string; target: string }
 
-const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor'])
+const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request'])
+
+// 执行选项：ctx 用于需租户隔离的节点（知识检索）。
+export type ExecOptions = { ctx?: RequestContext }
+
+// SSRF 防护：只允许 http/https，拦截 localhost / 私有网段 / 云元数据地址（字面量层，残留 DNS 重绑定风险已知）。
+const PRIVATE_HOST_RE =
+  /^(localhost|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|::1|fe80:|fc00:|fd00:|172\.(1[6-9]|2\d|3[01])\.)/i
+function assertSafeHttpUrl(raw: string): URL {
+  let u: URL
+  try { u = new URL(raw) } catch { throw new Error('URL 非法') }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('仅允许 http/https')
+  if (PRIVATE_HOST_RE.test(u.hostname)) throw new Error('禁止访问内网/本机/元数据地址')
+  return u
+}
 
 // 模板转换：把 config.template 里的 {{input}} 替换为节点输入（当前引擎单值模型）。
 function renderTemplate(cfg: Record<string, unknown>, input: string): string {
@@ -72,7 +88,7 @@ function topoOrder(nodes: GNode[], edges: GEdge[]): GNode[] {
  * 执行工作流图。input 为起始输入；各节点输入=其前驱输出拼接（无前驱=运行输入）。
  * LLM 节点：prompt 取 config.prompt（可含 {{input}} 占位），否则默认基于输入处理。
  */
-export async function executeGraph(graph: WorkflowGraph, input: string): Promise<ExecResult> {
+export async function executeGraph(graph: WorkflowGraph, input: string, opts: ExecOptions = {}): Promise<ExecResult> {
   const errs = validateGraph(graph)
   if (errs.length > 0) {
     return { status: 'failed', output: '', traces: [{ nodeId: '-', type: '-', status: 'failed', error: `图非法：${errs.map((e) => e.message).join('；')}`, ms: 0 }] }
@@ -113,6 +129,31 @@ export async function executeGraph(graph: WorkflowGraph, input: string): Promise
         out = renderTemplate(cfg, nodeInput)
       } else if (n.type === 'parameter-extractor') {
         out = await chat([{ role: 'user', content: buildExtractPrompt(cfg, nodeInput) }])
+      } else if (n.type === 'knowledge-retrieval') {
+        // 知识检索：真实 RAG（retrieveSegments），query=节点输入；无 ctx 则跳过透传。
+        if (!opts.ctx) {
+          outputs.set(n.id, nodeInput)
+          traces.push({ nodeId: n.id, type: n.type, status: 'skipped', input: nodeInput, output: nodeInput, error: '缺少运行上下文（ctx），无法检索', ms: Date.now() - t0 })
+          continue
+        }
+        const kbId = Array.isArray(cfg.dataset_ids) && cfg.dataset_ids.length > 0 ? String(cfg.dataset_ids[0]) : undefined
+        const segs = await retrieveSegments(opts.ctx, nodeInput, { kbId, topK: 5 })
+        out = segs.length
+          ? segs.map((s, i) => `[${i + 1}] 《${s.filename}》：${s.snippet}`).join('\n')
+          : '（未检索到相关内容）'
+      } else if (n.type === 'http-request') {
+        // HTTP 请求：SSRF 防护 + 15s 超时；输出响应体（截断 4000 字）。
+        const url = assertSafeHttpUrl(String(cfg.url ?? '').replace(/\{\{\s*input\s*\}\}/g, encodeURIComponent(nodeInput)))
+        const method = String(cfg.method ?? 'GET').toUpperCase()
+        const headers = cfg.headers && typeof cfg.headers === 'object' ? (cfg.headers as Record<string, string>) : undefined
+        const res = await fetch(url, {
+          method,
+          headers,
+          body: method !== 'GET' && method !== 'HEAD' && typeof cfg.body === 'string' ? cfg.body : undefined,
+          signal: AbortSignal.timeout(15000),
+        })
+        const text = await res.text()
+        out = `HTTP ${res.status}\n${text.slice(0, 4000)}`
       }
       // start / end：透传（start 输出=运行输入；end 输出=其输入=最终结果）
       outputs.set(n.id, out)

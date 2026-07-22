@@ -22,7 +22,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const input = typeof body?.input === 'string' ? body.input : ''
 
   const t0 = Date.now()
-  const result = await executeGraph(wf.graph, input)
+  const result = await executeGraph(wf.graph, input, { ctx })
   const durationMs = Date.now() - t0
 
   // 记运行历史（workflow_runs，请求级客户端→RLS 按 org 隔离）
