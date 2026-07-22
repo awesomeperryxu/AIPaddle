@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -100,69 +100,6 @@ interface NodeConnection {
   sourceHandle?: string;
   targetHandle?: string;
 }
-
-const mockApps: WorkflowApp[] = [
-  {
-    id: '1',
-    name: 'Github热榜日报',
-    description: '自动抓取Github热榜并生成每日报告',
-    type: 'workflow',
-    tags: ['自动化', '日报'],
-    lastEditedBy: 'PERRY',
-    lastEditedAt: '2026/05/04 00:17',
-    status: 'published',
-    executions: 1234,
-    successRate: 98.5
-  },
-  {
-    id: '2',
-    name: '代码转换器',
-    description: '提供多种代码语言转换能力，将用户输入的代码转换成他们需要的代码语言',
-    type: 'workflow',
-    tags: ['代码', '转换'],
-    lastEditedBy: 'PERRY',
-    lastEditedAt: '2026/05/03 23:57',
-    status: 'published',
-    executions: 567,
-    successRate: 95.2
-  },
-  {
-    id: '3',
-    name: '每日行业分析报告',
-    description: '关于家居行业的分析',
-    type: 'text-generation',
-    tags: ['分析', '报告'],
-    lastEditedBy: 'PERRY',
-    lastEditedAt: '2026/04/29 22:15',
-    status: 'published',
-    executions: 89,
-    successRate: 100
-  },
-  {
-    id: '4',
-    name: '智能客服助手',
-    description: '处理用户咨询和问题解答的智能对话流程',
-    type: 'chatflow',
-    tags: ['客服', '对话'],
-    lastEditedBy: 'Alice',
-    lastEditedAt: '2026/05/02 14:30',
-    status: 'published',
-    executions: 3456,
-    successRate: 97.8
-  },
-  {
-    id: '5',
-    name: '数据分析 Agent',
-    description: '自主完成数据分析任务的智能 Agent',
-    type: 'agent',
-    tags: ['数据', 'Agent'],
-    lastEditedBy: 'Bob',
-    lastEditedAt: '2026/05/01 10:20',
-    status: 'draft',
-    executions: 0,
-    successRate: 0
-  }
-];
 
 const appTypeConfig = {
   workflow: { label: '工作流', icon: GitBranch, color: 'text-blue-500', bg: 'bg-blue-500/10' },
@@ -331,9 +268,11 @@ export function WorkflowView() {
   const [selectedType, setSelectedType] = useState<AppType>('all');
   // 个人助理意图跳转（切片2）：?assistant=<描述> → 初始即打开创建应用对话框
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(() => !!searchParams.get('assistant'));
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [selectedApp, setSelectedApp] = useState<WorkflowApp | null>(null);
+  // 页内 SVG 编辑器已弃用（改跳 /workflows/[id]），selectedApp 仅供其残留 JSX 引用，待 W1-e 清理。
+  const [selectedApp] = useState<WorkflowApp | null>(null);
   const [selectedNode, setSelectedNode] = useState<WorkflowNode | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -431,71 +370,31 @@ export function WorkflowView() {
     edges: connections.map(c => ({ id: c.id, source: c.sourceId, target: c.targetId })),
   }), [workflowNodes, connections]);
 
-  const loadGraphIntoEditor = useCallback((graph: { nodes?: unknown[]; edges?: unknown[] }) => {
-    const gn = Array.isArray(graph?.nodes) ? graph.nodes as Array<Record<string, unknown>> : [];
-    const ge = Array.isArray(graph?.edges) ? graph.edges as Array<Record<string, unknown>> : [];
-    if (gn.length > 0) {
-      setWorkflowNodes(gn.map((n) => {
-        const data = (n.data ?? {}) as Record<string, unknown>;
-        return {
-          id: String(n.id), type: n.type as NodeType,
-          label: String(data.label ?? n.type ?? ''), description: data.description as string | undefined,
-          position: (n.position ?? { x: 250, y: 50 }) as { x: number; y: number },
-          config: data.config as Record<string, unknown> | undefined,
-        };
-      }));
-      setConnections(ge.map((e) => ({ id: String(e.id ?? `${e.source}-${e.target}`), sourceId: String(e.source), targetId: String(e.target) })));
-    }
-  }, []);
-
-  const filteredApps = (appsLoaded ? apps : mockApps).filter(app => {
+  const filteredApps = apps.filter(app => {
     const matchesSearch = app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       app.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = selectedType === 'all' || app.type === selectedType;
     return matchesSearch && matchesType;
   });
 
-  const handleEditWorkflow = async (app: WorkflowApp) => {
-    setSelectedApp(app);
-    setIsEditorOpen(true);
-    setSelectedNode(null);
-    setActivePanel(null);
-    // 4.4.1：从后端加载真实图（刷新后画布原样恢复）；失败则回退初始节点
-    setWorkflowNodes(initialWorkflowNodes);
-    setConnections(initialConnections);
-    try {
-      const res = await fetch(`/api/workflows/${app.id}`);
-      if (res.ok) {
-        const { workflow } = await res.json();
-        loadGraphIntoEditor(workflow.graph ?? { nodes: [], edges: [] });
-      }
-    } catch { /* 回退初始节点 */ }
+  // W1-a：编辑改为跳转到全屏编排编辑器（React Flow 画布接后端），不再用页内 SVG 编辑器。
+  const handleEditWorkflow = (app: WorkflowApp) => {
+    router.push(`/workflows/${app.id}`);
   };
 
-  // 创建空白应用（Workflow / Chatflow）— 原型创建对话框前两个入口
+  // 创建空白应用（Workflow / Chatflow）：真实创建后跳转到编排编辑器。
   const handleCreateBlank = async (type: 'workflow' | 'chatflow') => {
     setIsCreateDialogOpen(false);
     const name = type === 'chatflow' ? '新建 Chatflow' : '新建工作流';
-    // 4.4.1：真实创建（POST），拿到真实 id 后进编辑器
-    let id = 'new';
     try {
       const res = await fetch('/api/workflows', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, type }),
       });
-      if (res.ok) { id = (await res.json()).workflow.id; }
-      else { showToast('创建失败：无权限或未登录'); return; }
-    } catch { showToast('创建失败：网络错误'); return; }
-    setSelectedApp({
-      id, name, description: '', type, tags: [], lastEditedBy: 'You',
-      lastEditedAt: new Date().toLocaleString('zh-CN'), status: 'draft', executions: 0, successRate: 0,
-    });
-    setWorkflowNodes([{ id: 'start-1', type: 'start', label: '开始', position: { x: 250, y: 50 } }]);
-    setConnections([]);
-    setSelectedNode(null);
-    setActivePanel(null);
-    setIsEditorOpen(true);
-    void reloadApps();
+      if (!res.ok) { showToast('创建失败：无权限或未登录'); return; }
+      const { workflow } = await res.json();
+      router.push(`/workflows/${workflow.id}`);
+    } catch { showToast('创建失败：网络错误'); }
   };
 
   // 4.4.1：保存工作流图（PATCH），返回校验结果则提示（孤立节点/环等）
@@ -1675,7 +1574,7 @@ export function WorkflowView() {
           <DialogTrigger asChild>
             <Button className="gap-2 shadow-sm">
               <Plus className="h-4 w-4" />
-              创建应用
+              创建工作流
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-lg">
@@ -1776,6 +1675,24 @@ export function WorkflowView() {
 
         {/* Apps Grid */}
         <TabsContent value={selectedType} className="mt-5">
+          {/* 加载中 / 空态（去除 mock 闪现：只渲染真实数据） */}
+          {!appsLoaded && (
+            <div className="py-16 text-center text-sm text-muted-foreground">加载中…</div>
+          )}
+          {appsLoaded && filteredApps.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
+              <GitBranch className="h-9 w-9 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                {searchTerm || selectedType !== 'all' ? '没有匹配的工作流' : '还没有工作流'}
+              </p>
+              {!searchTerm && selectedType === 'all' && (
+                <Button className="gap-2" onClick={() => setIsCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  创建工作流
+                </Button>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredApps.map((app) => {
               const typeConfig = appTypeConfig[app.type];
