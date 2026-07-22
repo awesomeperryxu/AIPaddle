@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback, useMemo, useRef, DragEvent } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, DragEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -26,6 +27,13 @@ import { BlockEnum } from './types';
 import { cn } from '@/lib/utils';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  graphToReactFlow,
+  reactFlowToGraph,
+  type PersistedGraph,
+  type RFNodeLike,
+  type RFEdgeLike,
+} from '@/lib/workflow/graph-adapter';
 
 // ReactFlow 节点 data 的形状
 type WorkflowNodeData = {
@@ -85,64 +93,93 @@ const nodeTypes: NodeTypes = {
   workflowNode: WorkflowNode,
 };
 
-// Initial nodes
-const initialNodes: Node[] = [
-  {
-    id: 'start',
-    type: 'workflowNode',
-    position: { x: 250, y: 50 },
-    data: { blockType: BlockEnum.Start, label: '开始' },
-  },
-  {
-    id: 'llm-1',
-    type: 'workflowNode',
-    position: { x: 250, y: 180 },
-    data: { blockType: BlockEnum.LLM, label: 'LLM', description: '调用大语言模型处理文本' },
-  },
-  {
-    id: 'end',
-    type: 'workflowNode',
-    position: { x: 250, y: 310 },
-    data: { blockType: BlockEnum.End, label: '结束' },
-  },
-];
+// 新建/空图时的默认起始节点（至少一个开始节点）。
+function makeDefaultNodes(): Node[] {
+  return [
+    { id: 'start-1', type: 'workflowNode', position: { x: 250, y: 50 }, data: { blockType: BlockEnum.Start, label: '开始' } },
+  ];
+}
 
-// Initial edges
-const initialEdges: Edge[] = [
-  { id: 'e-start-llm', source: 'start', target: 'llm-1', animated: true },
-  { id: 'e-llm-end', source: 'llm-1', target: 'end', animated: true },
-];
+// 保存状态（自动保存指示）
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 interface WorkflowPageInnerProps {
+  workflowId?: string;
   title?: string;
   appType?: 'workflow' | 'chatflow';
+  initialGraph?: PersistedGraph;
   onlineUsers?: OnlineUser[];
 }
 
 function WorkflowPageInner({
-  title = '未命名工作流',
+  workflowId,
+  title: initialTitle = '未命名工作流',
   appType = 'workflow',
+  initialGraph,
   onlineUsers = [],
 }: WorkflowPageInnerProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  // 从后端图初始化画布；空图则给一个开始节点
+  const initial = useMemo(() => {
+    const rf = graphToReactFlow(initialGraph);
+    return rf.nodes.length > 0
+      ? { nodes: rf.nodes as unknown as Node[], edges: rf.edges as unknown as Edge[] }
+      : { nodes: makeDefaultNodes(), edges: [] as Edge[] };
+    // 仅首次挂载时按 initialGraph 建画布
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
+  const [title, setTitle] = useState(initialTitle);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [headerMode, setHeaderMode] = useState<'normal' | 'restoring' | 'view-history'>('normal');
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [toast, setToast] = useState('');
   const [interactionMode, setInteractionMode] = useState<'select' | 'pan'>('select');
-  const [showRunPanel, setShowRunPanel] = useState(false);
   const [showBlockSelector, setShowBlockSelector] = useState(false);
   const [recentBlocks, setRecentBlocks] = useState<string[]>(['llm', 'code', 'if-else']);
 
+  const router = useRouter();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { zoomIn, zoomOut, fitView, getZoom, screenToFlowPosition } = useReactFlow();
   const [zoom, setZoom] = useState(1);
 
+  // 轻量 toast
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 2600);
+  }, []);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  // 自动保存（防抖）：节点/连线/标题变更 800ms 后 PATCH 保存真实 graph。
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (!workflowId) return;
+    if (firstRun.current) { firstRun.current = false; return; } // 跳过首次挂载
+    const t = setTimeout(async () => {
+      setSaveStatus('saving');
+      try {
+        const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
+        const res = await fetch(`/api/workflows/${workflowId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: title, graph }),
+        });
+        if (!res.ok) { setSaveStatus('error'); showToast('自动保存失败：无权限或未登录'); return; }
+        const { valid, validation } = await res.json();
+        setSaveStatus('saved');
+        if (!valid && Array.isArray(validation) && validation.length > 0) {
+          showToast(`已保存（草稿）· ${validation.length} 处校验问题`);
+        }
+      } catch { setSaveStatus('error'); showToast('自动保存失败：网络错误'); }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [nodes, edges, title, workflowId, showToast]);
+
   const onConnect = useCallback(
     (params: Connection) => {
-      setEdges((eds) => addEdge({ ...params, animated: true }, eds));
-      setHasUnsavedChanges(true);
-    },
+      setEdges((eds) => addEdge({ ...params, animated: true }, eds));    },
     [setEdges]
   );
 
@@ -177,9 +214,7 @@ function WorkflowPageInner({
             ? { ...node, data: { ...node.data, ...data } }
             : node
         )
-      );
-      setHasUnsavedChanges(true);
-    },
+      );    },
     [setNodes]
   );
 
@@ -191,9 +226,7 @@ function WorkflowPageInner({
             ? { ...node, data: { ...node.data, label: title } }
             : node
         )
-      );
-      setHasUnsavedChanges(true);
-    },
+      );    },
     [setNodes]
   );
 
@@ -238,8 +271,6 @@ function WorkflowPageInner({
       };
 
       setNodes((nds) => [...nds, newNode]);
-      setHasUnsavedChanges(true);
-
       // Update recent blocks
       setRecentBlocks((prev) => {
         const filtered = prev.filter((t) => t !== blockType);
@@ -268,8 +299,6 @@ function WorkflowPageInner({
       };
 
       setNodes((nds) => [...nds, newNode]);
-      setHasUnsavedChanges(true);
-
       // Update recent blocks
       setRecentBlocks((prev) => {
         const filtered = prev.filter((t) => t !== blockType);
@@ -305,27 +334,42 @@ function WorkflowPageInner({
   }, [nodes]);
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
       {/* Header */}
       <WorkflowHeader
         mode={headerMode}
         title={title}
-        hasUnsavedChanges={hasUnsavedChanges}
+        hasUnsavedChanges={saveStatus === 'saving' || saveStatus === 'error'}
         onlineUsers={onlineUsers}
         appType={appType}
         canUndo={false}
         canRedo={false}
-        onBack={() => window.history.back()}
-        onRun={() => setShowRunPanel(true)}
-        onPublish={() => console.log('Publish')}
-        onVersionHistory={() => setHeaderMode('view-history')}
-        onEnvVars={() => console.log('Env vars')}
-        onConversationVars={() => console.log('Conversation vars')}
+        onBack={() => router.push('/workflows')}
+        onTitleChange={(t) => setTitle(t)}
+        onRun={() => showToast('测试运行即将接入（W1 后续切片）')}
+        onPublish={() => showToast('发布即将接入（W1 后续切片）')}
+        onVersionHistory={() => showToast('版本历史即将上线')}
+        onEnvVars={() => showToast('环境变量即将上线')}
+        onConversationVars={() => showToast('会话变量即将上线')}
         onExitHistory={() => setHeaderMode('normal')}
         onRestoreVersion={() => setHeaderMode('restoring')}
         onCancelRestore={() => setHeaderMode('normal')}
         onConfirmRestore={() => setHeaderMode('normal')}
       />
+
+      {/* 自动保存指示 */}
+      <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 text-xs text-muted-foreground">
+        {saveStatus === 'saving' && '自动保存中…'}
+        {saveStatus === 'saved' && '已自动保存'}
+        {saveStatus === 'error' && <span className="text-destructive">保存失败</span>}
+      </div>
+
+      {/* 轻量 toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground/90 px-4 py-2 text-sm text-background shadow-lg">
+          {toast}
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden relative">
@@ -418,8 +462,10 @@ function WorkflowPageInner({
 }
 
 export interface WorkflowPageProps {
+  workflowId?: string;
   title?: string;
   appType?: 'workflow' | 'chatflow';
+  initialGraph?: PersistedGraph;
   onlineUsers?: OnlineUser[];
 }
 
