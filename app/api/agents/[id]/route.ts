@@ -1,6 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
-import { getAgentById, updateAgent, deleteAgent } from '@/lib/data/agents'
+import { getAgentById, saveAgent, deleteAgent } from '@/lib/data/agents'
+import { AgentConfigSchema } from '@/lib/agents/config'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
@@ -32,12 +33,23 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   const { id } = await params
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
-  const patch = {
+
+  // config 全量编排配置（4.1.7）：Zod 部分校验，失败 422
+  let config
+  if (body?.config && typeof body.config === 'object') {
+    const parsed = AgentConfigSchema.partial().safeParse(body.config)
+    if (!parsed.success) {
+      return Response.json({ error: { code: 'invalid_config', message: '配置校验失败' }, issues: parsed.error.issues }, { status: 422 })
+    }
+    config = parsed.data
+  }
+
+  const agent = await saveAgent(ctx, id, {
     name: typeof body?.name === 'string' ? body.name : undefined,
     description: typeof body?.description === 'string' ? body.description : undefined,
     department: typeof body?.department === 'string' ? body.department : undefined,
-  }
-  const agent = await updateAgent(ctx, id, patch)
+    config,
+  })
   if (!agent) {
     return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
   }

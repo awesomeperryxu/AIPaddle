@@ -3,6 +3,7 @@ import type { Agent } from '@/lib/mock-data'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
 import { TRANSITIONS, type TransitionAction } from '@/lib/agents/status'
+import type { AgentConfig } from '@/lib/agents/config'
 
 // 数据层（ADR-008）：唯一访问 agents 表的地方，首参 ctx，用请求级客户端（RLS 生效）。
 // DB 行 → 视图用的 Agent 形状映射。
@@ -162,6 +163,79 @@ export async function getAgentForChat(_ctx: RequestContext, id: string): Promise
     model: cfg.model,
     systemPrompt: cfg.systemPrompt,
     temperature: cfg.temperature,
+  }
+}
+
+// ── 4.1.7：Agent 编排配置（含 config 全量）─────────────────────
+export type AgentDetail = {
+  id: string
+  name: string
+  description: string
+  department: string
+  status: Agent['status']
+  config: AgentConfig
+}
+
+const DETAIL_COLS = 'id,name,description,department,status,config'
+
+// 取 Agent 完整详情（含 config），供编排页编辑。RLS 兜底租户隔离。
+export async function getAgentDetail(_ctx: RequestContext, id: string): Promise<AgentDetail | null> {
+  if (!UUID_RE.test(id)) return null
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('agents')
+    .select(DETAIL_COLS)
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    description: (data.description ?? '') as string,
+    department: (data.department ?? '') as string,
+    status: data.status as Agent['status'],
+    config: (data.config ?? {}) as AgentConfig,
+  }
+}
+
+// 保存 Agent（名称/部门/描述 + config 合并）。config 为部分更新，合并进现有 config。
+// 校验由调用方（API）用 Zod 完成；此处只做合并落库。RLS 兜底租户隔离。
+export async function saveAgent(
+  _ctx: RequestContext,
+  id: string,
+  patch: { name?: string; department?: string; description?: string; config?: Partial<AgentConfig> },
+): Promise<AgentDetail | null> {
+  if (!UUID_RE.test(id)) return null
+  const fields: Record<string, unknown> = {}
+  if (typeof patch.name === 'string') fields.name = patch.name.trim()
+  if (typeof patch.description === 'string') fields.description = patch.description
+  if (typeof patch.department === 'string') fields.department = patch.department
+  if (patch.config && typeof patch.config === 'object') {
+    const cur = await getAgentDetail(_ctx, id)
+    if (!cur) return null
+    fields.config = { ...cur.config, ...patch.config } // 合并（不丢已有键）
+  }
+  if (Object.keys(fields).length === 0) return getAgentDetail(_ctx, id)
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('agents')
+    .update(fields)
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select(DETAIL_COLS)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    description: (data.description ?? '') as string,
+    department: (data.department ?? '') as string,
+    status: data.status as Agent['status'],
+    config: (data.config ?? {}) as AgentConfig,
   }
 }
 

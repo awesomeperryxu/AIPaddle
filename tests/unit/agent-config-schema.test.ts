@@ -1,0 +1,44 @@
+import { describe, it, expect } from 'vitest'
+import { AgentConfigSchema, AgentVariableSchema } from '@/lib/agents/config'
+
+// 4.1.7：Agent 编排配置 Zod 校验。
+
+describe('AgentConfigSchema', () => {
+  it('接受合法配置', () => {
+    const r = AgentConfigSchema.safeParse({
+      systemPrompt: '你是客服助手',
+      model: 'qwen-plus',
+      temperature: 0.7,
+      agentMode: 'react',
+      maxIterations: 5,
+      variables: [{ key: 'company', type: 'string', required: true }],
+    })
+    expect(r.success).toBe(true)
+  })
+
+  it('温度越界被拒', () => {
+    expect(AgentConfigSchema.safeParse({ temperature: 3 }).success).toBe(false)
+    expect(AgentConfigSchema.safeParse({ temperature: -1 }).success).toBe(false)
+  })
+
+  it('最大迭代越界/非整数被拒', () => {
+    expect(AgentConfigSchema.safeParse({ maxIterations: 0 }).success).toBe(false)
+    expect(AgentConfigSchema.safeParse({ maxIterations: 21 }).success).toBe(false)
+    expect(AgentConfigSchema.safeParse({ maxIterations: 1.5 }).success).toBe(false)
+  })
+
+  it('非法 agentMode 被拒', () => {
+    expect(AgentConfigSchema.safeParse({ agentMode: 'auto' }).success).toBe(false)
+  })
+
+  it('partial 允许空对象（PATCH 部分更新）', () => {
+    expect(AgentConfigSchema.partial().safeParse({}).success).toBe(true)
+  })
+
+  it('变量名必填、type 默认 string', () => {
+    expect(AgentVariableSchema.safeParse({ key: '' }).success).toBe(false)
+    const ok = AgentVariableSchema.safeParse({ key: 'x' })
+    expect(ok.success).toBe(true)
+    if (ok.success) expect(ok.data.type).toBe('string')
+  })
+})

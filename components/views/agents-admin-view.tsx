@@ -540,13 +540,17 @@ export function AgentsAdminView({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-40">
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/agents-admin/${agent.id}`); }}>
                         <Settings className="h-4 w-4 mr-2" />
-                        配置
+                        编排配置
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/agents-admin/${agent.id}`); }}>
                         <Play className="h-4 w-4 mr-2" />
                         调试
+                      </DropdownMenuItem>
+                      <DropdownMenuItem disabled={!canEdit} onClick={(e) => { e.stopPropagation(); openEdit(agent); }}>
+                        <Settings className="h-4 w-4 mr-2" />
+                        编辑信息
                       </DropdownMenuItem>
                       <DropdownMenuItem>
                         <Copy className="h-4 w-4 mr-2" />
@@ -754,13 +758,12 @@ export function AgentsAdminView({
           <div className="flex gap-2">
             <Button
               className="flex-1 shadow-sm"
-              disabled={!canEdit}
-              onClick={() => selectedAgent && openEdit(selectedAgent)}
+              onClick={() => selectedAgent && router.push(`/agents-admin/${selectedAgent.id}`)}
             >
               <Settings className="h-4 w-4 mr-2" />
-              编辑配置
+              编排配置
             </Button>
-            <Button variant="outline" className="flex-1">
+            <Button variant="outline" className="flex-1" onClick={() => selectedAgent && router.push(`/agents-admin/${selectedAgent.id}`)}>
               <Play className="h-4 w-4 mr-2" />
               调试测试
             </Button>

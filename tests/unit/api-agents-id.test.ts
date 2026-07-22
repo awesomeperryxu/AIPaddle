@@ -13,17 +13,17 @@ import type { RequestContext } from '@/lib/context'
 vi.mock('@/lib/context', () => ({ getRequestContext: vi.fn() }))
 vi.mock('@/lib/data/agents', () => ({
   getAgentById: vi.fn(),
-  updateAgent: vi.fn(),
+  saveAgent: vi.fn(),
   deleteAgent: vi.fn(),
 }))
 
 import { getRequestContext } from '@/lib/context'
-import { deleteAgent, updateAgent } from '@/lib/data/agents'
+import { deleteAgent, saveAgent } from '@/lib/data/agents'
 import { DELETE, PATCH } from '@/app/api/agents/[id]/route'
 
 const mockCtx = vi.mocked(getRequestContext)
 const mockDelete = vi.mocked(deleteAgent)
-const mockUpdate = vi.mocked(updateAgent)
+const mockSave = vi.mocked(saveAgent)
 
 const adminCtx: RequestContext = { userId: 'u1', orgId: 'org1', roles: ['Admin'] }
 const userCtx: RequestContext = { userId: 'u3', orgId: 'org1', roles: ['User'] }
@@ -83,32 +83,50 @@ describe('PATCH /api/agents/[id]', () => {
     mockCtx.mockResolvedValueOnce(null)
     const res = await callPatch({ name: '改名' })
     expect(res.status).toBe(401)
-    expect(mockUpdate).not.toHaveBeenCalled()
+    expect(mockSave).not.toHaveBeenCalled()
   })
 
   it('无权限角色（User）→ 403，且不触碰数据层', async () => {
     mockCtx.mockResolvedValueOnce(userCtx)
     const res = await callPatch({ name: '改名' })
     expect(res.status).toBe(403)
-    expect(mockUpdate).not.toHaveBeenCalled()
+    expect(mockSave).not.toHaveBeenCalled()
   })
 
-  it('Admin 更新存在的 Agent → 200 { agent }', async () => {
+  it('Admin 更新存在的 Agent（名称/部门）→ 200 { agent }', async () => {
     mockCtx.mockResolvedValueOnce(adminCtx)
-    mockUpdate.mockResolvedValueOnce({ id: ID, name: '新名', department: '研发', description: '' } as never)
+    mockSave.mockResolvedValueOnce({ id: ID, name: '新名', department: '研发', description: '', status: 'draft', config: {} } as never)
     const res = await callPatch({ name: '新名', department: '研发' })
     expect(res.status).toBe(200)
     expect((await res.json()).agent.name).toBe('新名')
-    expect(mockUpdate).toHaveBeenCalledWith(adminCtx, ID, {
+    expect(mockSave).toHaveBeenCalledWith(adminCtx, ID, {
       name: '新名',
       department: '研发',
       description: undefined,
+      config: undefined,
     })
   })
 
-  it('目标不存在 / 跨租户（updateAgent=null）→ 404', async () => {
+  it('Admin 更新 config（4.1.7）→ 200 且 config 透传给数据层', async () => {
     mockCtx.mockResolvedValueOnce(adminCtx)
-    mockUpdate.mockResolvedValueOnce(null)
+    mockSave.mockResolvedValueOnce({ id: ID, name: 'A', department: '', description: '', status: 'draft', config: { model: 'qwen-plus' } } as never)
+    const res = await callPatch({ config: { model: 'qwen-plus', temperature: 0.7, agentMode: 'react', maxIterations: 5 } })
+    expect(res.status).toBe(200)
+    expect(mockSave).toHaveBeenCalledWith(adminCtx, ID, expect.objectContaining({
+      config: { model: 'qwen-plus', temperature: 0.7, agentMode: 'react', maxIterations: 5 },
+    }))
+  })
+
+  it('非法 config（温度越界）→ 422，不触碰数据层', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    const res = await callPatch({ config: { temperature: 9 } })
+    expect(res.status).toBe(422)
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('目标不存在 / 跨租户（saveAgent=null）→ 404', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockSave.mockResolvedValueOnce(null)
     const res = await callPatch({ name: '改名' })
     expect(res.status).toBe(404)
   })
