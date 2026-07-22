@@ -141,6 +141,10 @@ export type AgentChatConfig = {
   model?: string
   systemPrompt?: string
   temperature?: number
+  // 大脑（4.1.9）
+  brainMode?: 'llm' | 'workflow' | 'routing'
+  brainWorkflowId?: string | null
+  routingRules?: { keyword: string; skillId: string }[]
 }
 
 export async function getAgentForChat(_ctx: RequestContext, id: string): Promise<AgentChatConfig | null> {
@@ -154,7 +158,11 @@ export async function getAgentForChat(_ctx: RequestContext, id: string): Promise
     .maybeSingle()
   if (error) throw new Error(error.message)
   if (!data) return null
-  const cfg = (data.config ?? {}) as { model?: string; systemPrompt?: string; temperature?: number }
+  const cfg = (data.config ?? {}) as {
+    model?: string; systemPrompt?: string; temperature?: number
+    brainMode?: 'llm' | 'workflow' | 'routing'; brainWorkflowId?: string | null
+    routingRules?: { keyword: string; skillId: string }[]
+  }
   return {
     id: data.id as string,
     name: data.name as string,
@@ -163,6 +171,9 @@ export async function getAgentForChat(_ctx: RequestContext, id: string): Promise
     model: cfg.model,
     systemPrompt: cfg.systemPrompt,
     temperature: cfg.temperature,
+    brainMode: cfg.brainMode,
+    brainWorkflowId: cfg.brainWorkflowId,
+    routingRules: cfg.routingRules,
   }
 }
 

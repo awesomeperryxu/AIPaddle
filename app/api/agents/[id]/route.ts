@@ -2,6 +2,7 @@ import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { getAgentById, saveAgent, deleteAgent } from '@/lib/data/agents'
 import { AgentConfigSchema } from '@/lib/agents/config'
+import { detectBrainCycle } from '@/lib/agents/brain'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
@@ -42,6 +43,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
       return Response.json({ error: { code: 'invalid_config', message: '配置校验失败' }, issues: parsed.error.issues }, { status: 422 })
     }
     config = parsed.data
+    // 4.1.9 防环：绑定工作流大脑时，检查不会形成 agent↔workflow 环
+    if (config.brainWorkflowId) {
+      if (await detectBrainCycle(ctx, id, config.brainWorkflowId)) {
+        return Response.json({ error: { code: 'brain_cycle', message: '绑定该工作流会形成循环（工作流内的 Agent 节点最终又指向本 Agent），已拒绝' } }, { status: 422 })
+      }
+    }
   }
 
   const agent = await saveAgent(ctx, id, {

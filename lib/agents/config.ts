@@ -15,6 +15,16 @@ export const AgentVariableSchema = z.object({
 })
 export type AgentVariable = z.infer<typeof AgentVariableSchema>
 
+// 事项路由规则（4.1.9）：无 workflow 大脑时，按关键词命中路由到指定 Skill。
+export const RoutingRuleSchema = z.object({
+  keyword: z.string().trim().min(1).max(60),
+  skillId: z.string().trim().min(1),
+})
+export type RoutingRule = z.infer<typeof RoutingRuleSchema>
+
+// Agent 大脑模式（4.1.9）：纯 LLM / 绑定工作流 / 事项路由到 Skill。
+export type BrainMode = 'llm' | 'workflow' | 'routing'
+
 // Agent 编排配置。PATCH 时按 partial 校验并合并进现有 config。
 export const AgentConfigSchema = z.object({
   systemPrompt: z.string().max(4000).optional(),
@@ -23,8 +33,18 @@ export const AgentConfigSchema = z.object({
   variables: z.array(AgentVariableSchema).max(20).optional(),
   agentMode: z.enum(['react', 'function_calling']).optional(),
   maxIterations: z.number().int().min(1).max(20).optional(),
+  // 大脑（4.1.9）
+  brainMode: z.enum(['llm', 'workflow', 'routing']).optional(),
+  brainWorkflowId: z.string().uuid().nullish(),
+  routingRules: z.array(RoutingRuleSchema).max(20).optional(),
 })
 export type AgentConfig = z.infer<typeof AgentConfigSchema>
+
+export const BRAIN_MODE_LABEL: Record<BrainMode, string> = {
+  llm: '纯 LLM（提示词直答）',
+  workflow: '绑定工作流（大脑=一条 workflow）',
+  routing: '事项路由（按关键词转指定 Skill）',
+}
 
 // 可选模型（DashScope 通义系列，与 lib/ai 一致）
 export const AGENT_MODELS: { value: string; label: string }[] = [

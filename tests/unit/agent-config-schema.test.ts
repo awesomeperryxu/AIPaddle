@@ -41,4 +41,22 @@ describe('AgentConfigSchema', () => {
     expect(ok.success).toBe(true)
     if (ok.success) expect(ok.data.type).toBe('string')
   })
+
+  // 4.1.9 大脑字段
+  it('接受大脑配置：workflow 绑定', () => {
+    expect(AgentConfigSchema.safeParse({ brainMode: 'workflow', brainWorkflowId: '456d60b5-8d64-445a-b9d1-4d9c30e9ae92' }).success).toBe(true)
+  })
+
+  it('接受大脑配置：routing 规则', () => {
+    expect(AgentConfigSchema.safeParse({ brainMode: 'routing', routingRules: [{ keyword: '报销', skillId: 's1' }] }).success).toBe(true)
+  })
+
+  it('非法 brainMode / 非 uuid 的 brainWorkflowId 被拒', () => {
+    expect(AgentConfigSchema.safeParse({ brainMode: 'auto' }).success).toBe(false)
+    expect(AgentConfigSchema.safeParse({ brainWorkflowId: 'not-a-uuid' }).success).toBe(false)
+  })
+
+  it('brainWorkflowId 允许 null（清除绑定）', () => {
+    expect(AgentConfigSchema.safeParse({ brainWorkflowId: null }).success).toBe(true)
+  })
 })

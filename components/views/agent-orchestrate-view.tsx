@@ -14,10 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   AGENT_MODELS,
   AGENT_MODE_LABEL,
+  BRAIN_MODE_LABEL,
   DEFAULT_AGENT_CONFIG,
   type AgentConfig,
   type AgentMode,
   type AgentVariable,
+  type BrainMode,
+  type RoutingRule,
 } from '@/lib/agents/config';
 
 type AgentDetail = {
@@ -50,6 +53,24 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
   const [agentMode, setAgentMode] = useState<AgentMode>(agent.config.agentMode ?? DEFAULT_AGENT_CONFIG.agentMode);
   const [maxIterations, setMaxIterations] = useState(agent.config.maxIterations ?? DEFAULT_AGENT_CONFIG.maxIterations);
 
+  // 大脑设置（4.1.9）
+  const [brainMode, setBrainMode] = useState<BrainMode>(agent.config.brainMode ?? 'llm');
+  const [brainWorkflowId, setBrainWorkflowId] = useState<string>(agent.config.brainWorkflowId ?? '');
+  const [routingRules, setRoutingRules] = useState<RoutingRule[]>(agent.config.routingRules ?? []);
+  const [workflows, setWorkflows] = useState<{ id: string; name: string; type: string }[]>([]);
+  const [skills, setSkills] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [wfRes, skRes] = await Promise.all([fetch('/api/workflows'), fetch('/api/skills')]);
+        if (active && wfRes.ok) setWorkflows((await wfRes.json()).workflows ?? []);
+        if (active && skRes.ok) setSkills((await skRes.json()).skills ?? []);
+      } catch { /* 列表拉取失败不阻断编辑 */ }
+    })();
+    return () => { active = false; };
+  }, []);
+
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,9 +84,12 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
   // 组装当前 config
   const buildConfig = useCallback((): AgentConfig => ({
     systemPrompt, model, temperature, variables, agentMode, maxIterations,
-  }), [systemPrompt, model, temperature, variables, agentMode, maxIterations]);
+    brainMode,
+    brainWorkflowId: brainMode === 'workflow' && brainWorkflowId ? brainWorkflowId : null,
+    routingRules: brainMode === 'routing' ? routingRules.filter((r) => r.keyword && r.skillId) : [],
+  }), [systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules]);
 
-  // 立即保存（返回是否成功）
+  // 立即保存（返回是否成功）；防环 422 弹出提示
   const saveNow = useCallback(async () => {
     if (!canEdit) return false;
     try {
@@ -73,11 +97,16 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: title, config: buildConfig() }),
       });
-      if (!res.ok) { setSaveStatus('error'); return false; }
+      if (!res.ok) {
+        setSaveStatus('error');
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 422 && body?.error?.code === 'brain_cycle') showToast(body.error.message);
+        return false;
+      }
       setSaveStatus('saved');
       return true;
     } catch { setSaveStatus('error'); return false; }
-  }, [canEdit, agent.id, title, buildConfig]);
+  }, [canEdit, agent.id, title, buildConfig, showToast]);
 
   // 防抖自动保存
   const firstRun = useRef(true);
@@ -86,7 +115,7 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
     if (firstRun.current) { firstRun.current = false; return; }
     const t = setTimeout(() => { setSaveStatus('saving'); void saveNow(); }, 800);
     return () => clearTimeout(t);
-  }, [title, systemPrompt, model, temperature, variables, agentMode, maxIterations, canEdit, saveNow]);
+  }, [title, systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, canEdit, saveNow]);
 
   // AI 生成提示词
   const [genInstruction, setGenInstruction] = useState('');
@@ -285,12 +314,73 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
             </div>
           </section>
 
-          {/* 知识库 / 工具（4.1.9 绑定，先占位） */}
+          {/* 大脑设置（4.1.9）：纯LLM / 绑定工作流 / 事项路由到 Skill */}
+          <section className="rounded-xl border border-border p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">大脑设置</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">Agent 的执行大脑：纯提示词直答，或绑定一条工作流编排（内部连 LLM/知识库/工具），或按事项关键词路由到指定 Skill。</p>
+            <Select value={brainMode} onValueChange={(v) => setBrainMode(v as BrainMode)} disabled={!canEdit}>
+              <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="llm">{BRAIN_MODE_LABEL.llm}</SelectItem>
+                <SelectItem value="workflow">{BRAIN_MODE_LABEL.workflow}</SelectItem>
+                <SelectItem value="routing">{BRAIN_MODE_LABEL.routing}</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {brainMode === 'workflow' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">选择工作流（对话将执行该工作流）</Label>
+                <Select value={brainWorkflowId} onValueChange={setBrainWorkflowId} disabled={!canEdit}>
+                  <SelectTrigger className="h-9 w-full"><SelectValue placeholder="选择一条工作流…" /></SelectTrigger>
+                  <SelectContent>
+                    {workflows.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">暂无工作流，请先到「工作流管理」创建</div>}
+                    {workflows.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}（{w.type}）</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {brainMode === 'routing' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">事项路由规则（命中关键词 → 转指定 Skill；未命中回退 LLM）</Label>
+                  <Button variant="outline" size="sm" className="h-7 gap-1" disabled={!canEdit} onClick={() => setRoutingRules((r) => [...r, { keyword: '', skillId: '' }])}>
+                    <Plus className="h-3.5 w-3.5" /> 添加
+                  </Button>
+                </div>
+                {routingRules.length === 0 && <p className="text-xs text-muted-foreground">暂无规则</p>}
+                {routingRules.map((rule, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={rule.keyword}
+                      onChange={(e) => setRoutingRules((r) => r.map((x, idx) => idx === i ? { ...x, keyword: e.target.value } : x))}
+                      placeholder="关键词（如：报销）" disabled={!canEdit} className="h-8 flex-1"
+                    />
+                    <span className="text-xs text-muted-foreground">→</span>
+                    <Select value={rule.skillId} onValueChange={(v) => setRoutingRules((r) => r.map((x, idx) => idx === i ? { ...x, skillId: v } : x))} disabled={!canEdit}>
+                      <SelectTrigger className="h-8 flex-1"><SelectValue placeholder="选择 Skill" /></SelectTrigger>
+                      <SelectContent>
+                        {skills.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canEdit} onClick={() => setRoutingRules((r) => r.filter((_, idx) => idx !== i))}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* 知识库 / 工具直挂（后续切片） */}
           <section className="rounded-xl border border-dashed border-border p-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <BookOpen className="h-4 w-4" /> 知识库 · <Wrench className="h-4 w-4" /> 工具（Skill/工作流）
+              <BookOpen className="h-4 w-4" /> 知识库直挂 · 工具(Skill)直挂
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">绑定知识库、Skill、工作流作为 Agent 能力 —— 即将上线（4.1.9）。</p>
+            <p className="mt-1 text-xs text-muted-foreground">给 Agent 直接挂知识库/工具（不经 workflow）—— 即将上线。当前可通过「绑定工作流」内的知识检索/工具节点实现。</p>
           </section>
         </div>
 
