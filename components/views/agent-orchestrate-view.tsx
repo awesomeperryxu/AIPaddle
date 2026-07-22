@@ -4,12 +4,13 @@
 // 右侧调试预览（接真实 /chat）。嵌入 dashboard 外壳（非全屏），防抖自动保存 config。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AGENT_MODELS,
@@ -52,6 +53,12 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
   const [variables, setVariables] = useState<AgentVariable[]>(agent.config.variables ?? []);
   const [agentMode, setAgentMode] = useState<AgentMode>(agent.config.agentMode ?? DEFAULT_AGENT_CONFIG.agentMode);
   const [maxIterations, setMaxIterations] = useState(agent.config.maxIterations ?? DEFAULT_AGENT_CONFIG.maxIterations);
+
+  // Features（4.1.12）
+  const [openingStatement, setOpeningStatement] = useState(agent.config.openingStatement ?? '');
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>(agent.config.suggestedQuestions ?? []);
+  const [citationEnabled, setCitationEnabled] = useState(agent.config.citationEnabled ?? true);
+  const [moderationEnabled, setModerationEnabled] = useState(agent.config.moderationEnabled ?? false);
 
   // 大脑设置（4.1.9）
   const [brainMode, setBrainMode] = useState<BrainMode>(agent.config.brainMode ?? 'llm');
@@ -116,7 +123,11 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
     brainMode,
     brainWorkflowId: brainMode === 'workflow' && brainWorkflowId ? brainWorkflowId : null,
     routingRules: brainMode === 'routing' ? routingRules.filter((r) => r.keyword && r.skillId) : [],
-  }), [systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules]);
+    openingStatement,
+    suggestedQuestions: suggestedQuestions.filter((q) => q.trim()),
+    citationEnabled,
+    moderationEnabled,
+  }), [systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, openingStatement, suggestedQuestions, citationEnabled, moderationEnabled]);
 
   // 立即保存（返回是否成功）；防环 422 弹出提示
   const saveNow = useCallback(async () => {
@@ -144,7 +155,7 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
     if (firstRun.current) { firstRun.current = false; return; }
     const t = setTimeout(() => { setSaveStatus('saving'); void saveNow(); }, 800);
     return () => clearTimeout(t);
-  }, [title, systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, canEdit, saveNow]);
+  }, [title, systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, openingStatement, suggestedQuestions, citationEnabled, moderationEnabled, canEdit, saveNow]);
 
   // AI 生成提示词
   const [genInstruction, setGenInstruction] = useState('');
@@ -343,6 +354,59 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
             </div>
           </section>
 
+          {/* Features（4.1.12，照搬 Dify）：开场白 / 建议问题 / 引用归属 / 内容审查 */}
+          <section className="rounded-xl border border-border p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">功能（Features）</Label>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">开场白</Label>
+              <Textarea
+                value={openingStatement}
+                onChange={(e) => setOpeningStatement(e.target.value)}
+                disabled={!canEdit}
+                placeholder="对话开始时 Agent 主动说的第一句话…"
+                className="min-h-[60px] text-sm"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">下一步问题建议（点击即填入）</Label>
+                <Button variant="outline" size="sm" className="h-7 gap-1" disabled={!canEdit || suggestedQuestions.length >= 10} onClick={() => setSuggestedQuestions((q) => [...q, ''])}>
+                  <Plus className="h-3.5 w-3.5" /> 添加
+                </Button>
+              </div>
+              {suggestedQuestions.length === 0 && <p className="text-xs text-muted-foreground">暂无建议问题</p>}
+              {suggestedQuestions.map((q, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input value={q} onChange={(e) => setSuggestedQuestions((arr) => arr.map((x, idx) => idx === i ? e.target.value : x))} placeholder="建议问题…" disabled={!canEdit} className="h-8 flex-1" />
+                  <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canEdit} onClick={() => setSuggestedQuestions((arr) => arr.filter((_, idx) => idx !== i))}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm">引用与归属</Label>
+                <p className="text-xs text-muted-foreground">回答时标注知识库来源 [编号]</p>
+              </div>
+              <Switch checked={citationEnabled} onCheckedChange={setCitationEnabled} disabled={!canEdit} />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm">内容审查</Label>
+                <p className="text-xs text-muted-foreground">对输入做基础敏感内容拦截（命中即拒答）</p>
+              </div>
+              <Switch checked={moderationEnabled} onCheckedChange={setModerationEnabled} disabled={!canEdit} />
+            </div>
+          </section>
+
           {/* 大脑设置（4.1.9）：纯LLM / 绑定工作流 / 事项路由到 Skill */}
           <section className="rounded-xl border border-border p-4 space-y-3">
             <div className="flex items-center gap-2">
@@ -449,7 +513,24 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
           <div className="border-b border-border px-4 py-3 text-sm font-medium">调试与预览</div>
           <div className="flex-1 overflow-auto p-4 space-y-3">
             {messages.length === 0 && (
-              <p className="pt-8 text-center text-xs text-muted-foreground">在下方输入，与当前配置的 Agent 实时对话调试。</p>
+              <div className="space-y-3">
+                {openingStatement ? (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap break-words">{openingStatement}</div>
+                  </div>
+                ) : (
+                  <p className="pt-8 text-center text-xs text-muted-foreground">在下方输入，与当前配置的 Agent 实时对话调试。</p>
+                )}
+                {suggestedQuestions.filter((q) => q.trim()).length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {suggestedQuestions.filter((q) => q.trim()).map((q, i) => (
+                      <button key={i} type="button" onClick={() => setInput(q)} className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-primary/50">
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {messages.map((m, i) => (
               <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>

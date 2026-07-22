@@ -6,6 +6,7 @@ import { executeGraph } from '@/lib/workflow/execute'
 import { getSkillById } from '@/lib/data/skills'
 import { evaluateSkillCall } from '@/lib/skills/invoke'
 import { retrieveSegments } from '@/lib/kb/rag'
+import { moderateText } from '@/lib/agents/moderation'
 import { recordCall } from '@/lib/data/call-logs'
 import { chatWithUsage, type ChatMessage } from '@/lib/ai'
 
@@ -47,6 +48,15 @@ export async function POST(req: Request, { params }: Ctx) {
   const lastUser = typeof lastUserContent === 'string' ? lastUserContent : ''
   const startedAt = Date.now()
 
+  // 4.1.12 内容审查（前置）：开启且命中敏感词 → 直接拒答，不进 LLM/大脑。
+  if (agent.moderationEnabled) {
+    const mod = moderateText(lastUser)
+    if (mod.flagged) {
+      await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, success: false, errorCode: 'moderation_blocked' })
+      return Response.json({ reply: '抱歉，你的请求涉及不合规内容，我无法协助。', agent: { id: agent.id, name: agent.name, moderated: true } })
+    }
+  }
+
   // 4.1.9 大脑分流：绑定工作流 → 执行 workflow；事项路由 → 命中关键词转 Skill；否则走 LLM。
   if (agent.brainMode === 'workflow' && agent.brainWorkflowId) {
     const wf = await getWorkflow(ctx, agent.brainWorkflowId)
@@ -82,8 +92,12 @@ export async function POST(req: Request, { params }: Ctx) {
   try {
     const segs = await retrieveSegments(ctx, lastUser, { agentId: agent.id })
     if (segs.length) {
+      // 4.1.12：引用与归属开关（默认开启标注来源；关闭则不要求标注）
+      const citeInstr = agent.citationEnabled === false
+        ? '若与问题相关请据此作答，不相关则正常作答：'
+        : '若与问题相关请据此作答并在末尾用 [编号] 标注来源，不相关则正常作答：'
       ragContext =
-        '\n\n以下是该 Agent 绑定知识库的相关资料，若与问题相关请据此作答并在末尾用 [编号] 标注来源，不相关则正常作答：\n' +
+        '\n\n以下是该 Agent 绑定知识库的相关资料，' + citeInstr + '\n' +
         segs.map((s, i) => `[${i + 1}] 《${s.filename}》：${s.snippet}`).join('\n')
     }
   } catch { /* 检索失败不阻断对话 */ }
