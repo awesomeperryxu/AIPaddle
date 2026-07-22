@@ -23,9 +23,9 @@ export type ExecResult = {
 }
 
 type GNode = { id: string; type: string; data?: { config?: Record<string, unknown>; label?: string } }
-type GEdge = { source: string; target: string }
+type GEdge = { source: string; target: string; sourceHandle?: string }
 
-const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request'])
+const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request', 'if-else'])
 
 // 执行选项：ctx 用于需租户隔离的节点（知识检索）。
 export type ExecOptions = { ctx?: RequestContext }
@@ -57,6 +57,68 @@ function buildExtractPrompt(cfg: Record<string, unknown>, input: string): string
     .join('\n')
   const spec = fields || '- result（从输入中提取的关键信息）'
   return `从下面的输入中提取以下字段，严格输出 JSON（无代码块围栏、无多余文字），提取不到的填 null：\n${spec}\n\n输入：\n${input}`
+}
+
+// ── if-else 条件分支（4.4.8a）───────────────────────────────────────────
+// 当前引擎为单值模型（无命名变量系统），条件对【节点输入】求值；value 为比较操作数。
+// operator 取 ComparisonOperator 的字符串值（与前端 node-types.ts 枚举一致）。
+function evalCondition(input: string, operator: string, rawValue: unknown): boolean {
+  const v = rawValue == null ? '' : String(rawValue)
+  const inNum = Number(input)
+  const vNum = Number(v)
+  const numOk = !Number.isNaN(inNum) && !Number.isNaN(vNum)
+  switch (operator) {
+    case 'contains': return input.includes(v)
+    case 'not-contains': return !input.includes(v)
+    case 'starts-with': return input.startsWith(v)
+    case 'ends-with': return input.endsWith(v)
+    case 'is': case '=': return input === v
+    case 'is-not': case '!=': return input !== v
+    case 'empty': case 'not-exists': return input === ''
+    case 'not-empty': case 'exists': return input !== ''
+    case '>': return numOk && inNum > vNum
+    case '>=': return numOk && inNum >= vNum
+    case '<': return numOk && inNum < vNum
+    case '<=': return numOk && inNum <= vNum
+    case 'in': return v.split(',').map((s) => s.trim()).includes(input)
+    case 'not-in': return !v.split(',').map((s) => s.trim()).includes(input)
+    default: return false
+  }
+}
+
+type CondLike = { operator?: unknown; value?: unknown }
+type GroupLike = { logicalOperator?: unknown; conditions?: CondLike[] }
+type CaseLike = { caseId?: unknown; logicalOperator?: unknown; conditions?: GroupLike[] }
+
+function evalGroup(group: GroupLike, input: string): boolean {
+  const conds = Array.isArray(group?.conditions) ? group.conditions : []
+  if (conds.length === 0) return true // 空条件组视为真
+  const rs = conds.map((c) => evalCondition(input, String(c?.operator ?? ''), c?.value))
+  return group?.logicalOperator === 'or' ? rs.some(Boolean) : rs.every(Boolean)
+}
+
+function evalCase(caseItem: CaseLike, input: string): boolean {
+  const groups = Array.isArray(caseItem?.conditions) ? caseItem.conditions : []
+  if (groups.length === 0) return false // 无条件（else 不走此函数）→ 不匹配
+  const rs = groups.map((g) => evalGroup(g, input))
+  return caseItem?.logicalOperator === 'or' ? rs.some(Boolean) : rs.every(Boolean)
+}
+
+function caseOrder(caseId: unknown): number {
+  if (caseId === 'if-true') return 0
+  const m = /^elif-(\d+)$/.exec(String(caseId ?? ''))
+  return m ? Number(m[1]) : 999
+}
+
+/** 解析 if-else 命中的分支：按 if-true→elif-N 顺序取首个满足条件者，皆不中则 'else'。 */
+function resolveIfElseCase(cfg: Record<string, unknown>, input: string): string {
+  const cases = (Array.isArray(cfg.cases) ? cfg.cases : []) as CaseLike[]
+  const ordered = [...cases].sort((a, b) => caseOrder(a?.caseId) - caseOrder(b?.caseId))
+  for (const c of ordered) {
+    if (String(c?.caseId) === 'else') continue
+    if (evalCase(c, input)) return String(c.caseId)
+  }
+  return 'else'
 }
 
 /** 拓扑排序（Kahn）；有环则回退到原始顺序（校验已拦环，这里稳妥兜底）。 */
@@ -103,6 +165,21 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
   const traces: NodeTrace[] = []
   const ordered = topoOrder(nodes, edges)
 
+  // 出边（含 sourceHandle）：用于 if-else 分支路由
+  const outEdges = new Map<string, GEdge[]>(nodes.map((n) => [n.id, []]))
+  for (const e of edges) if (outEdges.has(e.source)) outEdges.get(e.source)!.push(e)
+
+  // 可达集：入度 0 的入口节点先可达；每个已执行节点沿"命中"的出边把目标标记可达。
+  // if-else 仅命中分支（sourceHandle===activeCase）的边生效；其它节点全部出边生效。
+  // 分支未走到的节点不执行、不记 trace（traces = 实际执行路径）。
+  const reachable = new Set<string>(nodes.filter((n) => (preds.get(n.id)?.length ?? 0) === 0).map((n) => n.id))
+  const propagate = (nodeId: string, activeCase: string | null) => {
+    for (const e of outEdges.get(nodeId) ?? []) {
+      const taken = activeCase !== null ? (e.sourceHandle ?? '') === activeCase : true
+      if (taken) reachable.add(e.target)
+    }
+  }
+
   const inputOf = (n: GNode): string => {
     const ps = preds.get(n.id) ?? []
     if (ps.length === 0) return input
@@ -110,13 +187,16 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
   }
 
   for (const n of ordered) {
+    if (!reachable.has(n.id)) continue // 分支未命中：跳过，不执行、不记 trace
     const t0 = Date.now()
     const nodeInput = inputOf(n)
+    let activeCase: string | null = null // 仅 if-else 设值：命中分支的 caseId
     try {
       if (!SUPPORTED.has(n.type)) {
         // Tool/Skill 等节点：4.4.2 未就绪，跳过并透传
         outputs.set(n.id, nodeInput)
         traces.push({ nodeId: n.id, type: n.type, status: 'skipped', input: nodeInput, output: nodeInput, error: '该节点类型需 4.4.2/Skill 支持（暂跳过）', ms: Date.now() - t0 })
+        propagate(n.id, activeCase)
         continue
       }
       let out = nodeInput
@@ -129,11 +209,16 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
         out = renderTemplate(cfg, nodeInput)
       } else if (n.type === 'parameter-extractor') {
         out = await chat([{ role: 'user', content: buildExtractPrompt(cfg, nodeInput) }])
+      } else if (n.type === 'if-else') {
+        // 条件分支：透传输入，另定命中分支（activeCase）→ 只放行对应 sourceHandle 的出边
+        activeCase = resolveIfElseCase(cfg, nodeInput)
+        out = nodeInput
       } else if (n.type === 'knowledge-retrieval') {
         // 知识检索：真实 RAG（retrieveSegments），query=节点输入；无 ctx 则跳过透传。
         if (!opts.ctx) {
           outputs.set(n.id, nodeInput)
           traces.push({ nodeId: n.id, type: n.type, status: 'skipped', input: nodeInput, output: nodeInput, error: '缺少运行上下文（ctx），无法检索', ms: Date.now() - t0 })
+          propagate(n.id, activeCase)
           continue
         }
         const kbId = Array.isArray(cfg.dataset_ids) && cfg.dataset_ids.length > 0 ? String(cfg.dataset_ids[0]) : undefined
@@ -157,14 +242,17 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
       }
       // start / end：透传（start 输出=运行输入；end 输出=其输入=最终结果）
       outputs.set(n.id, out)
-      traces.push({ nodeId: n.id, type: n.type, status: 'succeeded', input: nodeInput, output: out, ms: Date.now() - t0 })
+      traces.push({ nodeId: n.id, type: n.type, status: 'succeeded', input: nodeInput, output: n.type === 'if-else' ? `分支命中：${activeCase}` : out, ms: Date.now() - t0 })
     } catch (e) {
       traces.push({ nodeId: n.id, type: n.type, status: 'failed', input: nodeInput, error: String(e instanceof Error ? e.message : e), ms: Date.now() - t0 })
       return { status: 'failed', output: '', traces }
     }
+    propagate(n.id, activeCase)
   }
 
-  // 最终输出 = end 节点输出（无 end 则取最后一个节点）
-  const endNode = ordered.filter((n) => n.type === 'end').pop() ?? ordered[ordered.length - 1]
+  // 最终输出 = 已执行(可达)的 end 节点输出（无 end 则取最后一个已执行节点）
+  const endNode =
+    [...ordered].reverse().find((n) => n.type === 'end' && outputs.has(n.id)) ??
+    [...ordered].reverse().find((n) => outputs.has(n.id))
   return { status: 'succeeded', output: endNode ? (outputs.get(endNode.id) ?? '') : '', traces }
 }
