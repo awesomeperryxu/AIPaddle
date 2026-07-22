@@ -1,10 +1,8 @@
 'use client'
 
-import { Suspense } from 'react'
-import { useFormStatus } from 'react-dom'
+import { Suspense, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { login } from '../actions'
 
 const ERR_MAP: Record<string, string> = {
   email_format: '邮箱格式不正确',
@@ -12,24 +10,41 @@ const ERR_MAP: Record<string, string> = {
   invalid_credentials: '账号不存在或密码错误',
   service: '登录服务暂不可用，请稍后重试或联系管理员',
   callback_failed: '认证回调失败，请重试',
-}
-
-function SubmitButton() {
-  const { pending } = useFormStatus()
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
-    >
-      {pending ? '登录中...' : '登录'}
-    </button>
-  )
+  network: '网络异常，请重试',
 }
 
 function LoginForm() {
   const searchParams = useSearchParams()
-  const error = ERR_MAP[searchParams.get('error') ?? '']
+  const [pending, setPending] = useState(false)
+  const [errCode, setErrCode] = useState('')
+  // 初次进入可能带 ?error=（如回调失败）；提交后以 fetch 错误码为准
+  const error = ERR_MAP[errCode || (searchParams.get('error') ?? '')]
+
+  // 登录改走稳定 URL 的 API 路由（部署无关化）；成功后整页硬跳转 /dashboard（可靠导航，cookie 已签发）
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (pending) return
+    setPending(true)
+    setErrCode('')
+    const fd = new FormData(e.currentTarget)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: fd.get('email'), password: fd.get('password') }),
+      })
+      if (res.ok) {
+        window.location.href = '/dashboard'
+        return
+      }
+      const j = (await res.json().catch(() => ({}))) as { error?: string }
+      setErrCode(j.error ?? 'service')
+      setPending(false)
+    } catch {
+      setErrCode('network')
+      setPending(false)
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-8">
@@ -41,7 +56,7 @@ function LoginForm() {
         </div>
       )}
 
-      <form action={login} noValidate className="space-y-4">
+      <form onSubmit={onSubmit} noValidate className="space-y-4">
         <div>
           <label htmlFor="email" className="block text-xs text-white/50 mb-1.5">邮箱</label>
           <input
@@ -68,7 +83,13 @@ function LoginForm() {
           />
         </div>
 
-        <SubmitButton />
+        <button
+          type="submit"
+          disabled={pending}
+          className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 transition mt-2"
+        >
+          {pending ? '登录中...' : '登录'}
+        </button>
       </form>
 
       <p className="mt-6 text-center text-xs text-white/30">
