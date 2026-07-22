@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { Search, X, Bot, MessageSquare, Workflow, FileText, Cpu } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
@@ -188,8 +188,9 @@ export function TemplatesView({ initialTemplates }: Props) {
         </SheetContent>
       </Sheet>
 
-      {/* ── 使用模板弹窗 ── */}
+      {/* ── 使用模板弹窗（key 变更时重置内部 state，避免 useEffect） ── */}
       <UseTemplateDialog
+        key={useTarget?.id ?? 'none'}
         template={useTarget}
         open={!!useTarget}
         onOpenChange={open => !open && setUseTarget(null)}
@@ -263,14 +264,9 @@ function UseTemplateDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const router = useRouter()
-  const [name, setName]       = useState('')
+  const [name, setName]       = useState(template?.name ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
-
-  useEffect(() => {
-    setName(template?.name ?? '')
-    setError(null)
-  }, [template])
 
   async function handleCreate() {
     if (!template || !name.trim()) { setError('名称不能为空'); return }
