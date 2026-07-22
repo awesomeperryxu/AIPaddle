@@ -1,6 +1,10 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { getAgentForChat } from '@/lib/data/agents'
+import { getWorkflow } from '@/lib/data/workflow'
+import { executeGraph } from '@/lib/workflow/execute'
+import { getSkillById } from '@/lib/data/skills'
+import { evaluateSkillCall } from '@/lib/skills/invoke'
 import { recordCall } from '@/lib/data/call-logs'
 import { chatWithUsage, type ChatMessage } from '@/lib/ai'
 
@@ -38,11 +42,44 @@ export async function POST(req: Request, { params }: Ctx) {
     return Response.json({ error: { code: 'bad_request', message: '缺少对话内容' } }, { status: 400 })
   }
 
+  const lastUserContent = [...history].reverse().find((m) => m.role === 'user')?.content
+  const lastUser = typeof lastUserContent === 'string' ? lastUserContent : ''
+  const startedAt = Date.now()
+
+  // 4.1.9 大脑分流：绑定工作流 → 执行 workflow；事项路由 → 命中关键词转 Skill；否则走 LLM。
+  if (agent.brainMode === 'workflow' && agent.brainWorkflowId) {
+    const wf = await getWorkflow(ctx, agent.brainWorkflowId)
+    if (!wf) {
+      return Response.json({ reply: '⚠️ 该 Agent 绑定的工作流不存在或已删除，请到编排页重新配置。', agent: { id: agent.id, name: agent.name } })
+    }
+    const result = await executeGraph(wf.graph, lastUser, { ctx })
+    await recordCall(ctx, { agentId: agent.id, model: `workflow:${wf.name}`, latencyMs: Date.now() - startedAt, success: result.status === 'succeeded', errorCode: result.status === 'succeeded' ? undefined : 'workflow_failed' })
+    const reply = result.status === 'succeeded' ? (result.output || '（工作流未产生输出）') : `⚠️ 工作流执行失败：${result.traces.find((t) => t.status === 'failed')?.error ?? '未知错误'}`
+    return Response.json({ reply, agent: { id: agent.id, name: agent.name, brain: 'workflow' } })
+  }
+
+  if (agent.brainMode === 'routing' && Array.isArray(agent.routingRules) && agent.routingRules.length > 0) {
+    const hit = agent.routingRules.find((r) => r.keyword && lastUser.includes(r.keyword))
+    if (hit) {
+      const skill = await getSkillById(ctx, hit.skillId)
+      if (!skill) {
+        return Response.json({ reply: `⚠️ 事项「${hit.keyword}」路由的 Skill 不存在或已下线，请到编排页更新路由。`, agent: { id: agent.id, name: agent.name } })
+      }
+      const allowedTools = Array.isArray(skill.config.allowed_tools) ? skill.config.allowed_tools.map(String) : []
+      const check = evaluateSkillCall({ type: skill.type, allowedTools, requestedTool: skill.type === 'MCP' ? allowedTools[0] : undefined, serverStatus: skill.type === 'MCP' ? 'approved' : undefined })
+      await recordCall(ctx, { agentId: agent.id, model: `skill:${skill.name}`, latencyMs: Date.now() - startedAt, success: check.ok, errorCode: check.ok ? undefined : 'skill_denied' })
+      const reply = check.ok
+        ? `已按事项「${hit.keyword}」路由到 Skill「${skill.name}」（${skill.type}）。\n输入：${lastUser}\n结果（模拟试跑）：执行成功，返回处理结果占位。`
+        : `Skill「${skill.name}」调用被拒：${check.message}`
+      return Response.json({ reply, agent: { id: agent.id, name: agent.name, brain: 'routing' } })
+    }
+    // 未命中路由 → 落回 LLM
+  }
+
   // 系统提示：优先 Agent 配置的 systemPrompt，否则按身份兜底 → 保证回答与 Agent 配置相符
   const systemPrompt =
     agent.systemPrompt?.trim() || `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`
 
-  const startedAt = Date.now()
   try {
     const { content, tokensIn, tokensOut, model } = await chatWithUsage(
       [{ role: 'system', content: systemPrompt }, ...history],

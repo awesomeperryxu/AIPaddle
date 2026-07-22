@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -34,6 +34,7 @@ interface AgentTool {
 }
 
 interface AgentNodeData {
+  agentId?: string // 4.1.10：引用已发布平台 Agent（设置后节点用该 Agent 人设执行）
   model?: string
   systemPrompt?: string
   userPromptTemplate?: string
@@ -65,6 +66,16 @@ export function AgentConfig({ node, onUpdate, availableVariables }: NodeConfigPr
   const data = (node.data || {}) as AgentNodeData
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [toolsOpen, setToolsOpen] = useState(true)
+  // 4.1.10：可引用已发布平台 Agent
+  const [platformAgents, setPlatformAgents] = useState<{ id: string; name: string; status: string }[]>([])
+  useEffect(() => {
+    let active = true
+    fetch('/api/agents')
+      .then((r) => (r.ok ? r.json() : { agents: [] }))
+      .then((d) => { if (active) setPlatformAgents(d.agents ?? []) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [])
 
   const updateData = (updates: Partial<AgentNodeData>) => {
     onUpdate({
@@ -102,6 +113,26 @@ export function AgentConfig({ node, onUpdate, availableVariables }: NodeConfigPr
 
   return (
     <div className="space-y-6">
+      {/* 4.1.10：引用已发布平台 Agent */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">引用平台 Agent（可选）</Label>
+        <Select
+          value={data.agentId || "__none__"}
+          onValueChange={(v) => updateData({ agentId: v === "__none__" ? undefined : v })}
+        >
+          <SelectTrigger><SelectValue placeholder="不引用（使用下方内联配置）" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">不引用（使用下方内联配置）</SelectItem>
+            {platformAgents.map((a) => (
+              <SelectItem key={a.id} value={a.id}>{a.name}{a.status !== 'published' ? `（${a.status}）` : ''}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {data.agentId && (
+          <p className="text-xs text-muted-foreground">已引用平台 Agent：运行时该节点用被引用 Agent 的人设与模型执行（下方内联配置忽略）。</p>
+        )}
+      </div>
+
       {/* Model Selection */}
       <div className="space-y-2">
         <Label className="text-sm font-medium">Model</Label>
