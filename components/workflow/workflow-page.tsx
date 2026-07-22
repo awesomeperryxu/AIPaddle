@@ -197,6 +197,23 @@ function WorkflowPageInner({
     } catch { /* 运行前保存失败不阻断，交由 /run 报错 */ }
   }, [workflowId, nodes, edges, title]);
 
+  // 发布：先 flush 保存最新图 → POST /publish（非法图 422 拒绝并提示）。
+  const handlePublish = useCallback(async () => {
+    if (!workflowId) { showToast('请先保存工作流后再发布'); return; }
+    try {
+      await saveNow();
+      const res = await fetch(`/api/workflows/${workflowId}/publish`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showToast(`已发布 v${body.publishedVersion ?? ''} · 已上线`);
+      } else if (res.status === 422 && Array.isArray(body.validation)) {
+        showToast(`无法发布：${body.validation.map((v: { message: string }) => v.message).join('；')}`);
+      } else {
+        showToast(body?.error?.message ?? '发布失败：无权限或未登录');
+      }
+    } catch { showToast('发布失败：网络错误'); }
+  }, [workflowId, saveNow, showToast]);
+
   const onConnect = useCallback(
     (params: Connection) => {
       setEdges((eds) => addEdge({ ...params, animated: true }, eds));    },
@@ -373,7 +390,7 @@ function WorkflowPageInner({
           setActiveTab('orchestrate');
           setShowRunPanel(true);
         }}
-        onPublish={() => showToast('发布即将接入（W1-d 切片）')}
+        onPublish={handlePublish}
         onVersionHistory={() => showToast('版本历史即将上线（W2）')}
         onEnvVars={() => showToast('环境变量即将上线（W2）')}
         onConversationVars={() => showToast('会话变量即将上线（W2）')}
