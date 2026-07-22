@@ -37,6 +37,7 @@ import {
 import { WorkflowSubNav, type WorkflowTab } from './pages/workflow-subnav';
 import { WorkflowLogsPage } from './pages/workflow-logs-page';
 import { WorkflowPlaceholderPage } from './pages/workflow-placeholder-page';
+import { WorkflowApiPage } from './pages/workflow-api-page';
 import { WorkflowRunDrawer } from './pages/workflow-run-drawer';
 
 // ReactFlow 节点 data 的形状
@@ -512,12 +513,16 @@ function WorkflowPageInner({
           )}
           {activeTab === 'api' && (
             <div className="absolute inset-0 z-10">
-              <WorkflowPlaceholderPage
-                icon={Code2}
-                title="访问 API"
-                desc="工作流发布后，这里提供对外调用的 API 端点、密钥与请求/响应示例。"
-                bullets={['API 端点与鉴权（密钥）', '请求 / 响应示例', '调用文档与限流说明']}
-              />
+              {workflowId ? (
+                <WorkflowApiPage workflowId={workflowId} />
+              ) : (
+                <WorkflowPlaceholderPage
+                  icon={Code2}
+                  title="访问 API"
+                  desc="保存工作流后即可生成对外调用的 API 端点与文档。"
+                  bullets={['先保存工作流以生成调用端点']}
+                />
+              )}
             </div>
           )}
           {activeTab === 'monitor' && (
