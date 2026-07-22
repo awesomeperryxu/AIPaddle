@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,6 @@ import {
   MoreHorizontal,
   Zap,
   Database,
-  GitBranch,
   MessageSquare,
   Copy,
   Phone,
@@ -128,6 +127,16 @@ export function AgentsAdminView({
       // 无 audit:read 权限或空 → 静默
     }
   }
+
+  // 轻量提示（从模板/导入DSL 占位）
+  const [notice, setNotice] = useState('');
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNotice = useCallback((m: string) => {
+    setNotice(m);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(''), 2600);
+  }, []);
+  useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
 
   // 创建 Agent 弹窗
   const [createOpen, setCreateOpen] = useState(false);
@@ -252,10 +261,12 @@ export function AgentsAdminView({
     setCreating(true);
     setCreateError(null);
     try {
-      await apiFetch('/api/agents', { method: 'POST', body: JSON.stringify(form) });
+      const res = await apiFetch<{ agent: { id: string } }>('/api/agents', { method: 'POST', body: JSON.stringify(form) });
       setCreateOpen(false);
       setForm({ name: '', department: '', description: '' });
-      router.refresh(); // 重新从服务端拉取列表，刷新后数据仍在
+      // 4.1.8：创建后进入编排页配置（照搬 Dify：名称→编排画布）
+      if (res?.agent?.id) router.push(`/agents-admin/${res.agent.id}`);
+      else router.refresh();
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : '创建失败');
     } finally {
@@ -293,10 +304,28 @@ export function AgentsAdminView({
                 <Zap className="h-4 w-4" />
                 AI 帮我建
               </Button>
-              <Button className="gap-2 shadow-sm" onClick={() => setCreateOpen(true)}>
-                <Plus className="h-4 w-4" />
-                创建 Agent
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button className="gap-2 shadow-sm">
+                    <Plus className="h-4 w-4" />
+                    创建 Agent
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => setCreateOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    创建空白 Agent
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => showNotice('从模板创建：模板库即将上线（T 道 4.6.x）')}>
+                    <Copy className="h-4 w-4 mr-2" />
+                    从模板创建
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => showNotice('导入 DSL 文件：即将上线（4.1.8/4.4.12）')}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    导入 DSL 文件
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
         </div>
@@ -329,8 +358,9 @@ export function AgentsAdminView({
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>创建 Agent</DialogTitle>
+              <DialogTitle>创建空白 Agent</DialogTitle>
             </DialogHeader>
+            <p className="text-xs text-muted-foreground">填写基本信息，创建后进入编排页配置提示词/模型/工具（草稿态，发布须走审核）。</p>
             {createError && (
               <p className="text-sm text-red-500">{createError}</p>
             )}
@@ -370,6 +400,12 @@ export function AgentsAdminView({
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {notice && (
+          <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground/90 px-4 py-2 text-sm text-background shadow-lg">
+            {notice}
+          </div>
+        )}
 
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
           <DialogContent>
@@ -540,13 +576,17 @@ export function AgentsAdminView({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-40">
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/agents-admin/${agent.id}`); }}>
                         <Settings className="h-4 w-4 mr-2" />
-                        配置
+                        编排配置
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/agents-admin/${agent.id}`); }}>
                         <Play className="h-4 w-4 mr-2" />
                         调试
+                      </DropdownMenuItem>
+                      <DropdownMenuItem disabled={!canEdit} onClick={(e) => { e.stopPropagation(); openEdit(agent); }}>
+                        <Settings className="h-4 w-4 mr-2" />
+                        编辑信息
                       </DropdownMenuItem>
                       <DropdownMenuItem>
                         <Copy className="h-4 w-4 mr-2" />
@@ -711,24 +751,19 @@ export function AgentsAdminView({
               <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
                 <div className="flex items-center gap-2">
                   <Database className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">知识库</span>
+                  <span className="text-sm text-foreground">知识库 / Skill / 工作流</span>
                 </div>
-                <span className="text-sm text-muted-foreground">2 个已绑定</span>
+                <span className="text-sm text-muted-foreground">编排页配置</span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                <div className="flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">Skill</span>
-                </div>
-                <span className="text-sm text-muted-foreground">5 个已绑定</span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                <div className="flex items-center gap-2">
-                  <GitBranch className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">工作流</span>
-                </div>
-                <span className="text-sm text-muted-foreground">1 个已绑定</span>
-              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-1"
+                onClick={() => selectedAgent && router.push(`/agents-admin/${selectedAgent.id}`)}
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                前往编排页配置
+              </Button>
             </CardContent>
           </Card>
 
@@ -754,13 +789,12 @@ export function AgentsAdminView({
           <div className="flex gap-2">
             <Button
               className="flex-1 shadow-sm"
-              disabled={!canEdit}
-              onClick={() => selectedAgent && openEdit(selectedAgent)}
+              onClick={() => selectedAgent && router.push(`/agents-admin/${selectedAgent.id}`)}
             >
               <Settings className="h-4 w-4 mr-2" />
-              编辑配置
+              编排配置
             </Button>
-            <Button variant="outline" className="flex-1">
+            <Button variant="outline" className="flex-1" onClick={() => selectedAgent && router.push(`/agents-admin/${selectedAgent.id}`)}>
               <Play className="h-4 w-4 mr-2" />
               调试测试
             </Button>
