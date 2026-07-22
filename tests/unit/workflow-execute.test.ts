@@ -4,8 +4,16 @@ import { describe, it, expect, vi } from 'vitest'
 vi.mock('@/lib/ai', () => ({
   chat: vi.fn(async (msgs: { content: string }[]) => `LLM回复[输入长度=${msgs[0].content.length}]`),
 }))
+// mock 知识检索 RAG
+vi.mock('@/lib/kb/rag', () => ({
+  retrieveSegments: vi.fn(async (_ctx: unknown, q: string) => [
+    { filename: '手册.pdf', snippet: `关于「${q}」的资料`, documentId: 'd1', similarity: 0.9 },
+  ]),
+}))
 
 import { executeGraph } from '@/lib/workflow/execute'
+
+const ctx = { userId: 'u1', orgId: 'o1', roles: ['User'] } as never
 
 const n = (id: string, type: string, config?: Record<string, unknown>) => ({ id, type, data: { config } })
 const e = (source: string, target: string) => ({ source, target })
@@ -46,5 +54,83 @@ describe('executeGraph（4.4.3 最小执行引擎）', () => {
     )
     // chat 被调用，输入长度 = '翻译：hello'.length = 8
     expect(r.output).toContain('输入长度=8')
+  })
+
+  // 4.4.8 slice 1：模板转换 + 参数提取器
+  it('模板转换节点：{{input}} 替换为节点输入（不调 LLM）', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('tt', 'template-transform', { template: '结果=[{{input}}]' }), n('t', 'end')], edges: [e('s', 'tt'), e('tt', 't')] },
+      'ABC',
+    )
+    expect(r.status).toBe('succeeded')
+    const tr = r.traces.find((x) => x.nodeId === 'tt')
+    expect(tr?.status).toBe('succeeded')
+    expect(r.output).toBe('结果=[ABC]')
+  })
+
+  it('模板转换：空模板透传输入', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('tt', 'template-transform', {}), n('t', 'end')], edges: [e('s', 'tt'), e('tt', 't')] },
+      'passthru',
+    )
+    expect(r.output).toBe('passthru')
+  })
+
+  it('参数提取器节点：调 LLM 提取（succeeded）', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('pe', 'parameter-extractor', { parameters: [{ name: 'city' }] }), n('t', 'end')], edges: [e('s', 'pe'), e('pe', 't')] },
+      '北京天气',
+    )
+    expect(r.status).toBe('succeeded')
+    const tr = r.traces.find((x) => x.nodeId === 'pe')
+    expect(tr?.status).toBe('succeeded')
+    expect(r.output).toContain('LLM回复') // mock chat 被调用
+  })
+
+  // 4.4.8 slice3：知识检索（真实 RAG）
+  it('知识检索节点：有 ctx → 检索并拼接片段', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('kr', 'knowledge-retrieval', { dataset_ids: ['kb1'] }), n('t', 'end')], edges: [e('s', 'kr'), e('kr', 't')] },
+      '报销流程',
+      { ctx },
+    )
+    expect(r.status).toBe('succeeded')
+    expect(r.traces.find((x) => x.nodeId === 'kr')?.status).toBe('succeeded')
+    expect(r.output).toContain('报销流程')
+    expect(r.output).toContain('手册.pdf')
+  })
+
+  it('知识检索节点：无 ctx → skipped 透传', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('kr', 'knowledge-retrieval', {}), n('t', 'end')], edges: [e('s', 'kr'), e('kr', 't')] },
+      'x',
+    )
+    expect(r.traces.find((x) => x.nodeId === 'kr')?.status).toBe('skipped')
+    expect(r.output).toBe('x')
+  })
+
+  // 4.4.8 slice4：HTTP 请求 + SSRF 防护
+  it('HTTP 节点：正常 URL → 输出响应体', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{"ok":true}', { status: 200 }),
+    )
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('h', 'http-request', { url: 'https://api.example.com/data', method: 'GET' }), n('t', 'end')], edges: [e('s', 'h'), e('h', 't')] },
+      '',
+    )
+    expect(r.status).toBe('succeeded')
+    expect(r.output).toContain('HTTP 200')
+    expect(r.output).toContain('"ok":true')
+    fetchSpy.mockRestore()
+  })
+
+  it('HTTP 节点：内网/本机地址 → SSRF 拦截 → failed', async () => {
+    for (const url of ['http://127.0.0.1:8080/', 'http://169.254.169.254/latest/meta-data', 'http://10.0.0.5/', 'file:///etc/passwd']) {
+      const r = await executeGraph(
+        { nodes: [n('s', 'start'), n('h', 'http-request', { url }), n('t', 'end')], edges: [e('s', 'h'), e('h', 't')] },
+        '',
+      )
+      expect(r.status).toBe('failed')
+    }
   })
 })
