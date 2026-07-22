@@ -9,6 +9,8 @@ import ReactFlow, {
   Node,
   Edge,
   Connection,
+  Handle,
+  Position,
   addEdge,
   useNodesState,
   useEdgesState,
@@ -46,6 +48,16 @@ type WorkflowNodeData = {
   description?: string;
 };
 
+// if-else 分支出口标签（4.4.8a-2）
+function branchLabel(caseId: string): string {
+  if (caseId === 'if-true') return 'IF';
+  if (caseId === 'else') return 'ELSE';
+  const m = /^elif-(\d+)$/.exec(caseId);
+  return m ? `ELIF ${m[1]}` : caseId;
+}
+
+const HANDLE_CLS = '!w-2.5 !h-2.5 !border-2 !border-background';
+
 // Custom node component - follows design spec:
 // - Width: 240px fixed
 // - Min height: 80px
@@ -56,20 +68,38 @@ function WorkflowNode({ data, selected }: { data: WorkflowNodeData; selected: bo
   if (!config) return null;
 
   const Icon = config.icon;
+  const bt = String(data.blockType);
+  const isStart = bt === 'start';
+  const isEnd = bt === 'end';
+  const isIfElse = bt === 'if-else';
+
+  // if-else 分支出口：从 cases 派生（if-true/elif-N + 隐式 else），无配置默认 if-true/else。
+  // 每个出口一个带 id 的 source handle → 用户从该出口连线，onConnect 带上 sourceHandle=caseId，
+  // reactFlowToGraph 持久化、执行引擎据此路由（见 4.4.8a-1）。
+  const cases = (data as WorkflowNodeData & { cases?: Array<{ caseId?: string }> }).cases;
+  const caseIds = (Array.isArray(cases) ? cases : [])
+    .map((c) => String(c?.caseId ?? ''))
+    .filter((id) => id && id !== 'else');
+  const branches = caseIds.length ? [...caseIds, 'else'] : ['if-true', 'else'];
 
   return (
     <div
       className={cn(
-        'relative bg-card rounded-xl shadow-sm transition-shadow overflow-hidden border border-border',
+        'relative bg-card rounded-xl shadow-sm transition-shadow border border-border',
         selected && 'ring-2 ring-primary shadow-md'
       )}
-      style={{ 
-        width: 240, 
+      style={{
+        width: 240,
         minHeight: 80,
         borderLeftWidth: '4px',
         borderLeftColor: config.color,
       }}
     >
+      {/* 输入手柄（start 节点无入口） */}
+      {!isStart && (
+        <Handle type="target" position={Position.Left} className={cn(HANDLE_CLS, '!bg-muted-foreground')} />
+      )}
+
       <div className="p-3 pl-4">
         <div className="flex items-center gap-2 mb-1">
           <div
@@ -88,6 +118,26 @@ function WorkflowNode({ data, selected }: { data: WorkflowNodeData; selected: bo
           </p>
         )}
       </div>
+
+      {/* 输出手柄：普通节点单个；if-else 每个分支一个（带 id=caseId + 标签）；end 无出口 */}
+      {!isEnd && !isIfElse && (
+        <Handle type="source" position={Position.Right} className={cn(HANDLE_CLS, '!bg-primary')} />
+      )}
+      {isIfElse &&
+        branches.map((caseId, i) => (
+          <Handle
+            key={caseId}
+            type="source"
+            position={Position.Right}
+            id={caseId}
+            style={{ top: `${((i + 1) / (branches.length + 1)) * 100}%` }}
+            className={cn(HANDLE_CLS, '!bg-primary')}
+          >
+            <span className="pointer-events-none absolute left-3 -translate-y-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground">
+              {branchLabel(caseId)}
+            </span>
+          </Handle>
+        ))}
     </div>
   );
 }
