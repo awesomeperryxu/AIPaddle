@@ -38,7 +38,8 @@ export async function proxy(request: NextRequest) {
   const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/register')
   const isCallback = pathname.startsWith('/auth/callback')
   const isPrototype = pathname.startsWith('/prototype')
-  const isPublic = isAuthPage || isCallback || isPrototype
+  const isAuthApi = pathname.startsWith('/api/auth') // 登录/注册 API 路由（未登录须放行，#61 登录部署无关化）
+  const isPublic = isAuthPage || isCallback || isPrototype || isAuthApi
 
   // 已登录：检查 24h 会话有效期
   if (user) {
