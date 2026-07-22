@@ -271,6 +271,24 @@ function WorkflowPageInner({
     } catch { showToast('发布失败：网络错误'); }
   }, [workflowId, saveNow, showToast]);
 
+  // 导出 DSL（4.4.12）：拉 /dsl → 下载 .aipaddle.json
+  const handleExportDsl = useCallback(async () => {
+    if (!workflowId) { showToast('请先保存工作流后再导出'); return; }
+    try {
+      const res = await fetch(`/api/workflows/${workflowId}/dsl`);
+      if (!res.ok) { showToast('导出失败：无权限或未登录'); return; }
+      const dsl = await res.json();
+      const blob = new Blob([JSON.stringify(dsl, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title || 'workflow'}.aipaddle.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('已导出 DSL');
+    } catch { showToast('导出失败：网络错误'); }
+  }, [workflowId, title, showToast]);
+
   // 打开版本历史面板并拉取真实版本列表（GET /api/workflows/{id}/versions）
   const openVersionHistory = useCallback(async () => {
     if (!workflowId) { showToast('请先保存工作流后再查看版本历史'); return; }
@@ -481,6 +499,7 @@ function WorkflowPageInner({
         }}
         onPublish={handlePublish}
         onVersionHistory={openVersionHistory}
+        onExportDsl={handleExportDsl}
         onEnvVars={() => showToast('环境变量即将上线（W2）')}
         onConversationVars={() => showToast('会话变量即将上线（W2）')}
         onExitHistory={() => setHeaderMode('normal')}

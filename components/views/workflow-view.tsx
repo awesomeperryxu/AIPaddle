@@ -397,6 +397,22 @@ export function WorkflowView() {
     } catch { showToast('创建失败：网络错误'); }
   };
 
+  // 4.4.12：导入 DSL 文件 → 建草稿并进编辑页
+  const dslInputRef = useRef<HTMLInputElement>(null);
+  const handleImportDsl = async (file: File) => {
+    setIsCreateDialogOpen(false);
+    try {
+      const dsl = JSON.parse(await file.text());
+      const res = await fetch('/api/workflows/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dsl),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(`导入失败：${body?.error?.message ?? '格式或权限错误'}`); return; }
+      router.push(`/workflows/${body.workflow.id}`);
+    } catch { showToast('导入失败：文件不是有效的 DSL JSON'); }
+  };
+
   // 4.4.1：保存工作流图（PATCH），返回校验结果则提示（孤立节点/环等）
   const [isSaving, setIsSaving] = useState(false);
   const handleSaveWorkflow = async () => {
@@ -1614,17 +1630,26 @@ export function WorkflowView() {
               {/* ③ 导入 DSL 文件 */}
               <div
                 className="flex items-center gap-4 p-4 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors"
-                onClick={() => {
-                  setIsCreateDialogOpen(false);
-                  showToast('DSL 导入：解析 YAML → 校验节点/插件依赖 → 生成画布（原型模拟）');
-                }}
+                onClick={() => dslInputRef.current?.click()}
               >
+                <input
+                  ref={dslInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleImportDsl(f);
+                    e.target.value = '';
+                  }}
+                />
                 <div className="w-11 h-11 rounded-lg bg-teal-500/10 flex items-center justify-center">
                   <Upload className="h-5 w-5 text-teal-500" />
                 </div>
                 <div>
                   <h3 className="font-medium text-foreground">导入 DSL 文件</h3>
-                  <p className="text-sm text-muted-foreground">导入 YAML 格式的工作流配置</p>
+                  <p className="text-sm text-muted-foreground">导入 .aipaddle.json（DSL）重建工作流</p>
                 </div>
                 <ChevronRight className="h-5 w-5 text-muted-foreground ml-auto" />
               </div>
