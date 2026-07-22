@@ -5,6 +5,7 @@ import { getWorkflow } from '@/lib/data/workflow'
 import { executeGraph } from '@/lib/workflow/execute'
 import { getSkillById } from '@/lib/data/skills'
 import { evaluateSkillCall } from '@/lib/skills/invoke'
+import { retrieveSegments } from '@/lib/kb/rag'
 import { recordCall } from '@/lib/data/call-logs'
 import { chatWithUsage, type ChatMessage } from '@/lib/ai'
 
@@ -76,9 +77,20 @@ export async function POST(req: Request, { params }: Ctx) {
     // 未命中路由 → 落回 LLM
   }
 
+  // 4.1.11：注入 Agent 直挂知识库的 RAG 上下文（按 agentId 取绑定 KB）
+  let ragContext = ''
+  try {
+    const segs = await retrieveSegments(ctx, lastUser, { agentId: agent.id })
+    if (segs.length) {
+      ragContext =
+        '\n\n以下是该 Agent 绑定知识库的相关资料，若与问题相关请据此作答并在末尾用 [编号] 标注来源，不相关则正常作答：\n' +
+        segs.map((s, i) => `[${i + 1}] 《${s.filename}》：${s.snippet}`).join('\n')
+    }
+  } catch { /* 检索失败不阻断对话 */ }
+
   // 系统提示：优先 Agent 配置的 systemPrompt，否则按身份兜底 → 保证回答与 Agent 配置相符
   const systemPrompt =
-    agent.systemPrompt?.trim() || `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`
+    (agent.systemPrompt?.trim() || `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`) + ragContext
 
   try {
     const { content, tokensIn, tokensOut, model } = await chatWithUsage(

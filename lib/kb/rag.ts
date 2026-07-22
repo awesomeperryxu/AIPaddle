@@ -35,11 +35,17 @@ export type RetrievedSegment = {
 export async function retrieveSegments(
   ctx: RequestContext,
   question: string,
-  opts?: { kbId?: string; topK?: number },
+  opts?: { kbId?: string; topK?: number; agentId?: string },
 ): Promise<RetrievedSegment[]> {
   const q = question.trim()
   if (!q) return []
-  const kbIds = opts?.kbId ? [opts.kbId] : await listAccessibleKbIds(ctx)
+  // 优先单 kbId；否则按 agentId 取该 Agent 直挂的知识库（4.1.11）；再否则全员可见。
+  const kbIds = opts?.kbId
+    ? [opts.kbId]
+    : opts?.agentId
+      ? await listAccessibleKbIds(ctx, { agentId: opts.agentId })
+      : await listAccessibleKbIds(ctx)
+  if (kbIds.length === 0) return []
   const qEmbedding = await embedOne(q)
   const matches = await searchChunks(ctx, qEmbedding, opts?.topK ?? TOP_K, kbIds)
   if (matches.length === 0) return []

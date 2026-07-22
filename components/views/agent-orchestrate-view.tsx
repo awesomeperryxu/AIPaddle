@@ -59,17 +59,32 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
   const [routingRules, setRoutingRules] = useState<RoutingRule[]>(agent.config.routingRules ?? []);
   const [workflows, setWorkflows] = useState<{ id: string; name: string; type: string }[]>([]);
   const [skills, setSkills] = useState<{ id: string; name: string }[]>([]);
+  // 直挂资源（4.1.11）：知识库 + Skill，存 agent_resources（独立于 config）
+  const [knowledgeBases, setKnowledgeBases] = useState<{ id: string; name: string }[]>([]);
+  const [boundKbIds, setBoundKbIds] = useState<string[]>([]);
+  const [boundSkillIds, setBoundSkillIds] = useState<string[]>([]);
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [wfRes, skRes] = await Promise.all([fetch('/api/workflows'), fetch('/api/skills')]);
+        const [wfRes, skRes, kbRes, resRes] = await Promise.all([
+          fetch('/api/workflows'), fetch('/api/skills'), fetch('/api/knowledge-bases'), fetch(`/api/agents/${agent.id}/resources`),
+        ]);
         if (active && wfRes.ok) setWorkflows((await wfRes.json()).workflows ?? []);
         if (active && skRes.ok) setSkills((await skRes.json()).skills ?? []);
+        if (active && kbRes.ok) setKnowledgeBases((await kbRes.json()).knowledgeBases ?? []);
+        if (active && resRes.ok) {
+          const { resources } = await resRes.json();
+          setBoundKbIds(resources?.knowledgeBaseIds ?? []);
+          setBoundSkillIds(resources?.skillIds ?? []);
+        }
       } catch { /* 列表拉取失败不阻断编辑 */ }
     })();
     return () => { active = false; };
-  }, []);
+  }, [agent.id]);
+
+  const toggleKb = (id: string) => setBoundKbIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
+  const toggleSkill = (id: string) => setBoundSkillIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [toast, setToast] = useState('');
@@ -80,6 +95,20 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
     toastTimer.current = setTimeout(() => setToast(''), 2600);
   }, []);
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  // 直挂资源保存（PUT，防抖）——独立于 config 自动保存（4.1.11）
+  const resFirstRun = useRef(true);
+  useEffect(() => {
+    if (!canEdit) return;
+    if (resFirstRun.current) { resFirstRun.current = false; return; }
+    const t = setTimeout(() => {
+      void fetch(`/api/agents/${agent.id}/resources`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds }),
+      }).then((r) => { if (!r.ok) showToast('直挂资源保存失败'); });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [boundKbIds, boundSkillIds, canEdit, agent.id, showToast]);
 
   // 组装当前 config
   const buildConfig = useCallback((): AgentConfig => ({
@@ -375,12 +404,43 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
             )}
           </section>
 
-          {/* 知识库 / 工具直挂（后续切片） */}
-          <section className="rounded-xl border border-dashed border-border p-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <BookOpen className="h-4 w-4" /> 知识库直挂 · 工具(Skill)直挂
+          {/* 知识库 / 工具直挂（4.1.11）：不经 workflow，直接绑定到 Agent */}
+          <section className="rounded-xl border border-border p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">知识库直挂</Label>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">给 Agent 直接挂知识库/工具（不经 workflow）—— 即将上线。当前可通过「绑定工作流」内的知识检索/工具节点实现。</p>
+            <p className="text-xs text-muted-foreground">勾选的知识库将在对话时自动检索并注入上下文（RAG，真实生效）。</p>
+            {knowledgeBases.length === 0 ? (
+              <p className="text-xs text-muted-foreground">暂无知识库，请先到「知识库管理」创建</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {knowledgeBases.map((k) => (
+                  <button
+                    key={k.id} type="button" disabled={!canEdit} onClick={() => toggleKb(k.id)}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${boundKbIds.includes(k.id) ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >{k.name}</button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-2">
+              <Wrench className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">工具（Skill）直挂</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">勾选的 Skill 绑定到本 Agent（工具调用执行接入中；当前用于能力登记与后续编排引用）。</p>
+            {skills.length === 0 ? (
+              <p className="text-xs text-muted-foreground">暂无 Skill，请先到「Skill Hub」创建</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {skills.map((s) => (
+                  <button
+                    key={s.id} type="button" disabled={!canEdit} onClick={() => toggleSkill(s.id)}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${boundSkillIds.includes(s.id) ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >{s.name}</button>
+                ))}
+              </div>
+            )}
           </section>
         </div>
 
