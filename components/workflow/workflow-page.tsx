@@ -37,6 +37,7 @@ import {
 import { WorkflowSubNav, type WorkflowTab } from './pages/workflow-subnav';
 import { WorkflowLogsPage } from './pages/workflow-logs-page';
 import { WorkflowPlaceholderPage } from './pages/workflow-placeholder-page';
+import { WorkflowRunDrawer } from './pages/workflow-run-drawer';
 
 // ReactFlow 节点 data 的形状
 type WorkflowNodeData = {
@@ -142,6 +143,8 @@ function WorkflowPageInner({
   const [showBlockSelector, setShowBlockSelector] = useState(false);
   const [recentBlocks, setRecentBlocks] = useState<string[]>(['llm', 'code', 'if-else']);
   const [activeTab, setActiveTab] = useState<WorkflowTab>('orchestrate');
+  const [showRunPanel, setShowRunPanel] = useState(false);
+  const [logsRefreshKey, setLogsRefreshKey] = useState(0);
 
   const router = useRouter();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -180,6 +183,19 @@ function WorkflowPageInner({
     }, 800);
     return () => clearTimeout(t);
   }, [nodes, edges, title, workflowId, showToast]);
+
+  // 立即保存当前画布（运行前 flush，确保引擎跑的是最新图）
+  const saveNow = useCallback(async () => {
+    if (!workflowId) return;
+    const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
+    try {
+      await fetch(`/api/workflows/${workflowId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: title, graph }),
+      });
+      setSaveStatus('saved');
+    } catch { /* 运行前保存失败不阻断，交由 /run 报错 */ }
+  }, [workflowId, nodes, edges, title]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -352,7 +368,11 @@ function WorkflowPageInner({
         canRedo={false}
         onBack={() => router.push('/workflows')}
         onTitleChange={(t) => setTitle(t)}
-        onRun={() => showToast('测试运行即将接入（W1-c 切片）')}
+        onRun={() => {
+          if (!workflowId) { showToast('请先保存工作流后再运行'); return; }
+          setActiveTab('orchestrate');
+          setShowRunPanel(true);
+        }}
         onPublish={() => showToast('发布即将接入（W1-d 切片）')}
         onVersionHistory={() => showToast('版本历史即将上线（W2）')}
         onEnvVars={() => showToast('环境变量即将上线（W2）')}
@@ -471,7 +491,7 @@ function WorkflowPageInner({
 
           {/* 其它下级页 */}
           {activeTab === 'logs' && workflowId && (
-            <div className="absolute inset-0 z-10"><WorkflowLogsPage workflowId={workflowId} /></div>
+            <div className="absolute inset-0 z-10"><WorkflowLogsPage key={logsRefreshKey} workflowId={workflowId} /></div>
           )}
           {activeTab === 'api' && (
             <div className="absolute inset-0 z-10">
@@ -502,6 +522,17 @@ function WorkflowPageInner({
                 bullets={['人工标注回复', '标注命中率', '标注库管理']}
               />
             </div>
+          )}
+
+          {/* 测试运行抽屉（右侧覆盖） */}
+          {workflowId && (
+            <WorkflowRunDrawer
+              workflowId={workflowId}
+              open={showRunPanel}
+              beforeRun={saveNow}
+              onClose={() => setShowRunPanel(false)}
+              onFinished={() => setLogsRefreshKey((k) => k + 1)}
+            />
           )}
         </div>
       </div>
