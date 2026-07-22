@@ -25,7 +25,7 @@ import { BlockSelectorPanel } from './panels/block-selector-panel';
 import { nodeRegistry } from './nodes/node-registry';
 import { BlockEnum } from './types';
 import { cn } from '@/lib/utils';
-import { Plus } from 'lucide-react';
+import { Plus, Code2, Activity, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   graphToReactFlow,
@@ -34,6 +34,9 @@ import {
   type RFNodeLike,
   type RFEdgeLike,
 } from '@/lib/workflow/graph-adapter';
+import { WorkflowSubNav, type WorkflowTab } from './pages/workflow-subnav';
+import { WorkflowLogsPage } from './pages/workflow-logs-page';
+import { WorkflowPlaceholderPage } from './pages/workflow-placeholder-page';
 
 // ReactFlow 节点 data 的形状
 type WorkflowNodeData = {
@@ -138,6 +141,7 @@ function WorkflowPageInner({
   const [interactionMode, setInteractionMode] = useState<'select' | 'pan'>('select');
   const [showBlockSelector, setShowBlockSelector] = useState(false);
   const [recentBlocks, setRecentBlocks] = useState<string[]>(['llm', 'code', 'if-else']);
+  const [activeTab, setActiveTab] = useState<WorkflowTab>('orchestrate');
 
   const router = useRouter();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -333,8 +337,10 @@ function WorkflowPageInner({
     }));
   }, [nodes]);
 
+  const showCanvas = activeTab === 'orchestrate';
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background">
       {/* Header */}
       <WorkflowHeader
         mode={headerMode}
@@ -346,23 +352,16 @@ function WorkflowPageInner({
         canRedo={false}
         onBack={() => router.push('/workflows')}
         onTitleChange={(t) => setTitle(t)}
-        onRun={() => showToast('测试运行即将接入（W1 后续切片）')}
-        onPublish={() => showToast('发布即将接入（W1 后续切片）')}
-        onVersionHistory={() => showToast('版本历史即将上线')}
-        onEnvVars={() => showToast('环境变量即将上线')}
-        onConversationVars={() => showToast('会话变量即将上线')}
+        onRun={() => showToast('测试运行即将接入（W1-c 切片）')}
+        onPublish={() => showToast('发布即将接入（W1-d 切片）')}
+        onVersionHistory={() => showToast('版本历史即将上线（W2）')}
+        onEnvVars={() => showToast('环境变量即将上线（W2）')}
+        onConversationVars={() => showToast('会话变量即将上线（W2）')}
         onExitHistory={() => setHeaderMode('normal')}
         onRestoreVersion={() => setHeaderMode('restoring')}
         onCancelRestore={() => setHeaderMode('normal')}
         onConfirmRestore={() => setHeaderMode('normal')}
       />
-
-      {/* 自动保存指示 */}
-      <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 text-xs text-muted-foreground">
-        {saveStatus === 'saving' && '自动保存中…'}
-        {saveStatus === 'saved' && '已自动保存'}
-        {saveStatus === 'error' && <span className="text-destructive">保存失败</span>}
-      </div>
 
       {/* 轻量 toast */}
       {toast && (
@@ -371,91 +370,140 @@ function WorkflowPageInner({
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* ReactFlow Canvas */}
-        <div 
-          className="flex-1 relative" 
-          ref={reactFlowWrapper}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-        >
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={onNodeClick}
-            onPaneClick={onPaneClick}
-            nodeTypes={nodeTypes}
-            panOnDrag={interactionMode === 'pan'}
-            selectionOnDrag={interactionMode === 'select'}
-            fitView
-            fitViewOptions={{ padding: 0.2 }}
-          >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={16}
-              size={1.5}
-              color="var(--canvas-dot-color)"
-              style={{ backgroundColor: 'var(--canvas-bg)' }}
-            />
-            <MiniMap
-              className="!bottom-16 !right-4 !rounded-xl !border !border-gray-200 !shadow-lg"
-              nodeColor={(node) => {
-                const config = nodeRegistry[node.data.blockType as BlockEnum];
-                return config?.color || '#64748B';
-              }}
-              maskColor="rgba(0, 0, 0, 0.1)"
-              style={{ width: 150, height: 100 }}
-            />
-          </ReactFlow>
+      {/* Body：左侧应用子导航 + 当前下级页 */}
+      <div className="flex-1 flex overflow-hidden">
+        <WorkflowSubNav active={activeTab} appType={appType} onChange={setActiveTab} />
 
-          {/* Floating Add Node Button */}
-          <Button
-            onClick={() => setShowBlockSelector(true)}
-            className="absolute top-4 left-4 z-10 shadow-md"
-            size="sm"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            添加节点
-          </Button>
+        <div className="flex-1 relative overflow-hidden">
+          {/* 编排（画布）：常挂载但非激活时隐藏，避免重挂 ReactFlow 丢状态 */}
+          <div className={cn('absolute inset-0 flex', showCanvas ? 'z-10' : 'pointer-events-none opacity-0')}>
+            {/* 自动保存指示 */}
+            <div className="pointer-events-none absolute top-3 left-1/2 z-20 -translate-x-1/2 text-xs text-muted-foreground">
+              {saveStatus === 'saving' && '自动保存中…'}
+              {saveStatus === 'saved' && '已自动保存'}
+              {saveStatus === 'error' && <span className="text-destructive">保存失败</span>}
+            </div>
 
-          {/* Bottom Operator Bar */}
-          <WorkflowOperator
-            zoom={Math.round(zoom * 100)}
-            mode={interactionMode === 'pan' ? 'hand' : 'pointer'}
-            canUndo={false}
-            canRedo={false}
-            onZoomIn={handleZoomIn}
-            onZoomOut={handleZoomOut}
-            onZoomReset={() => setZoom(1)}
-            onFitView={handleFitView}
-            onModeChange={(mode) => setInteractionMode(mode === 'hand' ? 'pan' : 'select')}
-          />
+            {/* ReactFlow Canvas */}
+            <div
+              className="flex-1 relative"
+              ref={reactFlowWrapper}
+              onDragOver={onDragOver}
+              onDrop={onDrop}
+            >
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onNodeClick={onNodeClick}
+                onPaneClick={onPaneClick}
+                nodeTypes={nodeTypes}
+                panOnDrag={interactionMode === 'pan'}
+                selectionOnDrag={interactionMode === 'select'}
+                fitView
+                fitViewOptions={{ padding: 0.2 }}
+              >
+                <Background
+                  variant={BackgroundVariant.Dots}
+                  gap={16}
+                  size={1.5}
+                  color="var(--canvas-dot-color)"
+                  style={{ backgroundColor: 'var(--canvas-bg)' }}
+                />
+                <MiniMap
+                  className="!bottom-16 !right-4 !rounded-xl !border !border-gray-200 !shadow-lg"
+                  nodeColor={(node) => {
+                    const config = nodeRegistry[node.data.blockType as BlockEnum];
+                    return config?.color || '#64748B';
+                  }}
+                  maskColor="rgba(0, 0, 0, 0.1)"
+                  style={{ width: 150, height: 100 }}
+                />
+              </ReactFlow>
+
+              {/* Floating Add Node Button */}
+              <Button
+                onClick={() => setShowBlockSelector(true)}
+                className="absolute top-4 left-4 z-10 shadow-md"
+                size="sm"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                添加节点
+              </Button>
+
+              {/* Bottom Operator Bar */}
+              <WorkflowOperator
+                zoom={Math.round(zoom * 100)}
+                mode={interactionMode === 'pan' ? 'hand' : 'pointer'}
+                canUndo={false}
+                canRedo={false}
+                onZoomIn={handleZoomIn}
+                onZoomOut={handleZoomOut}
+                onZoomReset={() => setZoom(1)}
+                onFitView={handleFitView}
+                onModeChange={(mode) => setInteractionMode(mode === 'hand' ? 'pan' : 'select')}
+              />
+            </div>
+
+            {/* Block Selector Panel */}
+            <BlockSelectorPanel
+              appType={appType}
+              isOpen={showBlockSelector}
+              onClose={() => setShowBlockSelector(false)}
+              onSelect={handleBlockSelect}
+              recentBlocks={recentBlocks}
+            />
+
+            {/* Right Config Panel */}
+            {selectedWorkflowNode && (
+              <NodeConfigPanel
+                node={selectedWorkflowNode}
+                allNodes={allWorkflowNodes}
+                appType={appType}
+                onUpdate={handleNodeUpdate}
+                onTitleChange={handleTitleUpdate}
+                onClose={handleCloseConfigPanel}
+              />
+            )}
+          </div>
+
+          {/* 其它下级页 */}
+          {activeTab === 'logs' && workflowId && (
+            <div className="absolute inset-0 z-10"><WorkflowLogsPage workflowId={workflowId} /></div>
+          )}
+          {activeTab === 'api' && (
+            <div className="absolute inset-0 z-10">
+              <WorkflowPlaceholderPage
+                icon={Code2}
+                title="访问 API"
+                desc="工作流发布后，这里提供对外调用的 API 端点、密钥与请求/响应示例。"
+                bullets={['API 端点与鉴权（密钥）', '请求 / 响应示例', '调用文档与限流说明']}
+              />
+            </div>
+          )}
+          {activeTab === 'monitor' && (
+            <div className="absolute inset-0 z-10">
+              <WorkflowPlaceholderPage
+                icon={Activity}
+                title="监测"
+                desc="工作流运行的指标看板：调用次数、成功率、平均耗时、token 消耗与时间趋势。"
+                bullets={['调用次数 / 成功率', '平均耗时 / P95', 'token 消耗与成本', '时间趋势图']}
+              />
+            </div>
+          )}
+          {activeTab === 'annotations' && (
+            <div className="absolute inset-0 z-10">
+              <WorkflowPlaceholderPage
+                icon={Tags}
+                title="标注"
+                desc="对话回复的人工标注：标注优质回复、命中率统计与标注库管理（仅 Chatflow）。"
+                bullets={['人工标注回复', '标注命中率', '标注库管理']}
+              />
+            </div>
+          )}
         </div>
-
-        {/* Block Selector Panel */}
-        <BlockSelectorPanel
-          appType={appType}
-          isOpen={showBlockSelector}
-          onClose={() => setShowBlockSelector(false)}
-          onSelect={handleBlockSelect}
-          recentBlocks={recentBlocks}
-        />
-
-        {/* Right Config Panel */}
-        {selectedWorkflowNode && (
-          <NodeConfigPanel
-            node={selectedWorkflowNode}
-            allNodes={allWorkflowNodes}
-            appType={appType}
-            onUpdate={handleNodeUpdate}
-            onTitleChange={handleTitleUpdate}
-            onClose={handleCloseConfigPanel}
-          />
-        )}
       </div>
     </div>
   );

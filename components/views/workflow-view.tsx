@@ -101,69 +101,6 @@ interface NodeConnection {
   targetHandle?: string;
 }
 
-const mockApps: WorkflowApp[] = [
-  {
-    id: '1',
-    name: 'Github热榜日报',
-    description: '自动抓取Github热榜并生成每日报告',
-    type: 'workflow',
-    tags: ['自动化', '日报'],
-    lastEditedBy: 'PERRY',
-    lastEditedAt: '2026/05/04 00:17',
-    status: 'published',
-    executions: 1234,
-    successRate: 98.5
-  },
-  {
-    id: '2',
-    name: '代码转换器',
-    description: '提供多种代码语言转换能力，将用户输入的代码转换成他们需要的代码语言',
-    type: 'workflow',
-    tags: ['代码', '转换'],
-    lastEditedBy: 'PERRY',
-    lastEditedAt: '2026/05/03 23:57',
-    status: 'published',
-    executions: 567,
-    successRate: 95.2
-  },
-  {
-    id: '3',
-    name: '每日行业分析报告',
-    description: '关于家居行业的分析',
-    type: 'text-generation',
-    tags: ['分析', '报告'],
-    lastEditedBy: 'PERRY',
-    lastEditedAt: '2026/04/29 22:15',
-    status: 'published',
-    executions: 89,
-    successRate: 100
-  },
-  {
-    id: '4',
-    name: '智能客服助手',
-    description: '处理用户咨询和问题解答的智能对话流程',
-    type: 'chatflow',
-    tags: ['客服', '对话'],
-    lastEditedBy: 'Alice',
-    lastEditedAt: '2026/05/02 14:30',
-    status: 'published',
-    executions: 3456,
-    successRate: 97.8
-  },
-  {
-    id: '5',
-    name: '数据分析 Agent',
-    description: '自主完成数据分析任务的智能 Agent',
-    type: 'agent',
-    tags: ['数据', 'Agent'],
-    lastEditedBy: 'Bob',
-    lastEditedAt: '2026/05/01 10:20',
-    status: 'draft',
-    executions: 0,
-    successRate: 0
-  }
-];
-
 const appTypeConfig = {
   workflow: { label: '工作流', icon: GitBranch, color: 'text-blue-500', bg: 'bg-blue-500/10' },
   chatflow: { label: 'Chatflow', icon: MessageSquare, color: 'text-green-500', bg: 'bg-green-500/10' },
@@ -433,7 +370,7 @@ export function WorkflowView() {
     edges: connections.map(c => ({ id: c.id, source: c.sourceId, target: c.targetId })),
   }), [workflowNodes, connections]);
 
-  const filteredApps = (appsLoaded ? apps : mockApps).filter(app => {
+  const filteredApps = apps.filter(app => {
     const matchesSearch = app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       app.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = selectedType === 'all' || app.type === selectedType;
@@ -1637,7 +1574,7 @@ export function WorkflowView() {
           <DialogTrigger asChild>
             <Button className="gap-2 shadow-sm">
               <Plus className="h-4 w-4" />
-              创建应用
+              创建工作流
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-lg">
@@ -1738,6 +1675,24 @@ export function WorkflowView() {
 
         {/* Apps Grid */}
         <TabsContent value={selectedType} className="mt-5">
+          {/* 加载中 / 空态（去除 mock 闪现：只渲染真实数据） */}
+          {!appsLoaded && (
+            <div className="py-16 text-center text-sm text-muted-foreground">加载中…</div>
+          )}
+          {appsLoaded && filteredApps.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
+              <GitBranch className="h-9 w-9 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                {searchTerm || selectedType !== 'all' ? '没有匹配的工作流' : '还没有工作流'}
+              </p>
+              {!searchTerm && selectedType === 'all' && (
+                <Button className="gap-2" onClick={() => setIsCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  创建工作流
+                </Button>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredApps.map((app) => {
               const typeConfig = appTypeConfig[app.type];
