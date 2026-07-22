@@ -47,4 +47,35 @@ describe('executeGraph（4.4.3 最小执行引擎）', () => {
     // chat 被调用，输入长度 = '翻译：hello'.length = 8
     expect(r.output).toContain('输入长度=8')
   })
+
+  // 4.4.8 slice 1：模板转换 + 参数提取器
+  it('模板转换节点：{{input}} 替换为节点输入（不调 LLM）', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('tt', 'template-transform', { template: '结果=[{{input}}]' }), n('t', 'end')], edges: [e('s', 'tt'), e('tt', 't')] },
+      'ABC',
+    )
+    expect(r.status).toBe('succeeded')
+    const tr = r.traces.find((x) => x.nodeId === 'tt')
+    expect(tr?.status).toBe('succeeded')
+    expect(r.output).toBe('结果=[ABC]')
+  })
+
+  it('模板转换：空模板透传输入', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('tt', 'template-transform', {}), n('t', 'end')], edges: [e('s', 'tt'), e('tt', 't')] },
+      'passthru',
+    )
+    expect(r.output).toBe('passthru')
+  })
+
+  it('参数提取器节点：调 LLM 提取（succeeded）', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('pe', 'parameter-extractor', { parameters: [{ name: 'city' }] }), n('t', 'end')], edges: [e('s', 'pe'), e('pe', 't')] },
+      '北京天气',
+    )
+    expect(r.status).toBe('succeeded')
+    const tr = r.traces.find((x) => x.nodeId === 'pe')
+    expect(tr?.status).toBe('succeeded')
+    expect(r.output).toContain('LLM回复') // mock chat 被调用
+  })
 })

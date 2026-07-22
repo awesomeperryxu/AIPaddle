@@ -23,7 +23,25 @@ export type ExecResult = {
 type GNode = { id: string; type: string; data?: { config?: Record<string, unknown>; label?: string } }
 type GEdge = { source: string; target: string }
 
-const SUPPORTED = new Set(['start', 'end', 'llm'])
+const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor'])
+
+// 模板转换：把 config.template 里的 {{input}} 替换为节点输入（当前引擎单值模型）。
+function renderTemplate(cfg: Record<string, unknown>, input: string): string {
+  const tmpl = typeof cfg.template === 'string' ? cfg.template : ''
+  if (!tmpl) return input
+  return tmpl.replace(/\{\{\s*input\s*\}\}/g, input)
+}
+
+// 参数提取：让 LLM 从输入中提取 config.parameters 声明的字段，输出 JSON 字符串。
+function buildExtractPrompt(cfg: Record<string, unknown>, input: string): string {
+  const params = Array.isArray(cfg.parameters) ? (cfg.parameters as Array<Record<string, unknown>>) : []
+  const fields = params
+    .map((p) => `- ${String(p.name ?? '')}${p.description ? `（${String(p.description)}）` : ''}`)
+    .filter((s) => s.trim() !== '-')
+    .join('\n')
+  const spec = fields || '- result（从输入中提取的关键信息）'
+  return `从下面的输入中提取以下字段，严格输出 JSON（无代码块围栏、无多余文字），提取不到的填 null：\n${spec}\n\n输入：\n${input}`
+}
 
 /** 拓扑排序（Kahn）；有环则回退到原始顺序（校验已拦环，这里稳妥兜底）。 */
 function topoOrder(nodes: GNode[], edges: GEdge[]): GNode[] {
@@ -86,11 +104,15 @@ export async function executeGraph(graph: WorkflowGraph, input: string): Promise
         continue
       }
       let out = nodeInput
+      const cfg = n.data?.config ?? {}
       if (n.type === 'llm') {
-        const cfg = n.data?.config ?? {}
         const tmpl = typeof cfg.prompt === 'string' && cfg.prompt.trim() ? String(cfg.prompt) : '请根据以下输入给出简洁回复：\n{{input}}'
         const prompt = tmpl.includes('{{input}}') ? tmpl.replace(/\{\{input\}\}/g, nodeInput) : `${tmpl}\n\n输入：${nodeInput}`
         out = await chat([{ role: 'user', content: prompt }])
+      } else if (n.type === 'template-transform') {
+        out = renderTemplate(cfg, nodeInput)
+      } else if (n.type === 'parameter-extractor') {
+        out = await chat([{ role: 'user', content: buildExtractPrompt(cfg, nodeInput) }])
       }
       // start / end：透传（start 输出=运行输入；end 输出=其输入=最终结果）
       outputs.set(n.id, out)
