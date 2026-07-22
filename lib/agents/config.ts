@@ -37,6 +37,11 @@ export const AgentConfigSchema = z.object({
   brainMode: z.enum(['llm', 'workflow', 'routing']).optional(),
   brainWorkflowId: z.string().uuid().nullish(),
   routingRules: z.array(RoutingRuleSchema).max(20).optional(),
+  // Features（4.1.12，照搬 Dify）
+  openingStatement: z.string().max(1000).optional(),
+  suggestedQuestions: z.array(z.string().trim().max(120)).max(10).optional(),
+  citationEnabled: z.boolean().optional(),
+  moderationEnabled: z.boolean().optional(),
 })
 export type AgentConfig = z.infer<typeof AgentConfigSchema>
 

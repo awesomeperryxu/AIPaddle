@@ -4,12 +4,13 @@
 // 右侧调试预览（接真实 /chat）。嵌入 dashboard 外壳（非全屏），防抖自动保存 config。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AGENT_MODELS,
@@ -53,23 +54,44 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
   const [agentMode, setAgentMode] = useState<AgentMode>(agent.config.agentMode ?? DEFAULT_AGENT_CONFIG.agentMode);
   const [maxIterations, setMaxIterations] = useState(agent.config.maxIterations ?? DEFAULT_AGENT_CONFIG.maxIterations);
 
+  // Features（4.1.12）
+  const [openingStatement, setOpeningStatement] = useState(agent.config.openingStatement ?? '');
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>(agent.config.suggestedQuestions ?? []);
+  const [citationEnabled, setCitationEnabled] = useState(agent.config.citationEnabled ?? true);
+  const [moderationEnabled, setModerationEnabled] = useState(agent.config.moderationEnabled ?? false);
+
   // 大脑设置（4.1.9）
   const [brainMode, setBrainMode] = useState<BrainMode>(agent.config.brainMode ?? 'llm');
   const [brainWorkflowId, setBrainWorkflowId] = useState<string>(agent.config.brainWorkflowId ?? '');
   const [routingRules, setRoutingRules] = useState<RoutingRule[]>(agent.config.routingRules ?? []);
   const [workflows, setWorkflows] = useState<{ id: string; name: string; type: string }[]>([]);
   const [skills, setSkills] = useState<{ id: string; name: string }[]>([]);
+  // 直挂资源（4.1.11）：知识库 + Skill，存 agent_resources（独立于 config）
+  const [knowledgeBases, setKnowledgeBases] = useState<{ id: string; name: string }[]>([]);
+  const [boundKbIds, setBoundKbIds] = useState<string[]>([]);
+  const [boundSkillIds, setBoundSkillIds] = useState<string[]>([]);
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [wfRes, skRes] = await Promise.all([fetch('/api/workflows'), fetch('/api/skills')]);
+        const [wfRes, skRes, kbRes, resRes] = await Promise.all([
+          fetch('/api/workflows'), fetch('/api/skills'), fetch('/api/knowledge-bases'), fetch(`/api/agents/${agent.id}/resources`),
+        ]);
         if (active && wfRes.ok) setWorkflows((await wfRes.json()).workflows ?? []);
         if (active && skRes.ok) setSkills((await skRes.json()).skills ?? []);
+        if (active && kbRes.ok) setKnowledgeBases((await kbRes.json()).knowledgeBases ?? []);
+        if (active && resRes.ok) {
+          const { resources } = await resRes.json();
+          setBoundKbIds(resources?.knowledgeBaseIds ?? []);
+          setBoundSkillIds(resources?.skillIds ?? []);
+        }
       } catch { /* 列表拉取失败不阻断编辑 */ }
     })();
     return () => { active = false; };
-  }, []);
+  }, [agent.id]);
+
+  const toggleKb = (id: string) => setBoundKbIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
+  const toggleSkill = (id: string) => setBoundSkillIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [toast, setToast] = useState('');
@@ -81,13 +103,31 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
   }, []);
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
+  // 直挂资源保存（PUT，防抖）——独立于 config 自动保存（4.1.11）
+  const resFirstRun = useRef(true);
+  useEffect(() => {
+    if (!canEdit) return;
+    if (resFirstRun.current) { resFirstRun.current = false; return; }
+    const t = setTimeout(() => {
+      void fetch(`/api/agents/${agent.id}/resources`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds }),
+      }).then((r) => { if (!r.ok) showToast('直挂资源保存失败'); });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [boundKbIds, boundSkillIds, canEdit, agent.id, showToast]);
+
   // 组装当前 config
   const buildConfig = useCallback((): AgentConfig => ({
     systemPrompt, model, temperature, variables, agentMode, maxIterations,
     brainMode,
     brainWorkflowId: brainMode === 'workflow' && brainWorkflowId ? brainWorkflowId : null,
     routingRules: brainMode === 'routing' ? routingRules.filter((r) => r.keyword && r.skillId) : [],
-  }), [systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules]);
+    openingStatement,
+    suggestedQuestions: suggestedQuestions.filter((q) => q.trim()),
+    citationEnabled,
+    moderationEnabled,
+  }), [systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, openingStatement, suggestedQuestions, citationEnabled, moderationEnabled]);
 
   // 立即保存（返回是否成功）；防环 422 弹出提示
   const saveNow = useCallback(async () => {
@@ -115,7 +155,7 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
     if (firstRun.current) { firstRun.current = false; return; }
     const t = setTimeout(() => { setSaveStatus('saving'); void saveNow(); }, 800);
     return () => clearTimeout(t);
-  }, [title, systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, canEdit, saveNow]);
+  }, [title, systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, openingStatement, suggestedQuestions, citationEnabled, moderationEnabled, canEdit, saveNow]);
 
   // AI 生成提示词
   const [genInstruction, setGenInstruction] = useState('');
@@ -314,6 +354,59 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
             </div>
           </section>
 
+          {/* Features（4.1.12，照搬 Dify）：开场白 / 建议问题 / 引用归属 / 内容审查 */}
+          <section className="rounded-xl border border-border p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">功能（Features）</Label>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">开场白</Label>
+              <Textarea
+                value={openingStatement}
+                onChange={(e) => setOpeningStatement(e.target.value)}
+                disabled={!canEdit}
+                placeholder="对话开始时 Agent 主动说的第一句话…"
+                className="min-h-[60px] text-sm"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">下一步问题建议（点击即填入）</Label>
+                <Button variant="outline" size="sm" className="h-7 gap-1" disabled={!canEdit || suggestedQuestions.length >= 10} onClick={() => setSuggestedQuestions((q) => [...q, ''])}>
+                  <Plus className="h-3.5 w-3.5" /> 添加
+                </Button>
+              </div>
+              {suggestedQuestions.length === 0 && <p className="text-xs text-muted-foreground">暂无建议问题</p>}
+              {suggestedQuestions.map((q, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input value={q} onChange={(e) => setSuggestedQuestions((arr) => arr.map((x, idx) => idx === i ? e.target.value : x))} placeholder="建议问题…" disabled={!canEdit} className="h-8 flex-1" />
+                  <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!canEdit} onClick={() => setSuggestedQuestions((arr) => arr.filter((_, idx) => idx !== i))}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm">引用与归属</Label>
+                <p className="text-xs text-muted-foreground">回答时标注知识库来源 [编号]</p>
+              </div>
+              <Switch checked={citationEnabled} onCheckedChange={setCitationEnabled} disabled={!canEdit} />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm">内容审查</Label>
+                <p className="text-xs text-muted-foreground">对输入做基础敏感内容拦截（命中即拒答）</p>
+              </div>
+              <Switch checked={moderationEnabled} onCheckedChange={setModerationEnabled} disabled={!canEdit} />
+            </div>
+          </section>
+
           {/* 大脑设置（4.1.9）：纯LLM / 绑定工作流 / 事项路由到 Skill */}
           <section className="rounded-xl border border-border p-4 space-y-3">
             <div className="flex items-center gap-2">
@@ -375,12 +468,43 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
             )}
           </section>
 
-          {/* 知识库 / 工具直挂（后续切片） */}
-          <section className="rounded-xl border border-dashed border-border p-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <BookOpen className="h-4 w-4" /> 知识库直挂 · 工具(Skill)直挂
+          {/* 知识库 / 工具直挂（4.1.11）：不经 workflow，直接绑定到 Agent */}
+          <section className="rounded-xl border border-border p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">知识库直挂</Label>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">给 Agent 直接挂知识库/工具（不经 workflow）—— 即将上线。当前可通过「绑定工作流」内的知识检索/工具节点实现。</p>
+            <p className="text-xs text-muted-foreground">勾选的知识库将在对话时自动检索并注入上下文（RAG，真实生效）。</p>
+            {knowledgeBases.length === 0 ? (
+              <p className="text-xs text-muted-foreground">暂无知识库，请先到「知识库管理」创建</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {knowledgeBases.map((k) => (
+                  <button
+                    key={k.id} type="button" disabled={!canEdit} onClick={() => toggleKb(k.id)}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${boundKbIds.includes(k.id) ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >{k.name}</button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-2">
+              <Wrench className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">工具（Skill）直挂</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">勾选的 Skill 绑定到本 Agent（工具调用执行接入中；当前用于能力登记与后续编排引用）。</p>
+            {skills.length === 0 ? (
+              <p className="text-xs text-muted-foreground">暂无 Skill，请先到「Skill Hub」创建</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {skills.map((s) => (
+                  <button
+                    key={s.id} type="button" disabled={!canEdit} onClick={() => toggleSkill(s.id)}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${boundSkillIds.includes(s.id) ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >{s.name}</button>
+                ))}
+              </div>
+            )}
           </section>
         </div>
 
@@ -389,7 +513,24 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
           <div className="border-b border-border px-4 py-3 text-sm font-medium">调试与预览</div>
           <div className="flex-1 overflow-auto p-4 space-y-3">
             {messages.length === 0 && (
-              <p className="pt-8 text-center text-xs text-muted-foreground">在下方输入，与当前配置的 Agent 实时对话调试。</p>
+              <div className="space-y-3">
+                {openingStatement ? (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap break-words">{openingStatement}</div>
+                  </div>
+                ) : (
+                  <p className="pt-8 text-center text-xs text-muted-foreground">在下方输入，与当前配置的 Agent 实时对话调试。</p>
+                )}
+                {suggestedQuestions.filter((q) => q.trim()).length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {suggestedQuestions.filter((q) => q.trim()).map((q, i) => (
+                      <button key={i} type="button" onClick={() => setInput(q)} className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-primary/50">
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {messages.map((m, i) => (
               <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>

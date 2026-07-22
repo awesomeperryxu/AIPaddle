@@ -145,6 +145,9 @@ export type AgentChatConfig = {
   brainMode?: 'llm' | 'workflow' | 'routing'
   brainWorkflowId?: string | null
   routingRules?: { keyword: string; skillId: string }[]
+  // Features（4.1.12）
+  citationEnabled?: boolean
+  moderationEnabled?: boolean
 }
 
 export async function getAgentForChat(_ctx: RequestContext, id: string): Promise<AgentChatConfig | null> {
@@ -162,6 +165,7 @@ export async function getAgentForChat(_ctx: RequestContext, id: string): Promise
     model?: string; systemPrompt?: string; temperature?: number
     brainMode?: 'llm' | 'workflow' | 'routing'; brainWorkflowId?: string | null
     routingRules?: { keyword: string; skillId: string }[]
+    citationEnabled?: boolean; moderationEnabled?: boolean
   }
   return {
     id: data.id as string,
@@ -174,6 +178,8 @@ export async function getAgentForChat(_ctx: RequestContext, id: string): Promise
     brainMode: cfg.brainMode,
     brainWorkflowId: cfg.brainWorkflowId,
     routingRules: cfg.routingRules,
+    citationEnabled: cfg.citationEnabled,
+    moderationEnabled: cfg.moderationEnabled,
   }
 }
 

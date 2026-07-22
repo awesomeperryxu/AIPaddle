@@ -59,4 +59,18 @@ describe('AgentConfigSchema', () => {
   it('brainWorkflowId 允许 null（清除绑定）', () => {
     expect(AgentConfigSchema.safeParse({ brainWorkflowId: null }).success).toBe(true)
   })
+
+  // 4.1.12 Features
+  it('接受 Features 配置', () => {
+    expect(AgentConfigSchema.safeParse({
+      openingStatement: '你好，我是客服助手',
+      suggestedQuestions: ['如何退货', '订单查询'],
+      citationEnabled: true,
+      moderationEnabled: false,
+    }).success).toBe(true)
+  })
+
+  it('建议问题超过 10 条被拒', () => {
+    expect(AgentConfigSchema.safeParse({ suggestedQuestions: Array(11).fill('q') }).success).toBe(false)
+  })
 })
