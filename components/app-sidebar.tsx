@@ -23,7 +23,8 @@ import {
   LogOut,
   Moon,
   Sun,
-  Server
+  Server,
+  LayoutTemplate
 } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from 'next-themes';
@@ -87,6 +88,7 @@ const navSections: NavSection[] = [
     defaultOpen: false,
     items: [
       { title: '工作流管理', icon: <GitBranch className="h-4 w-4" />, href: 'workflows' },
+      { title: '模板库',    icon: <LayoutTemplate className="h-4 w-4" />, href: 'templates' },
     ]
   },
   {
