@@ -3,6 +3,7 @@ import { chat } from '@/lib/ai'
 import { validateGraph, type WorkflowGraph } from '@/lib/workflow/validate'
 import { retrieveSegments } from '@/lib/kb/rag'
 import { resolveExpr, coerce, type VarPool } from '@/lib/workflow/variables'
+import { getAgentForChat } from '@/lib/data/agents'
 import type { RequestContext } from '@/lib/context'
 
 // 最小执行引擎（4.4.3）：拓扑串行执行 2-3 种节点（start / llm / end）。
@@ -26,7 +27,7 @@ export type ExecResult = {
 type GNode = { id: string; type: string; data?: { config?: Record<string, unknown>; label?: string } }
 type GEdge = { source: string; target: string; sourceHandle?: string }
 
-const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request', 'if-else', 'variable-assigner', 'variable-aggregator', 'list-operator'])
+const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request', 'if-else', 'variable-assigner', 'variable-aggregator', 'list-operator', 'agent'])
 
 // 执行选项：ctx 用于需租户隔离的节点（知识检索）。
 export type ExecOptions = { ctx?: RequestContext }
@@ -405,6 +406,31 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
         })
         const text = await res.text()
         out = `HTTP ${res.status}\n${text.slice(0, 4000)}`
+      } else if (n.type === 'agent') {
+        // 4.1.10：Agent 节点——引用已发布平台 Agent，用其人设 LLM 处理节点输入。
+        // （一个 workflow 可由多个 Agent 节点组成；不递归执行被引用 Agent 的大脑工作流，避免环，防环在绑定时已拦。）
+        if (!opts.ctx) {
+          outputs.set(n.id, nodeInput)
+          traces.push({ nodeId: n.id, type: n.type, status: 'skipped', input: nodeInput, output: nodeInput, error: '缺少运行上下文（ctx）', ms: Date.now() - t0 })
+          propagate(n.id, activeCase)
+          continue
+        }
+        const agentId = typeof cfg.agentId === 'string' ? cfg.agentId : ''
+        if (!agentId) {
+          outputs.set(n.id, nodeInput)
+          traces.push({ nodeId: n.id, type: n.type, status: 'skipped', input: nodeInput, output: nodeInput, error: 'Agent 节点未指定引用的 Agent', ms: Date.now() - t0 })
+          propagate(n.id, activeCase)
+          continue
+        }
+        const ag = await getAgentForChat(opts.ctx, agentId)
+        if (!ag) {
+          outputs.set(n.id, nodeInput)
+          traces.push({ nodeId: n.id, type: n.type, status: 'skipped', input: nodeInput, output: nodeInput, error: '引用的 Agent 不存在或无权访问', ms: Date.now() - t0 })
+          propagate(n.id, activeCase)
+          continue
+        }
+        const sys = ag.systemPrompt?.trim() || `你是数字员工「${ag.name}」，围绕职责用简洁专业的中文处理输入。`
+        out = await chat([{ role: 'system', content: sys }, { role: 'user', content: nodeInput }], { model: ag.model, temperature: ag.temperature })
       }
       // start / end：透传（start 输出=运行输入；end 输出=其输入=最终结果）
       outputs.set(n.id, out)

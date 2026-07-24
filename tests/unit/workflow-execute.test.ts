@@ -10,6 +10,12 @@ vi.mock('@/lib/kb/rag', () => ({
     { filename: '手册.pdf', snippet: `关于「${q}」的资料`, documentId: 'd1', similarity: 0.9 },
   ]),
 }))
+// mock 平台 Agent 查询（Agent 节点执行器用）
+vi.mock('@/lib/data/agents', () => ({
+  getAgentForChat: vi.fn(async (_ctx: unknown, id: string) =>
+    id === 'AG1' ? { id: 'AG1', name: '客服', description: '', status: 'published', systemPrompt: '你是客服' } : null,
+  ),
+}))
 
 import { executeGraph } from '@/lib/workflow/execute'
 
@@ -132,5 +138,36 @@ describe('executeGraph（4.4.3 最小执行引擎）', () => {
       )
       expect(r.status).toBe('failed')
     }
+  })
+
+  // 4.1.10：Agent 节点（引用已发布平台 Agent）
+  it('Agent 节点：引用有效 Agent + ctx → 用其人设跑 LLM', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('a', 'agent', { agentId: 'AG1' }), n('t', 'end')], edges: [e('s', 'a'), e('a', 't')] },
+      '你好',
+      { ctx },
+    )
+    expect(r.status).toBe('succeeded')
+    expect(r.traces.find((x) => x.nodeId === 'a')?.status).toBe('succeeded')
+    expect(r.output).toContain('LLM回复')
+  })
+
+  it('Agent 节点：未指定 agentId → skipped 透传', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('a', 'agent', {}), n('t', 'end')], edges: [e('s', 'a'), e('a', 't')] },
+      'x',
+      { ctx },
+    )
+    expect(r.traces.find((x) => x.nodeId === 'a')?.status).toBe('skipped')
+    expect(r.output).toBe('x')
+  })
+
+  it('Agent 节点：引用不存在的 Agent → skipped', async () => {
+    const r = await executeGraph(
+      { nodes: [n('s', 'start'), n('a', 'agent', { agentId: 'NOPE' }), n('t', 'end')], edges: [e('s', 'a'), e('a', 't')] },
+      'x',
+      { ctx },
+    )
+    expect(r.traces.find((x) => x.nodeId === 'a')?.status).toBe('skipped')
   })
 })
