@@ -24,6 +24,7 @@ import {
   Variable,
   MessageSquare,
   History,
+  Download,
   Play,
   Upload,
   AlertTriangle,
@@ -57,6 +58,7 @@ export interface WorkflowHeaderProps {
   onRunStep?: () => void;
   onPublish?: () => void;
   onVersionHistory?: () => void;
+  onExportDsl?: () => void;
   onEnvVars?: () => void;
   onConversationVars?: () => void;
   onCancelRestore?: () => void;
@@ -82,6 +84,7 @@ export function WorkflowHeader({
   onRunStep,
   onPublish,
   onVersionHistory,
+  onExportDsl,
   onEnvVars,
   onConversationVars,
   onCancelRestore,
@@ -338,6 +341,20 @@ export function WorkflowHeader({
               <p className="text-xs">版本历史</p>
             </TooltipContent>
           </Tooltip>
+
+          {/* Export DSL（4.4.12） */}
+          {onExportDsl && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onExportDsl}>
+                  <Download className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">导出 DSL</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           {/* Run Button with Dropdown */}
           <DropdownMenu>

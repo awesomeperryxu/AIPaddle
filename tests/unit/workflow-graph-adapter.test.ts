@@ -58,4 +58,15 @@ describe('workflow graph adapter', () => {
     expect(nodes[0].position).toEqual({ x: 250, y: 50 }) // 缺 position 用默认
     expect(nodes[0].data.label).toBe('start') // 缺 label 回退 type
   })
+
+  it('保留 sourceHandle（if-else 分支边往返不丢，4.4.8a）', () => {
+    const g = {
+      nodes: [{ id: 'ie', type: 'if-else' }, { id: 't', type: 'end' }],
+      edges: [{ id: 'e', source: 'ie', target: 't', sourceHandle: 'if-true' }],
+    }
+    const rf = graphToReactFlow(g)
+    expect(rf.edges[0].sourceHandle).toBe('if-true')
+    const back = reactFlowToGraph(rf.nodes, rf.edges)
+    expect(back.edges[0]).toEqual({ id: 'e', source: 'ie', target: 't', sourceHandle: 'if-true' })
+  })
 })

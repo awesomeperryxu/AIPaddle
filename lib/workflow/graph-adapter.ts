@@ -16,12 +16,14 @@ export type PersistedNode = {
   position?: { x: number; y: number }
   data?: { label?: string; description?: string; config?: Record<string, unknown> }
 }
-export type PersistedEdge = { id?: string; source: string; target: string }
+// sourceHandle：多出口节点（如 if-else 的 if-true/elif-N/else 分支）的出口标识，
+// 决定这条边属于哪个分支。执行引擎据此做条件路由（4.4.8a）。单出口节点为空。
+export type PersistedEdge = { id?: string; source: string; target: string; sourceHandle?: string }
 export type PersistedGraph = { nodes: PersistedNode[]; edges: PersistedEdge[] }
 
 // React Flow 侧的松散形状（与 reactflow 的 Node/Edge 结构兼容，避免耦合其泛型）。
 export type RFNodeLike = { id: string; type: string; position: { x: number; y: number }; data: Record<string, unknown> }
-export type RFEdgeLike = { id: string; source: string; target: string; animated?: boolean }
+export type RFEdgeLike = { id: string; source: string; target: string; sourceHandle?: string | null; animated?: boolean }
 
 const DEFAULT_POS = { x: 250, y: 50 }
 
@@ -44,6 +46,7 @@ export function graphToReactFlow(graph: PersistedGraph | null | undefined): { no
     id: String(e.id ?? `${e.source}-${e.target}`),
     source: String(e.source),
     target: String(e.target),
+    ...(e.sourceHandle ? { sourceHandle: String(e.sourceHandle) } : {}),
     animated: true,
   }))
   return { nodes, edges }
@@ -66,6 +69,11 @@ export function reactFlowToGraph(nodes: RFNodeLike[], edges: RFEdgeLike[]): Pers
         },
       }
     }),
-    edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
+    edges: edges.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      ...(e.sourceHandle ? { sourceHandle: String(e.sourceHandle) } : {}),
+    })),
   }
 }

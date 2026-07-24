@@ -9,6 +9,8 @@ import ReactFlow, {
   Node,
   Edge,
   Connection,
+  Handle,
+  Position,
   addEdge,
   useNodesState,
   useEdgesState,
@@ -22,6 +24,7 @@ import { WorkflowHeader, OnlineUser } from './header';
 import { WorkflowOperator } from './canvas';
 import { NodeConfigPanel } from './panels/node-config-panel';
 import { BlockSelectorPanel } from './panels/block-selector-panel';
+import { VersionHistoryPanel } from './panels/version-history-panel';
 import { nodeRegistry } from './nodes/node-registry';
 import { BlockEnum } from './types';
 import { cn } from '@/lib/utils';
@@ -48,6 +51,16 @@ type WorkflowNodeData = {
   description?: string;
 };
 
+// if-else 分支出口标签（4.4.8a-2）
+function branchLabel(caseId: string): string {
+  if (caseId === 'if-true') return 'IF';
+  if (caseId === 'else') return 'ELSE';
+  const m = /^elif-(\d+)$/.exec(caseId);
+  return m ? `ELIF ${m[1]}` : caseId;
+}
+
+const HANDLE_CLS = '!w-2.5 !h-2.5 !border-2 !border-background';
+
 // Custom node component - follows design spec:
 // - Width: 240px fixed
 // - Min height: 80px
@@ -58,20 +71,38 @@ function WorkflowNode({ data, selected }: { data: WorkflowNodeData; selected: bo
   if (!config) return null;
 
   const Icon = config.icon;
+  const bt = String(data.blockType);
+  const isStart = bt === 'start';
+  const isEnd = bt === 'end';
+  const isIfElse = bt === 'if-else';
+
+  // if-else 分支出口：从 cases 派生（if-true/elif-N + 隐式 else），无配置默认 if-true/else。
+  // 每个出口一个带 id 的 source handle → 用户从该出口连线，onConnect 带上 sourceHandle=caseId，
+  // reactFlowToGraph 持久化、执行引擎据此路由（见 4.4.8a-1）。
+  const cases = (data as WorkflowNodeData & { cases?: Array<{ caseId?: string }> }).cases;
+  const caseIds = (Array.isArray(cases) ? cases : [])
+    .map((c) => String(c?.caseId ?? ''))
+    .filter((id) => id && id !== 'else');
+  const branches = caseIds.length ? [...caseIds, 'else'] : ['if-true', 'else'];
 
   return (
     <div
       className={cn(
-        'relative bg-card rounded-xl shadow-sm transition-shadow overflow-hidden border border-border',
+        'relative bg-card rounded-xl shadow-sm transition-shadow border border-border',
         selected && 'ring-2 ring-primary shadow-md'
       )}
-      style={{ 
-        width: 240, 
+      style={{
+        width: 240,
         minHeight: 80,
         borderLeftWidth: '4px',
         borderLeftColor: config.color,
       }}
     >
+      {/* 输入手柄（start 节点无入口） */}
+      {!isStart && (
+        <Handle type="target" position={Position.Left} className={cn(HANDLE_CLS, '!bg-muted-foreground')} />
+      )}
+
       <div className="p-3 pl-4">
         <div className="flex items-center gap-2 mb-1">
           <div
@@ -90,6 +121,26 @@ function WorkflowNode({ data, selected }: { data: WorkflowNodeData; selected: bo
           </p>
         )}
       </div>
+
+      {/* 输出手柄：普通节点单个；if-else 每个分支一个（带 id=caseId + 标签）；end 无出口 */}
+      {!isEnd && !isIfElse && (
+        <Handle type="source" position={Position.Right} className={cn(HANDLE_CLS, '!bg-primary')} />
+      )}
+      {isIfElse &&
+        branches.map((caseId, i) => (
+          <Handle
+            key={caseId}
+            type="source"
+            position={Position.Right}
+            id={caseId}
+            style={{ top: `${((i + 1) / (branches.length + 1)) * 100}%` }}
+            className={cn(HANDLE_CLS, '!bg-primary')}
+          >
+            <span className="pointer-events-none absolute left-3 -translate-y-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground">
+              {branchLabel(caseId)}
+            </span>
+          </Handle>
+        ))}
     </div>
   );
 }
@@ -147,6 +198,12 @@ function WorkflowPageInner({
   const [activeTab, setActiveTab] = useState<WorkflowTab>('orchestrate');
   const [showRunPanel, setShowRunPanel] = useState(false);
   const [logsRefreshKey, setLogsRefreshKey] = useState(0);
+
+  // 版本历史（4.4.10）：真实数据接线
+  type WorkflowVersionDto = { id: string; version: number; note: string | null; createdBy: string | null; createdAt: string };
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [versions, setVersions] = useState<WorkflowVersionDto[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
 
   const router = useRouter();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -215,6 +272,56 @@ function WorkflowPageInner({
       }
     } catch { showToast('发布失败：网络错误'); }
   }, [workflowId, saveNow, showToast]);
+
+  // 导出 DSL（4.4.12）：拉 /dsl → 下载 .aipaddle.json
+  const handleExportDsl = useCallback(async () => {
+    if (!workflowId) { showToast('请先保存工作流后再导出'); return; }
+    try {
+      const res = await fetch(`/api/workflows/${workflowId}/dsl`);
+      if (!res.ok) { showToast('导出失败：无权限或未登录'); return; }
+      const dsl = await res.json();
+      const blob = new Blob([JSON.stringify(dsl, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title || 'workflow'}.aipaddle.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('已导出 DSL');
+    } catch { showToast('导出失败：网络错误'); }
+  }, [workflowId, title, showToast]);
+
+  // 打开版本历史面板并拉取真实版本列表（GET /api/workflows/{id}/versions）
+  const openVersionHistory = useCallback(async () => {
+    if (!workflowId) { showToast('请先保存工作流后再查看版本历史'); return; }
+    setShowVersionHistory(true);
+    setVersionsLoading(true);
+    try {
+      const res = await fetch(`/api/workflows/${workflowId}/versions`);
+      if (!res.ok) { setVersions([]); showToast('加载版本历史失败：无权限或未登录'); return; }
+      const { versions: list } = await res.json();
+      setVersions(Array.isArray(list) ? (list as WorkflowVersionDto[]) : []);
+    } catch { setVersions([]); showToast('加载版本历史失败：网络错误'); }
+    finally { setVersionsLoading(false); }
+  }, [workflowId, showToast]);
+
+  // 回滚到指定版本：POST restore → 用返回的图重建画布（POST /api/workflows/{id}/versions/{version}/restore）
+  const handleRestoreVersion = useCallback(async (versionId: string) => {
+    if (!workflowId) return;
+    const version = Number(versionId);
+    try {
+      const res = await fetch(`/api/workflows/${workflowId}/versions/${version}/restore`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(body?.error?.message ?? '回滚失败：无权限或未登录'); return; }
+      const graph = body?.workflow?.graph as PersistedGraph | undefined;
+      const rf = graphToReactFlow(graph);
+      setNodes(rf.nodes as unknown as Node[]);
+      setEdges(rf.edges as unknown as Edge[]);
+      setSelectedNode(null);
+      setShowVersionHistory(false);
+      showToast(`已回滚到 v${version}（草稿）`);
+    } catch { showToast('回滚失败：网络错误'); }
+  }, [workflowId, showToast, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -393,7 +500,8 @@ function WorkflowPageInner({
           setShowRunPanel(true);
         }}
         onPublish={handlePublish}
-        onVersionHistory={() => showToast('版本历史即将上线（W2）')}
+        onVersionHistory={openVersionHistory}
+        onExportDsl={handleExportDsl}
         onEnvVars={() => showToast('环境变量即将上线（W2）')}
         onConversationVars={() => showToast('会话变量即将上线（W2）')}
         onExitHistory={() => setHeaderMode('normal')}
@@ -550,6 +658,22 @@ function WorkflowPageInner({
               />
             </div>
           )}
+
+          {/* 版本历史面板（4.4.10）：真实数据；恢复即回滚重建画布 */}
+          <VersionHistoryPanel
+            isOpen={showVersionHistory}
+            isLoading={versionsLoading}
+            onClose={() => setShowVersionHistory(false)}
+            currentUserId={undefined}
+            versions={versions.map((v) => ({
+              id: String(v.version),
+              number: v.version,
+              description: v.note ?? '',
+              createdAt: new Date(v.createdAt.replace(' ', 'T')),
+              createdBy: { id: v.createdBy ?? '', name: v.createdBy ? v.createdBy.slice(0, 8) : '未知' },
+            }))}
+            onRestore={handleRestoreVersion}
+          />
 
           {/* 测试运行抽屉（右侧覆盖） */}
           {workflowId && (
