@@ -2,6 +2,7 @@ import 'server-only'
 import { chat } from '@/lib/ai'
 import { validateGraph, type WorkflowGraph } from '@/lib/workflow/validate'
 import { retrieveSegments } from '@/lib/kb/rag'
+import { resolveExpr, coerce, type VarPool } from '@/lib/workflow/variables'
 import type { RequestContext } from '@/lib/context'
 
 // 最小执行引擎（4.4.3）：拓扑串行执行 2-3 种节点（start / llm / end）。
@@ -25,7 +26,7 @@ export type ExecResult = {
 type GNode = { id: string; type: string; data?: { config?: Record<string, unknown>; label?: string } }
 type GEdge = { source: string; target: string; sourceHandle?: string }
 
-const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request', 'if-else'])
+const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request', 'if-else', 'variable-assigner', 'variable-aggregator', 'list-operator'])
 
 // 执行选项：ctx 用于需租户隔离的节点（知识检索）。
 export type ExecOptions = { ctx?: RequestContext }
@@ -86,21 +87,37 @@ function evalCondition(input: string, operator: string, rawValue: unknown): bool
   }
 }
 
-type CondLike = { operator?: unknown; value?: unknown }
+type CondLike = { variable?: unknown; operator?: unknown; value?: unknown }
 type GroupLike = { logicalOperator?: unknown; conditions?: CondLike[] }
 type CaseLike = { caseId?: unknown; logicalOperator?: unknown; conditions?: GroupLike[] }
 
-function evalGroup(group: GroupLike, input: string): boolean {
+// ADR-012：条件的操作数 = 变量选择器（ValueSelector=string[]）经变量池解析所得值。
+// 解析不出（无选择器 / 路径不存在）→ 返回 undefined，由调用方回退到"节点输入"（零回归）。
+function resolveSelector(sel: unknown, pool: VarPool): string | undefined {
+  if (!Array.isArray(sel) || sel.length === 0) return undefined
+  const parts = sel.map((p) => String(p))
+  if (parts[0] === 'sys' && parts[1] === 'query') return pool.sysQuery
+  const dotted = parts.join('.')
+  if (Object.prototype.hasOwnProperty.call(pool.vars, dotted)) return String(pool.vars[dotted])
+  if (Object.prototype.hasOwnProperty.call(pool.vars, parts[0])) return String(pool.vars[parts[0]])
+  if (pool.outputs.has(parts[0])) return pool.outputs.get(parts[0])
+  return undefined
+}
+
+function evalGroup(group: GroupLike, input: string, pool: VarPool): boolean {
   const conds = Array.isArray(group?.conditions) ? group.conditions : []
   if (conds.length === 0) return true // 空条件组视为真
-  const rs = conds.map((c) => evalCondition(input, String(c?.operator ?? ''), c?.value))
+  const rs = conds.map((c) => {
+    const operand = resolveSelector(c?.variable, pool) ?? input // 变量解析不出→回退节点输入
+    return evalCondition(operand, String(c?.operator ?? ''), c?.value)
+  })
   return group?.logicalOperator === 'or' ? rs.some(Boolean) : rs.every(Boolean)
 }
 
-function evalCase(caseItem: CaseLike, input: string): boolean {
+function evalCase(caseItem: CaseLike, input: string, pool: VarPool): boolean {
   const groups = Array.isArray(caseItem?.conditions) ? caseItem.conditions : []
   if (groups.length === 0) return false // 无条件（else 不走此函数）→ 不匹配
-  const rs = groups.map((g) => evalGroup(g, input))
+  const rs = groups.map((g) => evalGroup(g, input, pool))
   return caseItem?.logicalOperator === 'or' ? rs.some(Boolean) : rs.every(Boolean)
 }
 
@@ -111,14 +128,147 @@ function caseOrder(caseId: unknown): number {
 }
 
 /** 解析 if-else 命中的分支：按 if-true→elif-N 顺序取首个满足条件者，皆不中则 'else'。 */
-function resolveIfElseCase(cfg: Record<string, unknown>, input: string): string {
+function resolveIfElseCase(cfg: Record<string, unknown>, input: string, pool: VarPool): string {
   const cases = (Array.isArray(cfg.cases) ? cfg.cases : []) as CaseLike[]
   const ordered = [...cases].sort((a, b) => caseOrder(a?.caseId) - caseOrder(b?.caseId))
   for (const c of ordered) {
     if (String(c?.caseId) === 'else') continue
-    if (evalCase(c, input)) return String(c.caseId)
+    if (evalCase(c, input, pool)) return String(c.caseId)
   }
   return 'else'
+}
+
+// ── ADR-012 变量节点执行器 ────────────────────────────────────────────────
+type ListRecord = Record<string, unknown>
+const pickField = (item: unknown, field: string): unknown =>
+  field && item != null && typeof item === 'object' ? (item as ListRecord)[field] : item
+// 数值优先比较，退化到字符串比较
+const cmpValues = (x: unknown, y: unknown): number => {
+  const nx = Number(x)
+  const ny = Number(y)
+  if (!Number.isNaN(nx) && !Number.isNaN(ny)) return nx - ny
+  const sx = String(x)
+  const sy = String(y)
+  return sx < sy ? -1 : sx > sy ? 1 : 0
+}
+
+/** variable-assigner：对每个 assignment 按 operation 改 pool.vars[targetVariable]。 */
+function runVariableAssigner(cfg: Record<string, unknown>, pool: VarPool): void {
+  const assignments = Array.isArray(cfg.assignments) ? (cfg.assignments as ListRecord[]) : []
+  for (const a of assignments) {
+    const target = String(a?.targetVariable ?? '')
+    if (!target) continue
+    const type = String(a?.targetType ?? 'string')
+    const op = String(a?.operation ?? 'set')
+    const src = resolveExpr(String(a?.sourceExpression ?? ''), pool)
+    const prev = pool.vars[target]
+    switch (op) {
+      case 'append':
+        if (Array.isArray(prev)) pool.vars[target] = [...prev, src]
+        else pool.vars[target] = String(prev ?? '') + String(src ?? '')
+        break
+      case 'increment':
+        pool.vars[target] = Number(prev || 0) + Number(src)
+        break
+      case 'decrement':
+        pool.vars[target] = Number(prev || 0) - Number(src)
+        break
+      case 'toggle':
+        pool.vars[target] = !Boolean(prev)
+        break
+      case 'set':
+      default:
+        pool.vars[target] = coerce(src, type)
+        break
+    }
+  }
+}
+
+/** variable-aggregator：收集 sources 各值成数组（object 类型则按 alias 收成对象），写入 pool 并返回 JSON 串。 */
+function runVariableAggregator(cfg: Record<string, unknown>, pool: VarPool): string {
+  const srcs = (Array.isArray(cfg.sources)
+    ? cfg.sources
+    : Array.isArray(cfg.variables)
+      ? cfg.variables
+      : []) as ListRecord[]
+  const collected = srcs.map((s) => resolveExpr(String(s?.variable ?? s?.selector ?? ''), pool))
+  const outVar = String(cfg.outputVariable ?? '')
+  const outType = String(cfg.outputType ?? 'array').toLowerCase()
+  let aggregated: unknown = collected
+  if (outType === 'object') {
+    const obj: Record<string, unknown> = {}
+    srcs.forEach((s, i) => {
+      obj[String(s?.alias ?? s?.variable ?? i)] = collected[i]
+    })
+    aggregated = obj
+  }
+  if (outVar) pool.vars[outVar] = aggregated
+  return JSON.stringify(aggregated)
+}
+
+type ListOpResult = { out: string; note?: string }
+/** list-operator：对节点输入(JSON 数组)做列表操作。filter/map/reduce/find 需表达式引擎，v1 透传并标注。 */
+function runListOperator(cfg: Record<string, unknown>, input: string): ListOpResult {
+  let arr: unknown[]
+  try {
+    const parsed = JSON.parse(input)
+    arr = Array.isArray(parsed) ? parsed : []
+  } catch {
+    arr = []
+  }
+  const op = String(cfg.operation ?? '')
+  if (op === 'filter' || op === 'map' || op === 'reduce' || op === 'find') {
+    return { out: input, note: `列表操作「${op}」需表达式引擎(暂不支持)` }
+  }
+  let result: unknown = arr
+  switch (op) {
+    case 'sort': {
+      const field = cfg.sortField ? String(cfg.sortField) : ''
+      const sorted = [...arr].sort((a, b) => cmpValues(pickField(a, field), pickField(b, field)))
+      if (String(cfg.sortOrder ?? 'asc') === 'desc') sorted.reverse()
+      result = sorted
+      break
+    }
+    case 'slice': {
+      const start = Number(cfg.sliceStart ?? 0) || 0
+      const end = cfg.sliceEnd == null || cfg.sliceEnd === '' ? undefined : Number(cfg.sliceEnd)
+      result = arr.slice(start, end)
+      break
+    }
+    case 'reverse':
+      result = [...arr].reverse()
+      break
+    case 'unique': {
+      const seen = new Set<string>()
+      const uniq: unknown[] = []
+      for (const item of arr) {
+        const key = item != null && typeof item === 'object' ? JSON.stringify(item) : String(item)
+        if (!seen.has(key)) {
+          seen.add(key)
+          uniq.push(item)
+        }
+      }
+      result = uniq
+      break
+    }
+    case 'flatten':
+      result = arr.reduce<unknown[]>((acc, it) => acc.concat(Array.isArray(it) ? it : [it]), [])
+      break
+    case 'group': {
+      const field = String(cfg.groupByField ?? '')
+      const groups: Record<string, unknown[]> = {}
+      for (const item of arr) {
+        const k = String(pickField(item, field))
+        ;(groups[k] ??= []).push(item)
+      }
+      result = groups
+      break
+    }
+    default:
+      result = arr
+      break
+  }
+  return { out: JSON.stringify(result) }
 }
 
 /** 拓扑排序（Kahn）；有环则回退到原始顺序（校验已拦环，这里稳妥兜底）。 */
@@ -162,6 +312,8 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
   for (const e of edges) if (preds.has(e.target)) preds.get(e.target)!.push(e.source)
 
   const outputs = new Map<string, string>()
+  // ADR-012 P1：运行期变量池（vars 空起步，outputs 复用节点输出 Map，sysQuery=运行输入）
+  const pool: VarPool = { vars: {}, outputs, sysQuery: input }
   const traces: NodeTrace[] = []
   const ordered = topoOrder(nodes, edges)
 
@@ -191,6 +343,7 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
     const t0 = Date.now()
     const nodeInput = inputOf(n)
     let activeCase: string | null = null // 仅 if-else 设值：命中分支的 caseId
+    let noteError: string | undefined = undefined // 节点级软标注（如列表操作暂不支持），status 仍 succeeded
     try {
       if (!SUPPORTED.has(n.type)) {
         // Tool/Skill 等节点：4.4.2 未就绪，跳过并透传
@@ -211,8 +364,21 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
         out = await chat([{ role: 'user', content: buildExtractPrompt(cfg, nodeInput) }])
       } else if (n.type === 'if-else') {
         // 条件分支：透传输入，另定命中分支（activeCase）→ 只放行对应 sourceHandle 的出边
-        activeCase = resolveIfElseCase(cfg, nodeInput)
+        // ADR-012：条件先经变量池解析选择器，解析不出回退"对节点输入求值"（零回归）
+        activeCase = resolveIfElseCase(cfg, nodeInput, pool)
         out = nodeInput
+      } else if (n.type === 'variable-assigner') {
+        // 变量赋值：改写 pool.vars；节点输出透传输入以保持线性链
+        runVariableAssigner(cfg, pool)
+        out = nodeInput
+      } else if (n.type === 'variable-aggregator') {
+        // 变量聚合：收集多变量成数组/对象写回 pool，节点输出=聚合值 JSON
+        out = runVariableAggregator(cfg, pool)
+      } else if (n.type === 'list-operator') {
+        // 列表操作：对输入 JSON 数组做 sort/slice/reverse/unique/flatten/group；表达式类操作暂标注透传
+        const r = runListOperator(cfg, nodeInput)
+        out = r.out
+        noteError = r.note
       } else if (n.type === 'knowledge-retrieval') {
         // 知识检索：真实 RAG（retrieveSegments），query=节点输入；无 ctx 则跳过透传。
         if (!opts.ctx) {
@@ -242,7 +408,7 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
       }
       // start / end：透传（start 输出=运行输入；end 输出=其输入=最终结果）
       outputs.set(n.id, out)
-      traces.push({ nodeId: n.id, type: n.type, status: 'succeeded', input: nodeInput, output: n.type === 'if-else' ? `分支命中：${activeCase}` : out, ms: Date.now() - t0 })
+      traces.push({ nodeId: n.id, type: n.type, status: 'succeeded', input: nodeInput, output: n.type === 'if-else' ? `分支命中：${activeCase}` : out, error: noteError, ms: Date.now() - t0 })
     } catch (e) {
       traces.push({ nodeId: n.id, type: n.type, status: 'failed', input: nodeInput, error: String(e instanceof Error ? e.message : e), ms: Date.now() - t0 })
       return { status: 'failed', output: '', traces }
