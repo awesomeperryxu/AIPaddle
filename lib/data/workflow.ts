@@ -155,20 +155,80 @@ export async function listRuns(_ctx: RequestContext, workflowId: string): Promis
 
 /** 发布工作流：置 published，published_version=当前 version，version 自增（供草稿继续编辑）。
  *  图合法性由调用方（API）先校验；此处只做状态推进。RLS 兜底租户隔离。 */
-export async function publishWorkflow(_ctx: RequestContext, id: string): Promise<WorkflowDetail | null> {
+export async function publishWorkflow(ctx: RequestContext, id: string): Promise<WorkflowDetail | null> {
   const supabase = await createClient()
   const { data: cur } = await supabase
     .from('workflows')
-    .select('version')
+    .select('version,graph')
     .eq('id', id)
     .is('deleted_at', null)
     .maybeSingle()
   if (!cur) return null
   const version = (cur as { version: number }).version
+  // 4.4.10：把当前图快照为该发布版本（workflow_id+version 唯一，重复发布同版本忽略）
+  const snapGraph = (cur as { graph?: WorkflowGraph }).graph ?? { nodes: [], edges: [] }
+  await supabase
+    .from('workflow_versions')
+    .upsert(
+      { org_id: ctx.orgId, workflow_id: id, version, graph: snapGraph, created_by: ctx.userId },
+      { onConflict: 'workflow_id,version', ignoreDuplicates: true },
+    )
   const { data, error } = await supabase
     .from('workflows')
     .update({ status: 'published', published_version: version, version: version + 1, updated_at: new Date().toISOString() })
     .eq('id', id)
+    .is('deleted_at', null)
+    .select(DETAIL_COLS)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  const r = data as Row
+  return { ...mapItem(r), graph: r.graph ?? { nodes: [], edges: [] } }
+}
+
+// ── 4.4.10 版本快照 / 历史 / 回滚 ─────────────────────────────────────────
+export type WorkflowVersion = {
+  id: string
+  version: number
+  note: string | null
+  createdBy: string | null
+  createdAt: string
+}
+type VRow = { id: string; version: number; note: string | null; created_by: string | null; created_at: string | null }
+
+/** 列出某工作流的历史版本快照（版本号倒序）。RLS 按租户隔离。 */
+export async function listWorkflowVersions(_ctx: RequestContext, workflowId: string): Promise<WorkflowVersion[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('workflow_versions')
+    .select('id,version,note,created_by,created_at')
+    .eq('workflow_id', workflowId)
+    .order('version', { ascending: false })
+  if (error) throw new Error(error.message)
+  return ((data as VRow[] | null) ?? []).map((v) => ({
+    id: v.id,
+    version: v.version,
+    note: v.note,
+    createdBy: v.created_by,
+    createdAt: (v.created_at ?? '').slice(0, 19).replace('T', ' '),
+  }))
+}
+
+/** 回滚：把指定版本的图写回当前工作流，并置为草稿（供继续编辑再发布）。 */
+export async function restoreWorkflowVersion(_ctx: RequestContext, workflowId: string, version: number): Promise<WorkflowDetail | null> {
+  const supabase = await createClient()
+  const { data: v } = await supabase
+    .from('workflow_versions')
+    .select('graph')
+    .eq('workflow_id', workflowId)
+    .eq('version', version)
+    .maybeSingle()
+  if (!v) return null
+  const graph = (v as { graph?: WorkflowGraph }).graph ?? { nodes: [], edges: [] }
+  const { data, error } = await supabase
+    .from('workflows')
+    .update({ graph, status: 'draft', updated_at: new Date().toISOString() })
+    .eq('id', workflowId)
     .is('deleted_at', null)
     .select(DETAIL_COLS)
     .maybeSingle()
