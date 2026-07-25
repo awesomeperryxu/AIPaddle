@@ -68,20 +68,31 @@ jobs:
           rm -rf .next.old
           mv .next .next.old
           mv .next.new .next
-          pm2 reload aipaddle --update-env
+          # fork 模式用 restart（reload 在 fork 模式不保证干净重启），强制进程重读新 .next
+          pm2 restart aipaddle --update-env
 
-          # 重载后自检：若进程未 online 或 3s 内又崩，则回滚到旧构建
-          sleep 3
-          STATUS=$(pm2 jlist | node -e "let d=JSON.parse(require('fs').readFileSync(0));let a=d.find(x=>x.name=='aipaddle');process.stdout.write(a?a.pm2_env.status:'missing')" 2>/dev/null || echo unknown)
-          if [ "$STATUS" != "online" ]; then
-            echo "FATAL: 重载后进程状态=$STATUS，回滚到旧构建 .next.old"
+          # 真实健康检查：直连 :3000 请求一个 CSS 静态资源，连续拿到 200 才算健康。
+          # 任何原因（进程崩/静态 500/构建怪异）导致不健康 → 自动回滚到旧构建 .next.old，
+          # 保证线上永远不停在坏状态（BUG-86 裸奔的根治性防线）。
+          CSSFILE=$(ls .next/static/css/*.css 2>/dev/null | head -1 | xargs -r -n1 basename 2>/dev/null || true)
+          PROBE="http://localhost:3000/login"
+          [ -n "$CSSFILE" ] && PROBE="http://localhost:3000/_next/static/css/$CSSFILE"
+          HEALTHY=0; CODE=""
+          for i in 1 2 3 4 5 6 7 8; do
+            sleep 2
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$PROBE" || true)
+            [ "$CODE" = "200" ] && { HEALTHY=$((HEALTHY+1)); } || HEALTHY=0
+            [ "$HEALTHY" -ge 3 ] && break   # 连续 3 次 200 才判健康，防抖
+          done
+          if [ "$HEALTHY" -lt 3 ]; then
+            echo "FATAL: 新版本健康检查失败（最后 code=$CODE, probe=$PROBE）→ 回滚旧构建 .next.old"
             rm -rf .next.broken; mv .next .next.broken; mv .next.old .next
-            pm2 reload aipaddle --update-env
+            pm2 restart aipaddle --update-env
             exit 1
           fi
 
           pm2 save
-          echo "部署完成: $(git log --oneline -1)"
+          echo "部署完成（健康检查连续 3×200）: $(git log --oneline -1)"
           REMOTE
 
       - name: 冒烟检查（login + CSS 静态资源都要 200）
