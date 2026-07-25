@@ -316,7 +316,7 @@ export function AgentsAdminView({
                     <Plus className="h-4 w-4 mr-2" />
                     创建空白 Agent
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => showNotice('从模板创建：模板库即将上线（T 道 4.6.x）')}>
+                  <DropdownMenuItem onClick={() => router.push('/templates')}>
                     <Copy className="h-4 w-4 mr-2" />
                     从模板创建
                   </DropdownMenuItem>
