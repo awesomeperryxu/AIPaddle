@@ -8,14 +8,16 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { apiFetch } from '@/lib/api/client';
 import {
   Send, Bot, Sparkles, SquarePen, Zap, FileText, Image as ImageIcon,
-  Loader2, Trash2, MessageSquare, X, Paperclip, AtSign, ChevronRight,
+  Loader2, Trash2, MessageSquare, X, Paperclip, AtSign, ChevronRight, Users,
 } from 'lucide-react';
 
 type Citation = { documentId: string; filename: string; snippet: string; similarity: number };
 type MsgAttachment = { kind: 'doc' | 'image'; filename: string; dataUrl?: string };
-type Msg = { id: string; role: 'user' | 'assistant' | 'system'; content: string; citations: Citation[]; attachments?: MsgAttachment[] };
+type Msg = { id: string; role: 'user' | 'assistant' | 'system'; content: string; citations: Citation[]; attachments?: MsgAttachment[]; label?: string };
 type Conversation = { id: string; title: string; updatedAt: string };
 type Res = { id: string; name: string };
+// 4.1.20：@@ 唤醒目标——数字员工 或 数字员工团队
+type WakeTarget = { type: 'employee' | 'team'; id: string; name: string };
 type ClientAttachment =
   | { kind: 'doc'; filename: string; text: string }
   | { kind: 'image'; filename: string; dataUrl: string };
@@ -72,6 +74,10 @@ export function AssistantView() {
   const [resources, setResources] = useState<{ agents: Res[]; skills: Res[]; knowledgeBases: (Res & { documentCount?: number })[] }>({ agents: [], skills: [], knowledgeBases: [] });
   const [pickedAgent, setPickedAgent] = useState<Res | null>(null);
   const [pickedSkill, setPickedSkill] = useState<Res | null>(null);
+  // 4.1.20：@@ 唤醒的数字员工/团队（候选由 /api/digital-employees 服务端 RLS 出）
+  const [pickedWake, setPickedWake] = useState<WakeTarget | null>(null);
+  const [wakeList, setWakeList] = useState<{ employees: Res[]; teams: Res[] }>({ employees: [], teams: [] });
+  const wakeLoaded = useRef(false);
   const [attachments, setAttachments] = useState<ClientAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const docInputRef = useRef<HTMLInputElement>(null);
@@ -128,16 +134,26 @@ export function AssistantView() {
     setAttachments((a) => a.filter((_, idx) => idx !== i));
   }
 
-  const pickerMode: 'agent' | 'skill' | null =
-    !pickedAgent && !pickedSkill && input.startsWith('@') ? 'agent'
-      : !pickedAgent && !pickedSkill && input.startsWith('/') ? 'skill'
-        : null;
-  const pickerQuery = pickerMode ? input.slice(1).toLowerCase() : '';
+  // @@ 优先于 @（@@ 也以 @ 开头，须先判）；已选任一引用则关闭选择器
+  const pickerMode: 'wake' | 'agent' | 'skill' | null =
+    (pickedAgent || pickedSkill || pickedWake) ? null
+      : input.startsWith('@@') ? 'wake'
+        : input.startsWith('@') ? 'agent'
+          : input.startsWith('/') ? 'skill'
+            : null;
+  const pickerQuery = (pickerMode === 'wake' ? input.slice(2) : pickerMode ? input.slice(1) : '').toLowerCase();
   const pickerItems = pickerMode === 'agent'
     ? resources.agents.filter((a) => a.name.toLowerCase().includes(pickerQuery))
     : pickerMode === 'skill'
       ? resources.skills.filter((s) => s.name.toLowerCase().includes(pickerQuery))
       : [];
+  // 唤醒候选：数字员工 + 团队，合并后按查询过滤
+  const wakeItems: WakeTarget[] = pickerMode === 'wake'
+    ? [
+        ...wakeList.employees.map((e): WakeTarget => ({ type: 'employee', id: e.id, name: e.name })),
+        ...wakeList.teams.map((t): WakeTarget => ({ type: 'team', id: t.id, name: t.name })),
+      ].filter((x) => x.name.toLowerCase().includes(pickerQuery))
+    : [];
 
   const loadConversations = useCallback(async () => {
     try {
@@ -181,6 +197,16 @@ export function AssistantView() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, streamText]);
 
+  // 首次进入 @@ 模式时懒加载唤醒候选（数字员工 + 团队），只列有权访问项（服务端 RLS）
+  useEffect(() => {
+    if (pickerMode === 'wake' && !wakeLoaded.current) {
+      wakeLoaded.current = true;
+      apiFetch<{ employees: Res[]; teams: Res[] }>('/api/digital-employees')
+        .then((r) => setWakeList({ employees: r.employees ?? [], teams: r.teams ?? [] }))
+        .catch(() => { wakeLoaded.current = false; });
+    }
+  }, [pickerMode]);
+
   async function newConversation() {
     const r = await apiFetch<{ conversation: Conversation }>('/api/assistant/conversations', { method: 'POST' });
     setConversations((c) => [r.conversation, ...c]);
@@ -204,11 +230,61 @@ export function AssistantView() {
     return r.conversation.id;
   }
 
+  // 调单个数字员工大脑：POST /api/agents/{id}/chat（其 workflow 大脑负责多子 Agent 编排）
+  async function callEmployeeChat(agentId: string, text: string): Promise<string> {
+    const res = await fetch(`/api/agents/${agentId}/chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: text }] }),
+    });
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (!res.ok) throw new Error((data as { error?: { message?: string } })?.error?.message ?? '唤醒失败');
+    const reply = (data as { reply?: unknown }).reply;
+    return typeof reply === 'string' ? reply : '（无回复）';
+  }
+
+  // 4.1.20：@@ 唤醒——数字员工直接调其大脑；团队展开为各成员各答一条
+  async function sendWake(target: WakeTarget, text: string) {
+    setInput('');
+    setAttachments([]);
+    setSending(true); setStreamText(''); setStreamCitations([]);
+    setTimeout(() => { if (textareaRef.current) textareaRef.current.style.height = 'auto'; }, 0);
+    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: `@@${target.name} ${text}`, citations: [] }]);
+    try {
+      if (target.type === 'employee') {
+        const reply = await callEmployeeChat(target.id, text);
+        setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: reply, citations: [], label: `数字员工 · ${target.name}` }]);
+      } else {
+        const { team } = await apiFetch<{ team: { memberIds: string[] } }>(`/api/teams/${target.id}`);
+        const memberIds = team?.memberIds ?? [];
+        if (memberIds.length === 0) {
+          setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: `团队「${target.name}」暂无成员数字员工。`, citations: [], label: `团队 · ${target.name}` }]);
+        } else {
+          // 协同从简：各成员就本轮各答一条（顺序调用），分条展示并标注各自名字
+          for (const mid of memberIds) {
+            const name = wakeList.employees.find((e) => e.id === mid)?.name ?? '数字员工';
+            try {
+              const reply = await callEmployeeChat(mid, text);
+              setMessages((m) => [...m, { id: `a-${mid}-${Date.now()}`, role: 'assistant', content: reply, citations: [], label: `${target.name} · ${name}` }]);
+            } catch (e) {
+              setMessages((m) => [...m, { id: `e-${mid}-${Date.now()}`, role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : '处理失败'}`, citations: [], label: `${target.name} · ${name}` }]);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : '唤醒失败'}`, citations: [] }]);
+    } finally {
+      setSending(false); setStreamText(''); setStreamCitations([]);
+      setPickedWake(null);
+    }
+  }
+
   async function send() {
     let text = input.trim();
     const atts = attachments;
     if ((!text && atts.length === 0) || sending) return;
     if (!text) text = atts.some((a) => a.kind === 'image') ? '请分析这些图片' : '请总结这些文档';
+    if (pickedWake) { await sendWake(pickedWake, text); return; }
     const agent = pickedAgent, skill = pickedSkill;
     setInput('');
     setAttachments([]);
@@ -346,6 +422,7 @@ export function AssistantView() {
                   content={msg.content}
                   citations={msg.citations}
                   attachments={msg.attachments}
+                  label={msg.label}
                 />
               ))}
               {sending && (
@@ -357,8 +434,30 @@ export function AssistantView() {
 
         {/* ── 输入区 ───────────────────────────────────── */}
         <div className="px-4 pb-4 pt-1.5 max-w-2xl mx-auto w-full">
+          {/* @@ 唤醒数字员工/团队 浮层选择器 */}
+          {pickerMode === 'wake' && wakeItems.length > 0 && (
+            <div data-testid="wake-picker" className="mb-2 rounded-xl border border-border bg-popover shadow-lg p-1 max-h-48 overflow-y-auto">
+              <p className="px-3 py-1 text-[11px] text-muted-foreground">@@ 唤醒数字员工 / 团队</p>
+              {wakeItems.map((it) => (
+                <button
+                  key={`${it.type}-${it.id}`}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] text-foreground hover:bg-muted transition-colors"
+                  onClick={() => {
+                    setPickedWake(it);
+                    setInput('');
+                    setTimeout(() => textareaRef.current?.focus(), 0);
+                  }}
+                >
+                  {it.type === 'team' ? <Users className="h-4 w-4 text-primary" /> : <Bot className="h-4 w-4 text-primary" />}
+                  <span className="flex-1 text-left">{it.name}</span>
+                  <span className="text-[11px] text-muted-foreground">{it.type === 'team' ? '团队' : '数字员工'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* @Agent / /Skill 浮层选择器 */}
-          {pickerMode && pickerItems.length > 0 && (
+          {(pickerMode === 'agent' || pickerMode === 'skill') && pickerItems.length > 0 && (
             <div className="mb-2 rounded-xl border border-border bg-popover shadow-lg p-1 max-h-48 overflow-y-auto">
               <p className="px-3 py-1 text-[11px] text-muted-foreground">
                 {pickerMode === 'agent' ? '@ 指定 Agent 回答' : '/ 调用 Skill'}
@@ -384,8 +483,22 @@ export function AssistantView() {
           <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-primary/40 focus-within:shadow-md transition-all">
 
             {/* 附件 + 已选引用 chips */}
-            {(attachments.length > 0 || pickedAgent || pickedSkill) && (
+            {(attachments.length > 0 || pickedAgent || pickedSkill || pickedWake) && (
               <div className="px-3.5 pt-3 pb-1 flex flex-wrap gap-1.5">
+                {pickedWake && (
+                  <Badge data-testid="wake-chip" variant="secondary" className="gap-1.5 pr-1 text-xs font-normal">
+                    {pickedWake.type === 'team'
+                      ? <Users className="h-3 w-3 text-primary" />
+                      : <Bot className="h-3 w-3 text-primary" />}
+                    @@{pickedWake.name}
+                    <button
+                      onClick={() => setPickedWake(null)}
+                      className="ml-0.5 rounded p-0.5 hover:bg-muted/60"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </Badge>
+                )}
                 {(pickedAgent || pickedSkill) && (
                   <Badge variant="secondary" className="gap-1.5 pr-1 text-xs font-normal">
                     {pickedAgent
@@ -417,9 +530,10 @@ export function AssistantView() {
               ref={textareaRef}
               aria-label="输入消息"
               placeholder={
-                pickedAgent ? `向 @${pickedAgent.name} 提问…`
-                  : pickedSkill ? `给 /${pickedSkill.name} 的指令…`
-                    : '输入问题；@ 指定 Agent，/ 调用 Skill，Shift+Enter 换行'
+                pickedWake ? `向 @@${pickedWake.name} 提问…`
+                  : pickedAgent ? `向 @${pickedAgent.name} 提问…`
+                    : pickedSkill ? `给 /${pickedSkill.name} 的指令…`
+                      : '输入问题；@@ 唤醒数字员工/团队，@ 指定 Agent，/ 调用 Skill'
               }
               value={input}
               rows={1}
@@ -541,8 +655,8 @@ function RefPicker({ kind, items, onInsert }: {
 }
 
 // ── 消息气泡 ─────────────────────────────────────────────────
-function MessageBubble({ role, content, citations, streaming, attachments }: {
-  role: Msg['role']; content: string; citations: Citation[]; streaming?: boolean; attachments?: MsgAttachment[];
+function MessageBubble({ role, content, citations, streaming, attachments, label }: {
+  role: Msg['role']; content: string; citations: Citation[]; streaming?: boolean; attachments?: MsgAttachment[]; label?: string;
 }) {
   const isUser = role === 'user';
 
@@ -576,6 +690,9 @@ function MessageBubble({ role, content, citations, streaming, attachments }: {
       </div>
 
       <div className="flex-1 min-w-0 space-y-3">
+        {label && (
+          <p className="text-[11px] font-medium text-primary/80">{label}</p>
+        )}
         <div className="text-sm leading-7 text-foreground whitespace-pre-wrap">
           {content || (streaming && '')}
           {streaming && (
