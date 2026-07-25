@@ -192,6 +192,65 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
     setVariables((v) => v.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
   const removeVariable = (i: number) => setVariables((v) => v.filter((_, idx) => idx !== i));
 
+  // ★ 自然语言生成主控（4.1.13/4.1.14）：对话式产出配置补丁 → 实时应用到左侧 state；越权资源在服务端拦截，提示回显于此。
+  const [copilotMessages, setCopilotMessages] = useState<ChatMsg[]>([]);
+  const [copilotInput, setCopilotInput] = useState('');
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const runCopilot = async () => {
+    const text = copilotInput.trim();
+    if (copilotLoading) return;
+    if (text.length < 2) { showToast('请先输入需求描述'); return; }
+    setCopilotInput('');
+    setCopilotMessages((m) => [...m, { role: 'user', content: text }]);
+    setCopilotLoading(true);
+    try {
+      const res = await fetch(`/api/agents/${agent.id}/copilot`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instruction: text,
+          current: {
+            systemPrompt, model, agentMode, brainMode,
+            variables: variables.filter((v) => v.key.trim()).map((v) => v.key),
+          },
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = body?.error?.message ?? '生成失败';
+        showToast(msg);
+        setCopilotMessages((m) => [...m, { role: 'assistant', content: `⚠️ ${msg}` }]);
+        return;
+      }
+      // 把补丁实时应用到左侧配置（当场可见）
+      const p = body.patch ?? {};
+      if (typeof p.systemPrompt === 'string') setSystemPrompt(p.systemPrompt);
+      if (Array.isArray(p.variables)) setVariables(p.variables);
+      if (typeof p.model === 'string') setModel(p.model);
+      if (p.agentMode === 'react' || p.agentMode === 'function_calling') setAgentMode(p.agentMode);
+      if (p.brainMode === 'llm' || p.brainMode === 'workflow' || p.brainMode === 'routing') setBrainMode(p.brainMode);
+      if (typeof p.openingStatement === 'string') setOpeningStatement(p.openingStatement);
+      if (Array.isArray(p.suggestedQuestions)) setSuggestedQuestions(p.suggestedQuestions);
+      // 授权通过的资源合并进直挂绑定（去重）
+      if (Array.isArray(body.suggestKbIds) && body.suggestKbIds.length) {
+        setBoundKbIds((v) => Array.from(new Set([...v, ...(body.suggestKbIds as string[])])));
+      }
+      if (Array.isArray(body.suggestSkillIds) && body.suggestSkillIds.length) {
+        setBoundSkillIds((v) => Array.from(new Set([...v, ...(body.suggestSkillIds as string[])])));
+      }
+      // 回显：reply + 无权限的明确提示
+      const parts: string[] = [body.reply || '已根据你的需求更新左侧配置。'];
+      if (Array.isArray(body.deniedNotes) && body.deniedNotes.length) {
+        parts.push((body.deniedNotes as string[]).map((n) => `• ${n}`).join('\n'));
+      }
+      setCopilotMessages((m) => [...m, { role: 'assistant', content: parts.join('\n\n') }]);
+    } catch {
+      showToast('生成失败：网络错误');
+      setCopilotMessages((m) => [...m, { role: 'assistant', content: '⚠️ 网络错误' }]);
+    } finally {
+      setCopilotLoading(false);
+    }
+  };
+
   // 调试预览
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
@@ -576,8 +635,10 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
           </section>
         </div>
 
-        {/* 右：调试与预览 */}
-        <div className="flex w-[420px] shrink-0 flex-col border-l border-border">
+        {/* 右列：上=调试与预览，下=★自然语言生成主控 */}
+        <div className="flex w-[460px] shrink-0 flex-col border-l border-border">
+          {/* 右上：调试与预览 */}
+          <div className="flex min-h-0 basis-[42%] flex-col border-b border-border">
           <div className="border-b border-border px-4 py-3 text-sm font-medium">调试与预览</div>
           <div className="flex-1 overflow-auto p-4 space-y-3">
             {variables.filter((v) => v.key.trim()).length > 0 && (
@@ -637,6 +698,50 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                 className="min-h-[40px] max-h-32 text-sm"
               />
               <Button size="icon" onClick={send} disabled={sending || !input.trim()}><Send className="h-4 w-4" /></Button>
+            </div>
+          </div>
+          </div>
+
+          {/* 右下：★ 自然语言生成主控（放大突出，构建 Agent 的核心） */}
+          <div className="flex min-h-0 flex-1 flex-col bg-gradient-to-b from-primary/[0.06] to-transparent">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <div>
+                <div className="text-sm font-semibold text-foreground">生成主控（自然语言）</div>
+                <div className="text-[11px] text-muted-foreground">描述需求 → 自动生成/填充左侧配置并匹配授权资源</div>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4 space-y-3">
+              {copilotMessages.length === 0 && (
+                <div className="pt-6 text-center text-xs text-muted-foreground leading-relaxed">
+                  用一句话描述你想要的 Agent，例如：<br />
+                  「做一个 IT 客服，回答报销与账号问题，绑定相关知识库」<br />
+                  生成后左侧配置会实时更新，可再手动微调。
+                </div>
+              )}
+              {copilotMessages.map((m, i) => (
+                <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                  <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap break-words ${m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+              {copilotLoading && <div className="flex justify-start"><div className="rounded-lg bg-muted px-3 py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div></div>}
+            </div>
+            <div className="border-t border-border p-3">
+              <div className="flex gap-2">
+                <Textarea
+                  value={copilotInput}
+                  onChange={(e) => setCopilotInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void runCopilot(); } }}
+                  disabled={!canEdit || copilotLoading}
+                  placeholder="描述需求，让 Copilot 生成配置…（Enter 提交）"
+                  className="min-h-[44px] max-h-40 text-sm"
+                />
+                <Button size="icon" onClick={runCopilot} disabled={!canEdit || copilotLoading || copilotInput.trim().length < 2}>
+                  {copilotLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
