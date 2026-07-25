@@ -9,15 +9,26 @@ import { retrieveSegments } from '@/lib/kb/rag'
 import { moderateText } from '@/lib/agents/moderation'
 import { substitutePromptVariables } from '@/lib/agents/prompt'
 import { recordCall } from '@/lib/data/call-logs'
-import { chatWithUsage, type ChatMessage } from '@/lib/ai'
+import { chatWithUsage, chatWithTools, type ChatMessage, type FunctionTool } from '@/lib/ai'
+import { getAgentResources } from '@/lib/data/agent-resources'
+import { createClient } from '@/lib/supabase/server'
+import { listMcpTools, callMcpTool } from '@/lib/mcp/client'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
 
 const ROLES = new Set(['user', 'assistant', 'system'])
 
+type McpServerRecord = {
+  id: string
+  name: string
+  endpoint: string
+  auth_type: string
+  auth_config: Record<string, string>
+}
+
 // POST /api/agents/[id]/chat  body: { messages: {role, content}[] }
-// 接通真实大模型（通义 Qwen，4.1.4）：按 Agent config 的 model/systemPrompt 组装对话，回答与配置相符。
+// LLM 模式若绑定了 approved MCP Server，使用 Function Calling 路径（Path B 直连）。
 export async function POST(req: Request, { params }: Ctx) {
   const ctx = await getRequestContext()
   if (!ctx) {
@@ -44,8 +55,8 @@ export async function POST(req: Request, { params }: Ctx) {
       const mm = m as Partial<ChatMessage>
       return !!mm && typeof mm.role === 'string' && ROLES.has(mm.role) && typeof mm.content === 'string'
     })
-    .filter(m => m.role !== 'system') // 系统提示由服务端按 Agent 配置注入，不采信前端
-    .slice(-20) // 仅取最近 20 条，控制上下文长度
+    .filter(m => m.role !== 'system')
+    .slice(-20)
   if (history.length === 0) {
     return Response.json({ error: { code: 'bad_request', message: '缺少对话内容' } }, { status: 400 })
   }
@@ -54,7 +65,7 @@ export async function POST(req: Request, { params }: Ctx) {
   const lastUser = typeof lastUserContent === 'string' ? lastUserContent : ''
   const startedAt = Date.now()
 
-  // 4.1.12 内容审查（前置）：开启且命中敏感词 → 直接拒答，不进 LLM/大脑。
+  // 4.1.12 内容审查（前置）
   if (agent.moderationEnabled) {
     const mod = moderateText(lastUser)
     if (mod.flagged) {
@@ -63,7 +74,7 @@ export async function POST(req: Request, { params }: Ctx) {
     }
   }
 
-  // 4.1.9 大脑分流：绑定工作流 → 执行 workflow；事项路由 → 命中关键词转 Skill；否则走 LLM。
+  // 4.1.9 大脑分流：绑定工作流 → 执行 workflow
   if (agent.brainMode === 'workflow' && agent.brainWorkflowId) {
     const wf = await getWorkflow(ctx, agent.brainWorkflowId)
     if (!wf) {
@@ -75,6 +86,7 @@ export async function POST(req: Request, { params }: Ctx) {
     return Response.json({ reply, agent: { id: agent.id, name: agent.name, brain: 'workflow' } })
   }
 
+  // 4.1.9 事项路由
   if (agent.brainMode === 'routing' && Array.isArray(agent.routingRules) && agent.routingRules.length > 0) {
     const hit = agent.routingRules.find((r) => r.keyword && lastUser.includes(r.keyword))
     if (hit) {
@@ -93,12 +105,11 @@ export async function POST(req: Request, { params }: Ctx) {
     // 未命中路由 → 落回 LLM
   }
 
-  // 4.1.11：注入 Agent 直挂知识库的 RAG 上下文（按 agentId 取绑定 KB）
+  // 4.1.11：注入 RAG 上下文
   let ragContext = ''
   try {
     const segs = await retrieveSegments(ctx, lastUser, { agentId: agent.id })
     if (segs.length) {
-      // 4.1.12：引用与归属开关（默认开启标注来源；关闭则不要求标注）
       const citeInstr = agent.citationEnabled === false
         ? '若与问题相关请据此作答，不相关则正常作答：'
         : '若与问题相关请据此作答并在末尾用 [编号] 标注来源，不相关则正常作答：'
@@ -114,31 +125,88 @@ export async function POST(req: Request, { params }: Ctx) {
     : `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`
   const systemPrompt = basePrompt + ragContext
 
+  // Path B：检查是否绑定了直连 MCP Server
+  let mcpServers: McpServerRecord[] = []
+  try {
+    const resources = await getAgentResources(ctx, agent.id)
+    if (resources.mcpServerIds.length > 0) {
+      const supabase = await createClient()
+      const { data } = await supabase
+        .from('mcp_servers')
+        .select('id,name,endpoint,auth_type,auth_config')
+        .in('id', resources.mcpServerIds)
+        .eq('status', 'approved')
+        .is('deleted_at', null)
+      mcpServers = (data ?? []) as McpServerRecord[]
+    }
+  } catch { /* 获取 MCP Server 失败不阻断对话 */ }
+
+  // 若有直连 MCP Server → 收集工具定义，使用 Function Calling 路径
+  if (mcpServers.length > 0) {
+    const tools: FunctionTool[] = []
+    // mcpServerName → {endpoint, auth_type, auth_config} 映射，工具名带 server 前缀区分
+    const toolServerMap = new Map<string, { server: McpServerRecord; originalName: string }>()
+
+    for (const server of mcpServers) {
+      try {
+        const mcpTools = await listMcpTools(server.endpoint, server.auth_type, server.auth_config ?? {})
+        for (const t of mcpTools) {
+          // 工具名格式：{serverId_前6位}__{toolName}，确保唯一性
+          const qualifiedName = `${server.id.slice(0, 6)}__${t.name}`
+          toolServerMap.set(qualifiedName, { server, originalName: t.name })
+          tools.push({
+            type: 'function',
+            function: {
+              name: qualifiedName,
+              description: `[${server.name}] ${t.description ?? ''}`,
+              parameters: t.inputSchema,
+            },
+          })
+        }
+      } catch { /* 某个 MCP Server 工具发现失败，跳过 */ }
+    }
+
+    if (tools.length > 0) {
+      const handler = async (toolName: string, args: Record<string, unknown>) => {
+        const mapping = toolServerMap.get(toolName)
+        if (!mapping) throw new Error(`未知工具：${toolName}`)
+        return callMcpTool(
+          mapping.server.endpoint,
+          mapping.server.auth_type,
+          mapping.server.auth_config ?? {},
+          mapping.originalName,
+          args,
+        )
+      }
+
+      try {
+        const { content, tokensIn, tokensOut, model } = await chatWithTools(
+          [{ role: 'system', content: systemPrompt }, ...history],
+          tools,
+          handler,
+          { model: agent.model, temperature: agent.temperature, maxIterations: 5 },
+        )
+        await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, success: true })
+        return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model, brain: 'mcp_direct' } })
+      } catch (e) {
+        console.error('[chat] MCP Function Calling 失败:', e)
+        await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, success: false, errorCode: 'mcp_error' })
+        return Response.json({ error: { code: 'mcp_error', message: 'MCP 工具调用失败，请稍后重试' } }, { status: 502 })
+      }
+    }
+  }
+
+  // 标准 LLM 路径（无工具绑定）
   try {
     const { content, tokensIn, tokensOut, model } = await chatWithUsage(
       [{ role: 'system', content: systemPrompt }, ...history],
       { model: agent.model, temperature: agent.temperature },
     )
-    // 4.1.5：落调用日志（成功）
-    await recordCall(ctx, {
-      agentId: agent.id,
-      model,
-      tokensIn,
-      tokensOut,
-      latencyMs: Date.now() - startedAt,
-      success: true,
-    })
+    await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, success: true })
     return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model } })
   } catch (e) {
     console.error('[chat] LLM 调用失败:', e)
-    // 4.1.5：落调用日志（失败）
-    await recordCall(ctx, {
-      agentId: agent.id,
-      model: agent.model,
-      latencyMs: Date.now() - startedAt,
-      success: false,
-      errorCode: 'llm_error',
-    })
+    await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, success: false, errorCode: 'llm_error' })
     return Response.json({ error: { code: 'llm_error', message: '大模型调用失败，请稍后重试' } }, { status: 502 })
   }
 }
