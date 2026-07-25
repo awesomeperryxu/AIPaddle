@@ -124,7 +124,10 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
 
   // 组装当前 config
   const buildConfig = useCallback((): AgentConfig => ({
-    systemPrompt, model, temperature, variables, agentMode, maxIterations,
+    systemPrompt, model, temperature,
+    // 只保存变量名非空的变量——空 key 会被 Zod(min 1) 拒→422 保存失败（与 routingRules/建议问题一致过滤）
+    variables: variables.filter((v) => v.key.trim()),
+    agentMode, maxIterations,
     brainMode,
     brainWorkflowId: brainMode === 'workflow' && brainWorkflowId ? brainWorkflowId : null,
     routingRules: brainMode === 'routing' ? routingRules.filter((r) => r.keyword && r.skillId) : [],
@@ -305,7 +308,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                   value={genInstruction}
                   onChange={(e) => setGenInstruction(e.target.value)}
                   placeholder="一句话描述这个 Agent 要做什么…"
-                  onKeyDown={(e) => { if (e.key === 'Enter') generate(); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }} /* 回车不自动提交，须点「生成」按钮 */
                 />
                 <Button size="sm" onClick={generate} disabled={generating}>
                   {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : '生成'}
