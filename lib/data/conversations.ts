@@ -113,11 +113,19 @@ export async function listMessages(ctx: RequestContext, conversationId: string):
   }))
 }
 
-/** 追加一条消息，并更新会话 updated_at。 */
+/** 追加一条消息，并更新会话 updated_at。speakerType/speakerId/speakReason 由 migration 0014 列支撑（@@ 唤醒落库用）。 */
 export async function appendMessage(
   ctx: RequestContext,
   conversationId: string,
-  msg: { role: 'user' | 'assistant'; content: string; tokens?: number; citations?: Citation[] },
+  msg: {
+    role: 'user' | 'assistant'
+    content: string
+    tokens?: number
+    citations?: Citation[]
+    speakerType?: 'user' | 'agent'
+    speakerId?: string
+    speakReason?: 'mention' | 'proactive'
+  },
 ): Promise<void> {
   const supabase = await createClient()
   const { error } = await supabase.from('messages').insert({
@@ -127,6 +135,9 @@ export async function appendMessage(
     content: msg.content,
     tokens: msg.tokens ?? 0,
     citations: msg.citations ?? [],
+    ...(msg.speakerType != null && { speaker_type: msg.speakerType }),
+    ...(msg.speakerId != null && { speaker_id: msg.speakerId }),
+    ...(msg.speakReason != null && { speak_reason: msg.speakReason }),
   })
   if (error) throw new Error(error.message)
   await supabase

@@ -242,16 +242,21 @@ export function AssistantView() {
     return typeof reply === 'string' ? reply : '（无回复）';
   }
 
-  // 4.1.20：@@ 唤醒——数字员工直接调其大脑；团队展开为各成员各答一条
+  // 4.1.24：@@ 唤醒——数字员工直接调其大脑；团队展开为各成员各答一条；回复落库（migration 0014）。
   async function sendWake(target: WakeTarget, text: string) {
     setInput('');
     setAttachments([]);
     setSending(true); setStreamText(''); setStreamCitations([]);
     setTimeout(() => { if (textareaRef.current) textareaRef.current.style.height = 'auto'; }, 0);
-    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: `@@${target.name} ${text}`, citations: [] }]);
+    const convId = await ensureConversation();
+    const userContent = `@@${target.name} ${text}`;
+    setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: userContent, citations: [] }]);
+    // 收集回复用于落库
+    const replies: Array<{ agentId: string; content: string }> = [];
     try {
       if (target.type === 'employee') {
         const reply = await callEmployeeChat(target.id, text);
+        replies.push({ agentId: target.id, content: reply });
         setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: reply, citations: [], label: `数字员工 · ${target.name}` }]);
       } else {
         const { team } = await apiFetch<{ team: { memberIds: string[] } }>(`/api/teams/${target.id}`);
@@ -259,18 +264,26 @@ export function AssistantView() {
         if (memberIds.length === 0) {
           setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: `团队「${target.name}」暂无成员数字员工。`, citations: [], label: `团队 · ${target.name}` }]);
         } else {
-          // 协同从简：各成员就本轮各答一条（顺序调用），分条展示并标注各自名字
+          // 各成员顺序调用，各答一条，标注名字
           for (const mid of memberIds) {
             const name = wakeList.employees.find((e) => e.id === mid)?.name ?? '数字员工';
             try {
               const reply = await callEmployeeChat(mid, text);
+              replies.push({ agentId: mid, content: reply });
               setMessages((m) => [...m, { id: `a-${mid}-${Date.now()}`, role: 'assistant', content: reply, citations: [], label: `${target.name} · ${name}` }]);
             } catch (e) {
-              setMessages((m) => [...m, { id: `e-${mid}-${Date.now()}`, role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : '处理失败'}`, citations: [], label: `${target.name} · ${name}` }]);
+              const errMsg = `⚠️ ${e instanceof Error ? e.message : '处理失败'}`;
+              replies.push({ agentId: mid, content: errMsg });
+              setMessages((m) => [...m, { id: `e-${mid}-${Date.now()}`, role: 'assistant', content: errMsg, citations: [], label: `${target.name} · ${name}` }]);
             }
           }
         }
       }
+      // 落库：用户消息 + 数字员工回复（speaker_type/speaker_id，依赖 migration 0014）
+      apiFetch(`/api/assistant/conversations/${convId}/wake-messages`, {
+        method: 'POST',
+        body: JSON.stringify({ userContent, targetType: target.type, targetId: target.id, replies }),
+      }).then(() => loadConversations()).catch(() => {});
     } catch (e) {
       setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : '唤醒失败'}`, citations: [] }]);
     } finally {
