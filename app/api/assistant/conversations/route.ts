@@ -1,11 +1,18 @@
 import { getRequestContext } from '@/lib/context'
-import { listConversations, createConversation } from '@/lib/data/conversations'
+import { listConversations, createConversation, listMessages } from '@/lib/data/conversations'
 
-// GET /api/assistant/conversations —— 本人个人助理会话列表
-export async function GET() {
+// GET /api/assistant/conversations?withMessages=true
+// withMessages=true 时附带第一条会话的消息，减少前端瀑布请求
+export async function GET(request: Request) {
   const ctx = await getRequestContext()
   if (!ctx) return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
+  const { searchParams } = new URL(request.url)
+  const withMessages = searchParams.get('withMessages') === 'true'
   const conversations = await listConversations(ctx)
+  if (withMessages && conversations.length > 0) {
+    const messages = await listMessages(ctx, conversations[0].id)
+    return Response.json({ conversations, firstMessages: messages, firstConversationId: conversations[0].id })
+  }
   return Response.json({ conversations })
 }
 
