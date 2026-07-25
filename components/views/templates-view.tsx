@@ -265,6 +265,14 @@ function TemplateCard({
 type DepStatus = 'pending' | 'installing' | 'done' | 'error'
 type DepItem = RequiredSkill & { status: DepStatus }
 
+const TARGET_LABEL: Record<TemplateType, string> = {
+  agent:            'Agent',
+  assistant:        'Agent（聊天助手）',
+  chatflow:         'Chatflow 工作流',
+  workflow:         '工作流',
+  'text-generation':'Prompt Skill',
+}
+
 function UseTemplateDialog({
   template,
   open,
@@ -276,9 +284,11 @@ function UseTemplateDialog({
 }) {
   const router = useRouter()
   const [name, setName]             = useState(template?.name ?? '')
+  const [desc, setDesc]             = useState('')
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState<string | null>(null)
   const [phase, setPhase]           = useState<'input' | 'deps'>('input')
+  const [redirectUrl, setRedirectUrl] = useState('/agents-admin')
   const [deps, setDeps]             = useState<DepItem[]>([])
   const [installing, setInstalling] = useState(false)
   const [installDone, setInstallDone] = useState(false)
@@ -287,38 +297,35 @@ function UseTemplateDialog({
     ? (template!.dsl.requiredSkills as RequiredSkill[])
     : []
 
+  // ── 统一创建流程（所有模板类型走相同路径）──
   async function handleCreate() {
     if (!template || !name.trim()) { setError('名称不能为空'); return }
     setLoading(true)
     setError(null)
     try {
-      const t = template.type
+      const t   = template.type
       const dsl = template.dsl as Record<string, unknown>
+      const description = desc.trim() || template.description || ''
+      let nextUrl = '/agents-admin'
+
       if (t === 'agent' || t === 'assistant') {
         const config: Record<string, unknown> = {}
-        if (dsl.systemPrompt)                        config.systemPrompt   = dsl.systemPrompt
-        if (dsl.model)                               config.model          = dsl.model
-        if (dsl.temperature !== undefined)           config.temperature    = dsl.temperature
-        if (dsl.requiredSkills)                      config.requiredSkills = dsl.requiredSkills
-        if (Array.isArray(dsl.variables))            config.variables      = dsl.variables
-        await apiFetch<{ agent: { id: string } }>('/api/agents', {
+        if (dsl.systemPrompt)          config.systemPrompt   = dsl.systemPrompt
+        if (dsl.model)                 config.model          = dsl.model
+        if (dsl.temperature !== undefined) config.temperature = dsl.temperature
+        if (dsl.requiredSkills)        config.requiredSkills = dsl.requiredSkills
+        if (Array.isArray(dsl.variables)) config.variables   = dsl.variables
+        const { agent } = await apiFetch<{ agent: { id: string } }>('/api/agents', {
           method: 'POST',
-          body: JSON.stringify({ name: name.trim(), description: template.description, config }),
+          body: JSON.stringify({ name: name.trim(), description, config }),
         })
-        if (requiredSkills.length > 0) {
-          setDeps(requiredSkills.map(s => ({ ...s, status: 'pending' as const })))
-          setPhase('deps')
-        } else {
-          onOpenChange(false)
-          router.push('/agents-admin')
-        }
+        nextUrl = `/agents-admin/${agent.id}`
       } else if (t === 'chatflow' || t === 'workflow') {
         const { workflow } = await apiFetch<{ workflow: { id: string } }>('/api/workflows', {
           method: 'POST',
-          body: JSON.stringify({ name: name.trim(), type: t }),
+          body: JSON.stringify({ name: name.trim(), type: t, description }),
         })
-        onOpenChange(false)
-        router.push(`/workflows/${workflow.id}`)
+        nextUrl = `/workflows/${workflow.id}`
       } else {
         // text-generation → Prompt Skill
         const config: Record<string, unknown> = {}
@@ -328,10 +335,19 @@ function UseTemplateDialog({
         if (dsl.temperature !== undefined) config.temperature    = dsl.temperature
         await apiFetch('/api/skills', {
           method: 'POST',
-          body: JSON.stringify({ name: name.trim(), type: 'Prompt', description: template.description, config }),
+          body: JSON.stringify({ name: name.trim(), type: 'Prompt', description, config }),
         })
+        nextUrl = '/my-skills'
+      }
+
+      // 统一：有依赖工具 → 进入安装阶段；无依赖 → 直接跳转
+      setRedirectUrl(nextUrl)
+      if (requiredSkills.length > 0) {
+        setDeps(requiredSkills.map(s => ({ ...s, status: 'pending' as const })))
+        setPhase('deps')
+      } else {
         onOpenChange(false)
-        router.push('/my-skills')
+        router.push(nextUrl)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '创建失败，请重试')
@@ -340,6 +356,7 @@ function UseTemplateDialog({
     }
   }
 
+  // ── 一键安装依赖工具 ──
   async function handleInstall() {
     setInstalling(true)
     const items = deps.map(d => ({ ...d }))
@@ -363,15 +380,7 @@ function UseTemplateDialog({
 
   function handleFinish() {
     onOpenChange(false)
-    router.push('/agents-admin')
-  }
-
-  const TARGET_LABEL: Record<TemplateType, string> = {
-    agent:            'Agent',
-    assistant:        'Agent（聊天助手）',
-    chatflow:         'Chatflow 工作流',
-    workflow:         '工作流',
-    'text-generation':'Prompt Skill',
+    router.push(redirectUrl)
   }
 
   // ── 依赖安装阶段 ──
@@ -380,15 +389,15 @@ function UseTemplateDialog({
     const errorCount = deps.filter(d => d.status === 'error').length
 
     return (
-      <Dialog open={open} onOpenChange={open => { if (!open && !installing) handleFinish() }}>
+      <Dialog open={open} onOpenChange={o => { if (!o && !installing) handleFinish() }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Wrench className="h-4 w-4 text-primary" />
-              检测到依赖工具
+              配置工具依赖
             </DialogTitle>
             <DialogDescription>
-              此模板需要以下工具才能发挥完整能力，点击「一键安装」自动创建到工具库。
+              此模板需要以下工具才能发挥完整能力，点击「安装工具」自动创建草稿到工具库，之后可在「工具管理」中配置和发布。
             </DialogDescription>
           </DialogHeader>
 
@@ -429,12 +438,12 @@ function UseTemplateDialog({
                 <Button onClick={handleInstall} disabled={installing}>
                   {installing
                     ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />安装中…</>
-                    : '一键安装'}
+                    : '安装工具'}
                 </Button>
               </>
             ) : (
               <Button onClick={handleFinish} className="w-full">
-                确认，返回 Agent 管理
+                完成
               </Button>
             )}
           </DialogFooter>
@@ -443,53 +452,73 @@ function UseTemplateDialog({
     )
   }
 
-  // ── 输入阶段 ──
+  // ── 输入阶段（与 Dify 一致：名称 + 描述） ──
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>使用模板创建</DialogTitle>
           {template && (
-            <DialogDescription asChild>
-              <div className="flex items-center gap-2 mt-1">
-                <span
-                  className="h-6 w-6 rounded text-sm flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: template.iconBackground }}
-                >
-                  {template.icon}
-                </span>
-                <span>{template.name}</span>
-                <Badge className={cn('text-[11px]', TYPE_COLORS[template.type])}>
-                  → {TARGET_LABEL[template.type]}
+            <div className="flex items-center gap-3 mb-2">
+              <div
+                className="h-10 w-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+                style={{ backgroundColor: template.iconBackground }}
+              >
+                {template.icon}
+              </div>
+              <div className="min-w-0">
+                <DialogTitle className="text-base leading-tight">{template.name}</DialogTitle>
+                <Badge className={cn('text-[11px] mt-0.5', TYPE_COLORS[template.type])}>
+                  {TARGET_LABEL[template.type]}
                 </Badge>
               </div>
-            </DialogDescription>
+            </div>
           )}
         </DialogHeader>
 
-        <div className="space-y-3 py-2">
+        <div className="space-y-3 py-1">
+          {/* 框架模板提示 */}
           {template && (template.type === 'chatflow' || template.type === 'workflow') && (
             <div className="flex gap-2 items-start bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400">
               <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span>此为框架模板，仅预置名称与分类。创建后进入空白画布，节点图需手动搭建。</span>
+              <span>此为框架模板，仅预置名称与分类，创建后进入空白画布手动搭建节点。</span>
             </div>
           )}
+
+          {/* 依赖工具提示 */}
           {requiredSkills.length > 0 && (
-            <div className="flex gap-2 items-start bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2.5 text-xs text-blue-700 dark:text-blue-400">
+            <div className="flex gap-2 items-start bg-primary/5 border border-primary/20 rounded-lg px-3 py-2.5 text-xs text-primary">
               <Wrench className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span>此模板依赖 {requiredSkills.length} 个工具，创建后将引导你一键安装。</span>
+              <span>此模板需要 {requiredSkills.length} 个工具，创建后将自动引导安装。</span>
             </div>
           )}
+
+          {/* 名称 */}
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">名称</label>
+            <label className="text-sm font-medium">应用名称</label>
             <Input
               value={name}
               onChange={e => setName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !loading && handleCreate()}
-              placeholder="为新建的应用取个名字..."
+              placeholder="为应用取个名字"
               autoFocus
             />
           </div>
+
+          {/* 描述（与 Dify 一致） */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">
+              应用描述
+              <span className="ml-1 text-xs font-normal text-muted-foreground">（可选）</span>
+            </label>
+            <textarea
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+              placeholder={template?.description ?? '描述这个应用的用途...'}
+              rows={2}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+            />
+          </div>
+
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
@@ -498,7 +527,7 @@ function UseTemplateDialog({
             取消
           </Button>
           <Button onClick={handleCreate} disabled={loading || !name.trim()}>
-            {loading ? '创建中...' : '确认创建'}
+            {loading ? '创建中...' : '创建'}
           </Button>
         </DialogFooter>
       </DialogContent>
