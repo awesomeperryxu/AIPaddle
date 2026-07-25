@@ -44,6 +44,7 @@ import {
   Send
 } from 'lucide-react';
 import { AGENT_CATEGORY_LABEL, type AgentCategory } from '@/lib/agents/taxonomy';
+import { DigitalEmployeeTeamsPanel } from '@/components/views/digital-employee-teams-panel';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -105,6 +106,7 @@ const usageScenarios = [
 
 export function AgentsAdminView({
   agents = [],
+  digitalEmployeeIds = [],
   canCreate = false,
   canDelete = false,
   canEdit = false,
@@ -112,6 +114,7 @@ export function AgentsAdminView({
   canReview = false,
 }: {
   agents?: Agent[];
+  digitalEmployeeIds?: string[];
   canCreate?: boolean;
   canDelete?: boolean;
   canEdit?: boolean;
@@ -297,8 +300,13 @@ export function AgentsAdminView({
     draft: agents.filter(a => a.status === 'draft').length,
   };
 
+  const digitalEmployees = agents
+    .filter((a) => digitalEmployeeIds.includes(a.id))
+    .map((a) => ({ id: a.id, name: a.name, department: a.department, avatar: a.avatar }));
+
   return (
-    <div className="flex h-full gap-6">
+    <div className="flex flex-col h-full overflow-y-auto">
+    <div className="flex gap-6">
       {/* Agent List */}
       <div className={`flex-1 flex flex-col min-w-0 ${selectedAgent ? 'max-w-2xl' : ''}`}>
         {/* Header */}
@@ -788,6 +796,10 @@ export function AgentsAdminView({
           </div>
         </div>
       )}
+    </div>
+
+      {/* 数字员工团队（4.1.19 / ADR-014）：数字员工的扁平组合，成员须为数字员工 */}
+      <DigitalEmployeeTeamsPanel digitalEmployees={digitalEmployees} canManage={canCreate} />
     </div>
   );
 }

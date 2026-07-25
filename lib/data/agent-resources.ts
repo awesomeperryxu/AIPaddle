@@ -34,6 +34,20 @@ export async function getAgentResources(_ctx: RequestContext, agentId: string): 
   }
 }
 
+/** 列出本租户「数字员工」的 agent id 集合（= 引用了 ≥1 子 Agent 的 Agent，ADR-014）。
+ *  供团队成员选择器只列数字员工用。RLS 隔离本租户。 */
+export async function listDigitalEmployeeIds(_ctx: RequestContext): Promise<string[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('agent_resources')
+    .select('agent_id')
+    .eq('resource_type', 'agent')
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+  const ids = ((data as { agent_id: string }[] | null) ?? []).map((r) => r.agent_id)
+  return [...new Set(ids)]
+}
+
 /** 覆盖式设置某 Agent 直挂的知识库 / Skill / MCP Server（软删旧 + 插新）。RLS 兜底租户隔离。
  *  MCP Server 必须为 approved 状态，调用方负责在允许绑定前校验（API 层校验）。 */
 export async function setAgentResources(
