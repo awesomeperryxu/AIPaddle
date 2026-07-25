@@ -277,15 +277,16 @@ function UseTemplateDialog({
       if (t === 'agent' || t === 'assistant') {
         const dsl = template.dsl as Record<string, unknown>
         const config: Record<string, unknown> = {}
-        if (dsl.systemPrompt)  config.systemPrompt  = dsl.systemPrompt
-        if (dsl.model)         config.model         = dsl.model
-        if (dsl.temperature)   config.temperature   = dsl.temperature
+        if (dsl.systemPrompt)   config.systemPrompt   = dsl.systemPrompt
+        if (dsl.model)          config.model          = dsl.model
+        if (dsl.temperature)    config.temperature    = dsl.temperature
+        if (dsl.requiredSkills) config.requiredSkills = dsl.requiredSkills
         const { agent } = await apiFetch<{ agent: { id: string } }>('/api/agents', {
           method: 'POST',
           body: JSON.stringify({ name: name.trim(), description: template.description, config }),
         })
         onOpenChange(false)
-        router.push(`/agents-admin/${agent.id}`)
+        router.push(`/agents-admin/${agent.id}?fromTemplate=1`)
       } else if (t === 'chatflow' || t === 'workflow') {
         const { workflow } = await apiFetch<{ workflow: { id: string } }>('/api/workflows', {
           method: 'POST',

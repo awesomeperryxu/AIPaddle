@@ -40,6 +40,11 @@ const TEMPLATES = [
       max_iterations: 5,
       variables: [{ key: 'channel_url', label: '频道链接/名称', type: 'string', required: true }],
       tools: [],
+      requiredSkills: [
+        { key: 'youtube-stats', name: 'YouTube 数据统计', description: '获取频道订阅量、播放量、视频列表等统计数据', icon: '📺' },
+        { key: 'chart-render', name: '图表生成', description: '将数据可视化为柱状图、折线图等', icon: '📊' },
+        { key: 'web-search', name: '网络搜索', description: '搜索竞品频道及行业信息', icon: '🔍' },
+      ],
     },
     source: 'dify',
     license: 'Apache-2.0',

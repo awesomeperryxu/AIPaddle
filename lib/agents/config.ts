@@ -25,6 +25,15 @@ export type RoutingRule = z.infer<typeof RoutingRuleSchema>
 // Agent 大脑模式（4.1.9）：纯 LLM / 绑定工作流 / 事项路由到 Skill。
 export type BrainMode = 'llm' | 'workflow' | 'routing'
 
+// 模板所需技能声明（从模板创建时写入 config，首次打开编排页时展示检测弹窗）。
+export const RequiredSkillSchema = z.object({
+  key: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  icon: z.string().optional(),
+})
+export type RequiredSkill = z.infer<typeof RequiredSkillSchema>
+
 // Agent 编排配置。PATCH 时按 partial 校验并合并进现有 config。
 export const AgentConfigSchema = z.object({
   systemPrompt: z.string().max(4000).optional(),
@@ -42,6 +51,8 @@ export const AgentConfigSchema = z.object({
   suggestedQuestions: z.array(z.string().trim().max(120)).max(10).optional(),
   citationEnabled: z.boolean().optional(),
   moderationEnabled: z.boolean().optional(),
+  // 从模板创建时写入：模板声明的推荐技能列表，首次打开编排页时展示检测弹窗
+  requiredSkills: z.array(RequiredSkillSchema).optional(),
 })
 export type AgentConfig = z.infer<typeof AgentConfigSchema>
 
