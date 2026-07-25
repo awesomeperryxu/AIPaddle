@@ -152,11 +152,8 @@ export function AgentsAdminView({
   }, []);
   useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
 
-  // 创建 Agent 弹窗
-  const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', department: '', description: '' });
+  // 创建空白 Agent（4.1.13a）：省名称弹窗，直接以默认名建草稿并进编排页改名
   const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
 
   // AI 帮我建（Copilot，4.1.6）；个人助理意图跳转（切片2）：?assistant=<描述> → 初始即打开并预填
   const searchParams = useSearchParams();
@@ -267,23 +264,20 @@ export function AgentsAdminView({
     }
   }
 
-  async function handleCreate() {
-    if (!form.name.trim()) {
-      setCreateError('名称不能为空');
-      return;
-    }
+  // 4.1.13a：点「创建空白 Agent」直接以默认名建草稿 → 进编排页（顶栏可改名），不再弹名称输入框
+  async function handleCreateBlank() {
+    if (creating) return;
     setCreating(true);
-    setCreateError(null);
     try {
-      const res = await apiFetch<{ agent: { id: string } }>('/api/agents', { method: 'POST', body: JSON.stringify(form) });
-      setCreateOpen(false);
-      setForm({ name: '', department: '', description: '' });
+      const res = await apiFetch<{ agent: { id: string } }>('/api/agents', {
+        method: 'POST',
+        body: JSON.stringify({ name: '未命名 Agent' }),
+      });
       // 4.1.8：创建后进入编排页配置（照搬 Dify：名称→编排画布）
       if (res?.agent?.id) router.push(`/agents-admin/${res.agent.id}`);
       else router.refresh();
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : '创建失败');
-    } finally {
+      showNotice(e instanceof Error ? e.message : '创建失败');
       setCreating(false);
     }
   }
@@ -327,9 +321,9 @@ export function AgentsAdminView({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={() => setCreateOpen(true)}>
+                  <DropdownMenuItem disabled={creating} onClick={handleCreateBlank}>
                     <Plus className="h-4 w-4 mr-2" />
-                    创建空白 Agent
+                    {creating ? '创建中...' : '创建空白 Agent'}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push('/templates')}>
                     <Copy className="h-4 w-4 mr-2" />
@@ -365,52 +359,6 @@ export function AgentsAdminView({
             <DialogFooter>
               <Button onClick={handleCopilot} disabled={copiloting}>
                 {copiloting ? 'AI 生成中...' : '生成草稿'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>创建空白 Agent</DialogTitle>
-            </DialogHeader>
-            <p className="text-xs text-muted-foreground">填写基本信息，创建后进入编排页配置提示词/模型/工具（草稿态，发布须走审核）。</p>
-            {createError && (
-              <p className="text-sm text-red-500">{createError}</p>
-            )}
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="agent-name">名称</Label>
-                <Input
-                  id="agent-name"
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  placeholder="Agent 名称"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="agent-dept">部门</Label>
-                <Input
-                  id="agent-dept"
-                  value={form.department}
-                  onChange={e => setForm({ ...form, department: e.target.value })}
-                  placeholder="所属部门"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="agent-desc">描述</Label>
-                <Input
-                  id="agent-desc"
-                  value={form.description}
-                  onChange={e => setForm({ ...form, description: e.target.value })}
-                  placeholder="Agent 用途描述"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={handleCreate} disabled={creating}>
-                {creating ? '创建中...' : '创建'}
               </Button>
             </DialogFooter>
           </DialogContent>

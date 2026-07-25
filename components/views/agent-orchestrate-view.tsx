@@ -285,10 +285,24 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          {saveStatus === 'saving' && '自动保存中…'}
-          {saveStatus === 'saved' && '已自动保存'}
-          {saveStatus === 'error' && <span className="text-destructive">保存失败</span>}
+        <div className="flex items-center gap-3">
+          <div className="text-xs text-muted-foreground">
+            {saveStatus === 'saving' && '自动保存中…'}
+            {saveStatus === 'saved' && '已自动保存'}
+            {saveStatus === 'error' && <span className="text-destructive">保存失败</span>}
+          </div>
+          {/* 4.1.13b：手动保存按钮（自动保存保留），成功后 toast「已保存」 */}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canEdit}
+            onClick={async () => {
+              setSaveStatus('saving');
+              if (await saveNow()) showToast('已保存');
+            }}
+          >
+            保存
+          </Button>
         </div>
       </div>
 
