@@ -4,7 +4,7 @@
 // 右侧调试预览（接真实 /chat）。嵌入 dashboard 外壳（非全屏），防抖自动保存 config。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare, X, Zap } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare, X, Zap, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -74,13 +74,17 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   // MCP Server 直连（Path B）
   const [availableMcpServers, setAvailableMcpServers] = useState<{ id: string; name: string; description?: string; security_level?: string; type?: string }[]>([]);
   const [boundMcpIds, setBoundMcpIds] = useState<string[]>([]);
+  // 子 Agent（数字员工，4.1.18 / ADR-014）：引用 ≥1 个子 Agent 即为数字员工
+  const [availableAgents, setAvailableAgents] = useState<{ id: string; name: string; department?: string }[]>([]);
+  const [boundSubAgentIds, setBoundSubAgentIds] = useState<string[]>([]);
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [wfRes, skRes, kbRes, resRes, mcpRes] = await Promise.all([
+        const [wfRes, skRes, kbRes, resRes, mcpRes, agRes] = await Promise.all([
           fetch('/api/workflows'), fetch('/api/skills'), fetch('/api/knowledge-bases'),
           fetch(`/api/agents/${agent.id}/resources`), fetch('/api/mcp-servers/available'),
+          fetch('/api/agents'),
         ]);
         if (active && wfRes.ok) setWorkflows((await wfRes.json()).workflows ?? []);
         if (active && skRes.ok) setSkills((await skRes.json()).skills ?? []);
@@ -90,8 +94,11 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
           setBoundKbIds(resources?.knowledgeBaseIds ?? []);
           setBoundSkillIds(resources?.skillIds ?? []);
           setBoundMcpIds(resources?.mcpServerIds ?? []);
+          setBoundSubAgentIds(resources?.subAgentIds ?? []);
         }
         if (active && mcpRes.ok) setAvailableMcpServers((await mcpRes.json()).mcpServers ?? []);
+        // 可选子 Agent：本租户全部 Agent，排除自己
+        if (active && agRes.ok) setAvailableAgents(((await agRes.json()).agents ?? []).filter((a: { id: string }) => a.id !== agent.id));
       } catch { /* 列表拉取失败不阻断编辑 */ }
     })();
     return () => { active = false; };
@@ -100,6 +107,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   const toggleKb = (id: string) => setBoundKbIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
   const toggleSkill = (id: string) => setBoundSkillIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
   const toggleMcp = (id: string) => setBoundMcpIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
+  const toggleSubAgent = (id: string) => setBoundSubAgentIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
 
   // 依赖检测弹窗：从模板创建时展示，告知用户需在工具库中配置哪些技能
   const requiredSkills: RequiredSkill[] = agent.config.requiredSkills ?? [];
@@ -123,11 +131,22 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
     const t = setTimeout(() => {
       void fetch(`/api/agents/${agent.id}/resources`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds, mcpServerIds: boundMcpIds }),
-      }).then((r) => { if (!r.ok) showToast('直挂资源保存失败'); });
+        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds, mcpServerIds: boundMcpIds, subAgentIds: boundSubAgentIds }),
+      }).then(async (r) => {
+        if (!r.ok) { showToast('直挂资源保存失败'); return; }
+        // 子 Agent 被服务端拒绝（无权/嵌套）→ 明确提示每条原因，并回撤本地绑定与服务端一致
+        const body = await r.json().catch(() => ({}));
+        const rejected = body?.subAgentRejected as { id: string; reason: string }[] | undefined;
+        if (Array.isArray(rejected) && rejected.length > 0) {
+          const accepted = (body?.resources?.subAgentIds ?? []) as string[];
+          setBoundSubAgentIds((v) => v.filter((x) => accepted.includes(x)));
+          const names = (id: string) => availableAgents.find((a) => a.id === id)?.name ?? id;
+          showToast(rejected.map((x) => `「${names(x.id)}」${x.reason}`).join('；'));
+        }
+      });
     }, 600);
     return () => clearTimeout(t);
-  }, [boundKbIds, boundSkillIds, boundMcpIds, canEdit, agent.id, showToast]);
+  }, [boundKbIds, boundSkillIds, boundMcpIds, boundSubAgentIds, canEdit, agent.id, showToast, availableAgents]);
 
   // 组装当前 config
   const buildConfig = useCallback((): AgentConfig => ({
@@ -677,6 +696,33 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                     </button>
                   );
                 })}
+              </div>
+            )}
+          </section>
+
+          {/* 子 Agent（数字员工，4.1.18 / ADR-014）：引用 ≥1 个子 Agent 即为数字员工，嵌套仅 1 层 */}
+          <section className="rounded-xl border border-border p-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Users className="h-4 w-4 text-indigo-500" />
+              <Label className="text-sm font-medium">子 Agent（数字员工）</Label>
+              {boundSubAgentIds.length > 0 && (
+                <Badge className="bg-indigo-500/10 text-indigo-600 text-[10px] px-1.5 py-0 h-4">本 Agent 即为数字员工</Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              勾选下方 Agent 作为子 Agent，本 Agent 即成为「数字员工」，可调度所选子 Agent 协作。
+              子 Agent 须为你有权使用、且本身不是数字员工者（嵌套仅限一层）；无权或越权的选择将被服务端跳过并提示。
+            </p>
+            {availableAgents.length === 0 ? (
+              <p className="text-xs text-muted-foreground">暂无其它可选 Agent。</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {availableAgents.map((a) => (
+                  <button
+                    key={a.id} type="button" disabled={!canEdit} onClick={() => toggleSubAgent(a.id)}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${boundSubAgentIds.includes(a.id) ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >{a.name}</button>
+                ))}
               </div>
             )}
           </section>
