@@ -2,9 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -19,7 +17,6 @@ import type { Agent } from '@/lib/mock-data';
 import { apiFetch } from '@/lib/api/client';
 import { actionsFor, ACTION_LABEL, TRANSITIONS, type TransitionAction } from '@/lib/agents/status';
 import {
-  Bot,
   Plus,
   Search,
   Settings,
@@ -28,125 +25,60 @@ import {
   Trash2,
   MoreHorizontal,
   Zap,
-  Database,
-  MessageSquare,
   Copy,
-  Phone,
-  MessagesSquare,
-  Globe,
-  CheckCircle2,
   XCircle,
-  Clock,
-  TrendingUp,
-  ShieldCheck,
-  Building2,
-  User,
-  Send
+  ChevronDown,
 } from 'lucide-react';
-import { AGENT_CATEGORY_LABEL, type AgentCategory } from '@/lib/agents/taxonomy';
-import { DigitalEmployeeTeamsPanel } from '@/components/views/digital-employee-teams-panel';
-import { GroupChatPanel } from '@/components/views/group-chat-panel';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { DigitalEmployeeTeamsPanel } from '@/components/views/digital-employee-teams-panel';
+import { GroupChatPanel } from '@/components/views/group-chat-panel';
 
-const statusConfig = {
-  draft: { label: '草稿', className: 'bg-muted text-muted-foreground', dot: 'bg-muted-foreground' },
-  pending: { label: '待审核', className: 'bg-warning/10 text-warning', dot: 'bg-warning' },
-  published: { label: '已发布', className: 'bg-success/10 text-success', dot: 'bg-success' },
-  offline: { label: '已下线', className: 'bg-destructive/10 text-destructive', dot: 'bg-destructive' }
-};
-
-// Agent 四类来源分类（4.1.17 / ADR-013）：图标 + 徽章，镜像 Skill Hub 页样式；文案取 AGENT_CATEGORY_LABEL（单一事实来源）
-const categoryConfig: Record<AgentCategory, { label: string; icon: typeof ShieldCheck; className: string }> = {
-  'platform-builtin': { label: AGENT_CATEGORY_LABEL['platform-builtin'], icon: ShieldCheck, className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
-  'platform-market': { label: AGENT_CATEGORY_LABEL['platform-market'], icon: Building2, className: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20' },
-  'user-private': { label: AGENT_CATEGORY_LABEL['user-private'], icon: User, className: 'bg-muted text-muted-foreground border-border' },
-  'user-shared': { label: AGENT_CATEGORY_LABEL['user-shared'], icon: Send, className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
-};
-
-// Usage scenarios configuration
-const usageScenarios = [
-  { 
-    id: 'local-cc', 
-    name: '本地CC', 
-    icon: Phone, 
-    description: '本地呼叫中心集成',
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-500/10'
-  },
-  { 
-    id: 'wecom', 
-    name: '企微对话', 
-    icon: MessagesSquare, 
-    description: '企业微信对话接入',
-    color: 'text-green-500',
-    bgColor: 'bg-green-500/10'
-  },
-  { 
-    id: 'web', 
-    name: 'Web 接入', 
-    icon: Globe, 
-    description: '网页端嵌入式对话',
-    color: 'text-purple-500',
-    bgColor: 'bg-purple-500/10'
-  },
-  { 
-    id: 'api', 
-    name: 'API 调用', 
-    icon: Zap, 
-    description: '通过 API 直接调用',
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500/10'
-  },
+// 彩色首字 Avatar（确定性颜色 by 名称首字）
+const AVATAR_COLORS = [
+  'bg-violet-500', 'bg-blue-500', 'bg-orange-400',
+  'bg-emerald-500', 'bg-rose-500', 'bg-cyan-600', 'bg-amber-500',
 ];
+function getAvatarBg(name: string): string {
+  return AVATAR_COLORS[(name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
+}
+
+// 状态样式（原型设计：已发布 pill 背景，草稿纯文字）
+const statusConfig = {
+  draft:     { label: '草稿',   dotClass: 'bg-muted-foreground', pillClass: 'text-muted-foreground' },
+  pending:   { label: '待审核', dotClass: 'bg-amber-500',        pillClass: 'text-amber-600 bg-amber-50 dark:bg-amber-950/40' },
+  published: { label: '已发布', dotClass: 'bg-green-500',        pillClass: 'text-green-600 bg-green-50 dark:bg-green-950/40' },
+  offline:   { label: '已下线', dotClass: 'bg-destructive',      pillClass: 'text-destructive bg-destructive/10' },
+};
+
 
 export function AgentsAdminView({
   agents = [],
-  digitalEmployeeIds = [],
   canCreate = false,
   canDelete = false,
   canEdit = false,
   canSubmit = false,
   canReview = false,
+  digitalEmployeeIds = [],
 }: {
   agents?: Agent[];
-  digitalEmployeeIds?: string[];
   canCreate?: boolean;
   canDelete?: boolean;
   canEdit?: boolean;
   canSubmit?: boolean;
   canReview?: boolean;
+  digitalEmployeeIds?: string[];
 }) {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [activeTab, setActiveTab] = useState('all');
-  const [selectedCategory, setSelectedCategory] = useState<'all' | AgentCategory>('all');
 
-  // 调用日志（4.1.5）：选中 Agent 时拉取真实日志
-  type CallLogItem = { id: string; model: string | null; tokensIn: number; tokensOut: number; success: boolean; createdAt: string };
-  const [logs, setLogs] = useState<CallLogItem[]>([]);
-  const [logCount, setLogCount] = useState<number | null>(null);
-
-  async function selectForDetail(agent: Agent) {
-    setSelectedAgent(agent);
-    setLogs([]);
-    setLogCount(null);
-    try {
-      const res = await apiFetch<{ logs: CallLogItem[]; count: number }>(`/api/agents/${agent.id}/logs`);
-      setLogs(res.logs);
-      setLogCount(res.count);
-    } catch {
-      // 无 audit:read 权限或空 → 静默
-    }
-  }
-
-  // 轻量提示（从模板/导入DSL 占位）
+  // 轻量提示
   const [notice, setNotice] = useState('');
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showNotice = useCallback((m: string) => {
@@ -156,10 +88,7 @@ export function AgentsAdminView({
   }, []);
   useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
 
-  // 创建空白 Agent（4.1.13a）：省名称弹窗，直接以默认名建草稿并进编排页改名
-  const [creating, setCreating] = useState(false);
-
-  // AI 帮我建（Copilot，4.1.6）；个人助理意图跳转（切片2）：?assistant=<描述> → 初始即打开并预填
+  // AI 帮我建（Copilot，4.1.6）；?assistant=<描述> → 自动打开并预填
   const searchParams = useSearchParams();
   const assistantDesc = searchParams.get('assistant') ?? '';
   const [copilotOpen, setCopilotOpen] = useState(() => !!assistantDesc && canCreate);
@@ -168,80 +97,78 @@ export function AgentsAdminView({
   const [copilotError, setCopilotError] = useState<string | null>(null);
 
   async function handleCopilot() {
-    if (copilotDesc.trim().length < 4) {
-      setCopilotError('请多描述一点需求');
-      return;
-    }
-    setCopiloting(true);
-    setCopilotError(null);
+    if (copilotDesc.trim().length < 4) { setCopilotError('请多描述一点需求'); return; }
+    setCopiloting(true); setCopilotError(null);
     try {
       await apiFetch('/api/agents/copilot', { method: 'POST', body: JSON.stringify({ description: copilotDesc }) });
-      setCopilotOpen(false);
-      setCopilotDesc('');
-      router.refresh(); // 生成的草稿出现在列表（draft 态）
+      setCopilotOpen(false); setCopilotDesc('');
+      router.refresh();
     } catch (e) {
       setCopilotError(e instanceof Error ? e.message : '生成失败');
-    } finally {
-      setCopiloting(false);
+    } finally { setCopiloting(false); }
+  }
+
+  // 创建空白 Agent（4.1.13a）：直接以默认名建草稿 → 进编排页改名
+  const [creating, setCreating] = useState(false);
+  async function handleCreateBlank() {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const res = await apiFetch<{ agent: { id: string } }>('/api/agents', {
+        method: 'POST',
+        body: JSON.stringify({ name: '未命名 Agent' }),
+      });
+      if (res?.agent?.id) router.push(`/agents-admin/${res.agent.id}`);
+      else router.refresh();
+    } catch (e) {
+      showNotice(e instanceof Error ? e.message : '创建失败');
+      setCreating(false);
     }
   }
 
   // 编辑 Agent 弹窗
   const [editOpen, setEditOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<Agent | null>(null);
   const [editForm, setEditForm] = useState({ name: '', department: '', description: '' });
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // 删除 Agent（软删除）
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
   function openEdit(agent: Agent) {
+    setEditTarget(agent);
     setEditForm({ name: agent.name, department: agent.department, description: agent.description });
     setEditError(null);
     setEditOpen(true);
   }
 
   async function handleEdit() {
-    if (!selectedAgent) return;
-    if (!editForm.name.trim()) {
-      setEditError('名称不能为空');
-      return;
-    }
-    setEditing(true);
-    setEditError(null);
+    if (!editTarget) return;
+    if (!editForm.name.trim()) { setEditError('名称不能为空'); return; }
+    setEditing(true); setEditError(null);
     try {
-      await apiFetch(`/api/agents/${selectedAgent.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(editForm),
-      });
+      await apiFetch(`/api/agents/${editTarget.id}`, { method: 'PATCH', body: JSON.stringify(editForm) });
       setEditOpen(false);
-      setSelectedAgent({ ...selectedAgent, ...editForm });
-      router.refresh(); // 重新从服务端拉取，刷新后仍在
+      router.refresh();
     } catch (e) {
       setEditError(e instanceof Error ? e.message : '保存失败');
-    } finally {
-      setEditing(false);
-    }
+    } finally { setEditing(false); }
   }
 
+  // 删除 Agent（软删除）
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   async function handleDelete(agent: Agent) {
     if (deletingId) return;
     if (!window.confirm(`确定删除 Agent「${agent.name}」？删除后可在回收站找回（软删除）。`)) return;
     setDeletingId(agent.id);
     try {
       await apiFetch(`/api/agents/${agent.id}`, { method: 'DELETE' });
-      router.refresh(); // 重新从服务端拉取列表，删除项消失
+      router.refresh();
     } catch (e) {
       window.alert(e instanceof Error ? e.message : '删除失败');
-    } finally {
-      setDeletingId(null);
-    }
+    } finally { setDeletingId(null); }
   }
 
   // 状态机流转（4.1.2）
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
-
-  // 按当前状态 + 用户权限，算出该 Agent 可用的流转动作
   function availableActions(agent: Agent): TransitionAction[] {
     return actionsFor(agent.status).filter(a => {
       const perm = TRANSITIONS[a].action;
@@ -251,553 +178,237 @@ export function AgentsAdminView({
       return false;
     });
   }
-
   async function handleTransition(agent: Agent, action: TransitionAction) {
     if (transitioningId) return;
     setTransitioningId(agent.id);
     try {
-      await apiFetch(`/api/agents/${agent.id}/transition`, {
-        method: 'POST',
-        body: JSON.stringify({ action }),
-      });
-      router.refresh(); // 刷新列表，状态更新
+      await apiFetch(`/api/agents/${agent.id}/transition`, { method: 'POST', body: JSON.stringify({ action }) });
+      router.refresh();
     } catch (e) {
       window.alert(e instanceof Error ? e.message : '操作失败');
-    } finally {
-      setTransitioningId(null);
-    }
-  }
-
-  // 4.1.13a：点「创建空白 Agent」直接以默认名建草稿 → 进编排页（顶栏可改名），不再弹名称输入框
-  async function handleCreateBlank() {
-    if (creating) return;
-    setCreating(true);
-    try {
-      const res = await apiFetch<{ agent: { id: string } }>('/api/agents', {
-        method: 'POST',
-        body: JSON.stringify({ name: '未命名 Agent' }),
-      });
-      // 4.1.8：创建后进入编排页配置（照搬 Dify：名称→编排画布）
-      if (res?.agent?.id) router.push(`/agents-admin/${res.agent.id}`);
-      else router.refresh();
-    } catch (e) {
-      showNotice(e instanceof Error ? e.message : '创建失败');
-      setCreating(false);
-    }
+    } finally { setTransitioningId(null); }
   }
 
   const filteredAgents = agents.filter(agent => {
-    const matchesSearch = agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch =
+      agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       agent.department.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || agent.category === selectedCategory;
-    if (activeTab === 'all') return matchesSearch && matchesCategory;
-    return matchesSearch && matchesCategory && agent.status === activeTab;
+    if (activeTab === 'all') return matchesSearch;
+    return matchesSearch && agent.status === activeTab;
   });
 
-  const stats = {
-    total: agents.length,
-    published: agents.filter(a => a.status === 'published').length,
-    pending: agents.filter(a => a.status === 'pending').length,
-    draft: agents.filter(a => a.status === 'draft').length,
-  };
-
+  // 数字员工 = 引用了子 Agent 的 Agent（ADR-014），供团队/群聊面板选择成员
   const digitalEmployees = agents
     .filter((a) => digitalEmployeeIds.includes(a.id))
     .map((a) => ({ id: a.id, name: a.name, department: a.department, avatar: a.avatar }));
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto">
-    <div className="flex gap-6">
-      {/* Agent List */}
-      <div className={`flex-1 flex flex-col min-w-0 ${selectedAgent ? 'max-w-2xl' : ''}`}>
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">Agent 管理</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">创建、配置和管理 AI Agent</p>
-          </div>
-          {canCreate && (
-            <div className="flex items-center gap-2">
-              <Button variant="outline" className="gap-2" onClick={() => setCopilotOpen(true)}>
-                <Zap className="h-4 w-4" />
+    <div className="flex flex-col h-full">
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Agent 管理</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">创建、配置和管理 AI Agent（数字员工）</p>
+        </div>
+        {canCreate && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="gap-1.5 shadow-sm" disabled={creating}>
+                <Plus className="h-4 w-4" />
+                {creating ? '创建中...' : '创建 Agent'}
+                <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => setCopilotOpen(true)}>
+                <Zap className="h-4 w-4 mr-2 text-primary" />
                 AI 帮我建
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button className="gap-2 shadow-sm">
-                    <Plus className="h-4 w-4" />
-                    创建 Agent
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem disabled={creating} onClick={handleCreateBlank}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {creating ? '创建中...' : '创建空白 Agent'}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push('/templates')}>
-                    <Copy className="h-4 w-4 mr-2" />
-                    从模板创建
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => showNotice('导入 DSL 文件：即将上线（4.1.8/4.4.12）')}>
-                    <Settings className="h-4 w-4 mr-2" />
-                    导入 DSL 文件
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )}
-        </div>
-
-        {/* AI 帮我建（Copilot，4.1.6）*/}
-        <Dialog open={copilotOpen} onOpenChange={setCopilotOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>AI 帮我建 Agent</DialogTitle>
-            </DialogHeader>
-            <p className="text-xs text-muted-foreground">描述你想要的 Agent，AI 生成配置草稿（草稿态，发布仍需走审核）。</p>
-            {copilotError && <p className="text-sm text-red-500">{copilotError}</p>}
-            <div className="space-y-1.5">
-              <Label htmlFor="copilot-desc">需求描述</Label>
-              <Input
-                id="copilot-desc"
-                value={copilotDesc}
-                onChange={e => setCopilotDesc(e.target.value)}
-                placeholder="例如：一个处理客户售后投诉的客服助手，语气耐心专业"
-              />
-            </div>
-            <DialogFooter>
-              <Button onClick={handleCopilot} disabled={copiloting}>
-                {copiloting ? 'AI 生成中...' : '生成草稿'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {notice && (
-          <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground/90 px-4 py-2 text-sm text-background shadow-lg">
-            {notice}
-          </div>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleCreateBlank} disabled={creating}>
+                <Plus className="h-4 w-4 mr-2" />
+                创建空白 Agent
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/templates')}>
+                <Copy className="h-4 w-4 mr-2" />
+                从模板创建
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => showNotice('导入 DSL 文件：即将上线（4.1.8/4.4.12）')}>
+                <Settings className="h-4 w-4 mr-2" />
+                导入 DSL 文件
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
-
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>编辑 Agent</DialogTitle>
-            </DialogHeader>
-            {editError && <p className="text-sm text-red-500">{editError}</p>}
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-agent-name">名称</Label>
-                <Input
-                  id="edit-agent-name"
-                  value={editForm.name}
-                  onChange={e => setEditForm({ ...editForm, name: e.target.value })}
-                  placeholder="Agent 名称"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-agent-dept">部门</Label>
-                <Input
-                  id="edit-agent-dept"
-                  value={editForm.department}
-                  onChange={e => setEditForm({ ...editForm, department: e.target.value })}
-                  placeholder="所属部门"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-agent-desc">描述</Label>
-                <Input
-                  id="edit-agent-desc"
-                  value={editForm.description}
-                  onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-                  placeholder="Agent 描述"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={handleEdit} disabled={editing}>
-                {editing ? '保存中...' : '保存'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-4 gap-3 mb-5">
-          <Card className="bg-card border-border shadow-sm">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Bot className="h-4 w-4 text-primary" />
-                </div>
-                <div>
-                  <p className="text-lg font-semibold text-foreground" data-testid="stat-全部">{stats.total}</p>
-                  <p className="text-xs text-muted-foreground">全部</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card border-border shadow-sm">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-success/10 flex items-center justify-center">
-                  <CheckCircle2 className="h-4 w-4 text-success" />
-                </div>
-                <div>
-                  <p className="text-lg font-semibold text-foreground" data-testid="stat-已发布">{stats.published}</p>
-                  <p className="text-xs text-muted-foreground">已发布</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card border-border shadow-sm">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-warning/10 flex items-center justify-center">
-                  <Clock className="h-4 w-4 text-warning" />
-                </div>
-                <div>
-                  <p className="text-lg font-semibold text-foreground" data-testid="stat-待审核">{stats.pending}</p>
-                  <p className="text-xs text-muted-foreground">待审核</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card border-border shadow-sm">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
-                  <XCircle className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-lg font-semibold text-foreground" data-testid="stat-草稿">{stats.draft}</p>
-                  <p className="text-xs text-muted-foreground">草稿</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Search and Tabs */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="搜索 Agent 名称或部门..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 bg-card border-border h-9"
-            />
-          </div>
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="bg-muted/50 h-9">
-              <TabsTrigger value="all" className="text-xs px-3">全部</TabsTrigger>
-              <TabsTrigger value="published" className="text-xs px-3">已发布</TabsTrigger>
-              <TabsTrigger value="pending" className="text-xs px-3">待审核</TabsTrigger>
-              <TabsTrigger value="draft" className="text-xs px-3">草稿</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-
-        {/* 来源分类筛选（4.1.17 / ADR-013）：镜像 Skill Hub 分段筛选 */}
-        <div className="flex mb-4 rounded-lg border border-border bg-muted/30 p-0.5 w-fit" data-testid="agent-category-filter">
-          {(['all', 'platform-builtin', 'platform-market', 'user-private', 'user-shared'] as const).map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              data-testid={`agent-category-${cat}`}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                selectedCategory === cat ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {cat === 'all' ? '全部来源' : AGENT_CATEGORY_LABEL[cat]}
-            </button>
-          ))}
-        </div>
-
-        {/* Agent List */}
-        <div className="flex-1 overflow-y-auto space-y-2">
-          {filteredAgents.map((agent) => (
-            <Card
-              key={agent.id}
-              className={`bg-card border-border cursor-pointer transition-all hover:shadow-md ${
-                selectedAgent?.id === agent.id ? 'ring-2 ring-primary shadow-md' : 'shadow-sm'
-              }`}
-              onClick={() => selectForDetail(agent)}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-xl shrink-0">
-                    {agent.avatar}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-medium text-foreground truncate">{agent.name}</h3>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
-                        {agent.department}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        data-testid="agent-category-badge"
-                        className={`text-[10px] gap-1 px-1.5 py-0 h-4 ${categoryConfig[agent.category].className}`}
-                      >
-                        {(() => { const Ic = categoryConfig[agent.category].icon; return <Ic className="h-2.5 w-2.5" />; })()}
-                        {categoryConfig[agent.category].label}
-                      </Badge>
-                      <div className="flex items-center gap-1.5 ml-auto">
-                        <span className={`w-1.5 h-1.5 rounded-full ${statusConfig[agent.status].dot}`} />
-                        <span className="text-xs text-muted-foreground">{statusConfig[agent.status].label}</span>
-                      </div>
-                    </div>
-                    <p className="text-sm text-muted-foreground line-clamp-1 mb-2">{agent.description}</p>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Bot className="h-3 w-3" />
-                        {agent.model}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <MessageSquare className="h-3 w-3" />
-                        {agent.calls.toLocaleString()}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <TrendingUp className="h-3 w-3" />
-                        {agent.successRate}%
-                      </span>
-                    </div>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-40">
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/agents-admin/${agent.id}`); }}>
-                        <Settings className="h-4 w-4 mr-2" />
-                        编排配置
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/agents-admin/${agent.id}`); }}>
-                        <Play className="h-4 w-4 mr-2" />
-                        调试
-                      </DropdownMenuItem>
-                      <DropdownMenuItem disabled={!canEdit} onClick={(e) => { e.stopPropagation(); openEdit(agent); }}>
-                        <Settings className="h-4 w-4 mr-2" />
-                        编辑信息
-                      </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Copy className="h-4 w-4 mr-2" />
-                        复制
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      {availableActions(agent).map(action => (
-                        <DropdownMenuItem
-                          key={action}
-                          disabled={transitioningId === agent.id}
-                          onSelect={(e) => {
-                            e.preventDefault();
-                            handleTransition(agent, action);
-                          }}
-                        >
-                          {action === 'offline' ? (
-                            <Pause className="h-4 w-4 mr-2" />
-                          ) : action === 'reject' ? (
-                            <XCircle className="h-4 w-4 mr-2" />
-                          ) : (
-                            <Play className="h-4 w-4 mr-2" />
-                          )}
-                          {transitioningId === agent.id ? '处理中...' : ACTION_LABEL[action]}
-                        </DropdownMenuItem>
-                      ))}
-                      {canDelete && (
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          disabled={deletingId === agent.id}
-                          onSelect={(e) => {
-                            e.preventDefault();
-                            handleDelete(agent);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          {deletingId === agent.id ? '删除中...' : '删除'}
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       </div>
 
-      {/* Agent Detail Panel */}
-      {selectedAgent && (
-        <div className="w-[420px] flex flex-col gap-4 overflow-y-auto">
-          {/* Basic Info */}
-          <Card className="bg-card border-border shadow-sm">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-2xl">
-                    {selectedAgent.avatar}
-                  </div>
-                  <div>
-                    <CardTitle className="text-base text-foreground">{selectedAgent.name}</CardTitle>
-                    <CardDescription className="text-xs">{selectedAgent.department}</CardDescription>
-                  </div>
-                </div>
-                <Badge className={statusConfig[selectedAgent.status].className}>
-                  {statusConfig[selectedAgent.status].label}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">{selectedAgent.description}</p>
+      {/* ── Dialogs ── */}
+      <Dialog open={copilotOpen} onOpenChange={setCopilotOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>AI 帮我建 Agent</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground">描述你想要的 Agent，AI 生成配置草稿（草稿态，发布仍需走审核）。</p>
+          {copilotError && <p className="text-sm text-red-500">{copilotError}</p>}
+          <div className="space-y-1.5">
+            <Label htmlFor="copilot-desc">需求描述</Label>
+            <Input id="copilot-desc" value={copilotDesc} onChange={e => setCopilotDesc(e.target.value)}
+              placeholder="例如：一个处理客户售后投诉的客服助手，语气耐心专业" />
+          </div>
+          <DialogFooter>
+            <Button onClick={handleCopilot} disabled={copiloting}>{copiloting ? 'AI 生成中...' : '生成草稿'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-              {/* Quick Stats */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-2.5 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground mb-0.5">总调用量{logCount !== null ? '（实时）' : ''}</p>
-                  <p className="text-base font-semibold text-foreground" data-testid="metric-calls">{(logCount ?? selectedAgent.calls).toLocaleString()}</p>
-                </div>
-                <div className="p-2.5 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground mb-0.5">成功率</p>
-                  <p className="text-base font-semibold text-foreground">{selectedAgent.successRate}%</p>
-                </div>
-                <div className="p-2.5 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground mb-0.5">Token 消耗</p>
-                  <p className="text-base font-semibold text-foreground">{(selectedAgent.tokenUsage / 1000000).toFixed(2)}M</p>
-                </div>
-                <div className="p-2.5 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground mb-0.5">创建日期</p>
-                  <p className="text-base font-semibold text-foreground">{selectedAgent.createdAt}</p>
-                </div>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>编辑 Agent</DialogTitle></DialogHeader>
+          {editError && <p className="text-sm text-red-500">{editError}</p>}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-name">名称</Label>
+              <Input id="edit-name" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-dept">部门</Label>
+              <Input id="edit-dept" value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-desc">描述</Label>
+              <Input id="edit-desc" value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleEdit} disabled={editing}>{editing ? '保存中...' : '保存'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {notice && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground/90 px-4 py-2 text-sm text-background shadow-lg">
+          {notice}
+        </div>
+      )}
+
+      {/* ── Search + Status Tabs ── */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="搜索 Agent 名称或部门..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 h-9"
+          />
+        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="h-9">
+            <TabsTrigger value="all" className="text-xs px-3">全部</TabsTrigger>
+            <TabsTrigger value="published" className="text-xs px-3">已发布</TabsTrigger>
+            <TabsTrigger value="pending" className="text-xs px-3">待审核</TabsTrigger>
+            <TabsTrigger value="draft" className="text-xs px-3">草稿</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {/* ── Agent List ── */}
+      <div className="flex-1 overflow-y-auto space-y-2">
+        {filteredAgents.length === 0 && (
+          <p className="text-center text-sm text-muted-foreground py-16">暂无 Agent</p>
+        )}
+        {filteredAgents.map((agent) => {
+          const sc = statusConfig[agent.status] ?? statusConfig.draft;
+          const actions = availableActions(agent);
+          return (
+            <div
+              key={agent.id}
+              className="bg-card border border-border rounded-xl px-5 py-4 flex items-center gap-4 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer"
+              onClick={() => router.push(`/agents-admin/${agent.id}`)}
+            >
+              {/* 彩色首字 Avatar */}
+              <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-base font-semibold text-white shrink-0 ${getAvatarBg(agent.name)}`}>
+                {agent.name.charAt(0)}
               </div>
 
-              {/* 调用日志（4.1.5，真实） */}
-              {logs.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-1.5">最近调用</p>
-                  <div className="space-y-1">
-                    {logs.slice(0, 5).map(log => (
-                      <div key={log.id} className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg bg-muted/40">
-                        <span className="flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full ${log.success ? 'bg-success' : 'bg-destructive'}`} />
-                          <span className="text-muted-foreground">{log.model ?? '—'}</span>
-                        </span>
-                        <span className="text-muted-foreground">↑{log.tokensIn} ↓{log.tokensOut} tokens</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              {/* 名称 + 描述·模型 */}
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-foreground leading-tight">{agent.name}</p>
+                <p className="text-sm text-muted-foreground mt-0.5 truncate">
+                  {agent.description}
+                  {agent.model ? <span className="text-muted-foreground/60"> · {agent.model}</span> : null}
+                </p>
+              </div>
 
-          {/* Usage Scenarios - 使用场景 */}
-          <Card className="bg-card border-border shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-foreground">使用场景</CardTitle>
-              <CardDescription className="text-xs">配置 Agent 的接入渠道</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-2">
-                {usageScenarios.map((scenario) => {
-                  const Icon = scenario.icon;
-                  const isEnabled = scenario.id === 'local-cc' || scenario.id === 'wecom';
-                  return (
-                    <button
-                      key={scenario.id}
-                      className={`p-3 rounded-lg border transition-all text-left ${
-                        isEnabled 
-                          ? 'border-primary/30 bg-primary/5 hover:bg-primary/10' 
-                          : 'border-border bg-muted/30 hover:bg-muted/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <div className={`w-7 h-7 rounded-md ${scenario.bgColor} flex items-center justify-center`}>
-                          <Icon className={`h-3.5 w-3.5 ${scenario.color}`} />
-                        </div>
-                        <span className="text-sm font-medium text-foreground">{scenario.name}</span>
-                        {isEnabled && (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-primary ml-auto" />
-                        )}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">{scenario.description}</p>
-                    </button>
-                  );
-                })}
+              {/* 状态 pill */}
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${sc.pillClass}`}>
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sc.dotClass}`} />
+                {sc.label}
               </div>
-            </CardContent>
-          </Card>
 
-          {/* Configuration */}
-          <Card className="bg-card border-border shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-foreground">配置信息</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                <div className="flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">模型</span>
-                </div>
-                <span className="text-sm text-muted-foreground">{selectedAgent.model}</span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                <div className="flex items-center gap-2">
-                  <Database className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">知识库 / Skill / 工作流</span>
-                </div>
-                <span className="text-sm text-muted-foreground">编排页配置</span>
-              </div>
+              {/* 调用次数 */}
+              <span className="text-sm text-muted-foreground w-28 text-right shrink-0">
+                {agent.calls.toLocaleString()} 次调用
+              </span>
+
+              {/* 编辑按钮 */}
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full mt-1"
-                onClick={() => selectedAgent && router.push(`/agents-admin/${selectedAgent.id}`)}
+                className="shrink-0"
+                onClick={(e) => { e.stopPropagation(); router.push(`/agents-admin/${agent.id}`); }}
               >
-                <Settings className="h-4 w-4 mr-2" />
-                前往编排页配置
+                编辑
               </Button>
-            </CardContent>
-          </Card>
 
-          {/* API Token */}
-          <Card className="bg-card border-border shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-foreground">API Token</CardTitle>
-              <CardDescription className="text-xs">用于外部系统调用此 Agent</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 p-2 rounded bg-muted text-xs text-muted-foreground font-mono truncate">
-                  ap_sk_live_xxxxxxxxxxxxxxxxxxxxx
-                </code>
-                <Button variant="outline" size="sm" className="h-8 px-2">
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Actions */}
-          <div className="flex gap-2">
-            <Button
-              className="flex-1 shadow-sm"
-              onClick={() => selectedAgent && router.push(`/agents-admin/${selectedAgent.id}`)}
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              编排配置
-            </Button>
-            <Button variant="outline" className="flex-1" onClick={() => selectedAgent && router.push(`/agents-admin/${selectedAgent.id}`)}>
-              <Play className="h-4 w-4 mr-2" />
-              调试测试
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
+              {/* 三点菜单（状态流转 / 编辑信息 / 删除） */}
+              {(actions.length > 0 || canDelete || canEdit) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40" onClick={(e) => e.stopPropagation()}>
+                    {canEdit && (
+                      <DropdownMenuItem onClick={() => openEdit(agent)}>
+                        <Settings className="h-4 w-4 mr-2" />
+                        编辑信息
+                      </DropdownMenuItem>
+                    )}
+                    {actions.map(action => (
+                      <DropdownMenuItem
+                        key={action}
+                        disabled={transitioningId === agent.id}
+                        onSelect={(e) => { e.preventDefault(); handleTransition(agent, action); }}
+                      >
+                        {action === 'offline' ? <Pause className="h-4 w-4 mr-2" /> :
+                         action === 'reject'  ? <XCircle className="h-4 w-4 mr-2" /> :
+                                                <Play className="h-4 w-4 mr-2" />}
+                        {transitioningId === agent.id ? '处理中...' : ACTION_LABEL[action]}
+                      </DropdownMenuItem>
+                    ))}
+                    {canDelete && (actions.length > 0 || canEdit) && <DropdownMenuSeparator />}
+                    {canDelete && (
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        disabled={deletingId === agent.id}
+                        onSelect={(e) => { e.preventDefault(); handleDelete(agent); }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        {deletingId === agent.id ? '删除中...' : '删除'}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {/* 数字员工团队（4.1.19 / ADR-014）：数字员工的扁平组合，成员须为数字员工 */}
       <DigitalEmployeeTeamsPanel digitalEmployees={digitalEmployees} canManage={canCreate} />
