@@ -34,9 +34,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+// 彩色首字 Avatar（确定性颜色 by 名称首字）
 const AVATAR_COLORS = [
   'bg-violet-500', 'bg-blue-500', 'bg-orange-400',
   'bg-emerald-500', 'bg-rose-500', 'bg-cyan-600', 'bg-amber-500',
@@ -45,12 +46,14 @@ function getAvatarBg(name: string): string {
   return AVATAR_COLORS[(name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
 }
 
+// 状态样式（原型设计：已发布 pill 背景，草稿纯文字）
 const statusConfig = {
   draft:     { label: '草稿',   dotClass: 'bg-muted-foreground', pillClass: 'text-muted-foreground' },
   pending:   { label: '待审核', dotClass: 'bg-amber-500',        pillClass: 'text-amber-600 bg-amber-50 dark:bg-amber-950/40' },
   published: { label: '已发布', dotClass: 'bg-green-500',        pillClass: 'text-green-600 bg-green-50 dark:bg-green-950/40' },
   offline:   { label: '已下线', dotClass: 'bg-destructive',      pillClass: 'text-destructive bg-destructive/10' },
 };
+
 
 export function AgentsAdminView({
   agents = [],
@@ -81,13 +84,7 @@ export function AgentsAdminView({
   }, []);
   useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
 
-  // 创建 Agent 弹窗
-  const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', department: '', description: '' });
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-
-  // AI 帮我建（Copilot 4.1.6）；?assistant=<描述> → 自动打开并预填
+  // AI 帮我建（Copilot，4.1.6）；?assistant=<描述> → 自动打开并预填
   const searchParams = useSearchParams();
   const assistantDesc = searchParams.get('assistant') ?? '';
   const [copilotOpen, setCopilotOpen] = useState(() => !!assistantDesc && canCreate);
@@ -105,6 +102,24 @@ export function AgentsAdminView({
     } catch (e) {
       setCopilotError(e instanceof Error ? e.message : '生成失败');
     } finally { setCopiloting(false); }
+  }
+
+  // 创建空白 Agent（4.1.13a）：直接以默认名建草稿 → 进编排页改名
+  const [creating, setCreating] = useState(false);
+  async function handleCreateBlank() {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const res = await apiFetch<{ agent: { id: string } }>('/api/agents', {
+        method: 'POST',
+        body: JSON.stringify({ name: '未命名 Agent' }),
+      });
+      if (res?.agent?.id) router.push(`/agents-admin/${res.agent.id}`);
+      else router.refresh();
+    } catch (e) {
+      showNotice(e instanceof Error ? e.message : '创建失败');
+      setCreating(false);
+    }
   }
 
   // 编辑 Agent 弹窗
@@ -170,20 +185,6 @@ export function AgentsAdminView({
     } finally { setTransitioningId(null); }
   }
 
-  async function handleCreate() {
-    if (!form.name.trim()) { setCreateError('名称不能为空'); return; }
-    setCreating(true); setCreateError(null);
-    try {
-      const res = await apiFetch<{ agent: { id: string } }>('/api/agents', { method: 'POST', body: JSON.stringify(form) });
-      setCreateOpen(false);
-      setForm({ name: '', department: '', description: '' });
-      if (res?.agent?.id) router.push(`/agents-admin/${res.agent.id}`);
-      else router.refresh();
-    } catch (e) {
-      setCreateError(e instanceof Error ? e.message : '创建失败');
-    } finally { setCreating(false); }
-  }
-
   const filteredAgents = agents.filter(agent => {
     const matchesSearch =
       agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -203,9 +204,9 @@ export function AgentsAdminView({
         {canCreate && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button className="gap-1.5 shadow-sm">
+              <Button className="gap-1.5 shadow-sm" disabled={creating}>
                 <Plus className="h-4 w-4" />
-                创建 Agent
+                {creating ? '创建中...' : '创建 Agent'}
                 <ChevronDown className="h-3.5 w-3.5 opacity-70" />
               </Button>
             </DropdownMenuTrigger>
@@ -215,7 +216,7 @@ export function AgentsAdminView({
                 AI 帮我建
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setCreateOpen(true)}>
+              <DropdownMenuItem onClick={handleCreateBlank} disabled={creating}>
                 <Plus className="h-4 w-4 mr-2" />
                 创建空白 Agent
               </DropdownMenuItem>
@@ -249,31 +250,6 @@ export function AgentsAdminView({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>创建空白 Agent</DialogTitle></DialogHeader>
-          <p className="text-xs text-muted-foreground">填写基本信息，创建后进入编排页配置提示词/模型/工具（草稿态，发布须走审核）。</p>
-          {createError && <p className="text-sm text-red-500">{createError}</p>}
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="agent-name">名称</Label>
-              <Input id="agent-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Agent 名称" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="agent-dept">部门</Label>
-              <Input id="agent-dept" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} placeholder="所属部门" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="agent-desc">描述</Label>
-              <Input id="agent-desc" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Agent 用途描述" />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={handleCreate} disabled={creating}>{creating ? '创建中...' : '创建'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>编辑 Agent</DialogTitle></DialogHeader>
@@ -281,15 +257,15 @@ export function AgentsAdminView({
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="edit-name">名称</Label>
-              <Input id="edit-name" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} placeholder="Agent 名称" />
+              <Input id="edit-name" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-dept">部门</Label>
-              <Input id="edit-dept" value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })} placeholder="所属部门" />
+              <Input id="edit-dept" value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-desc">描述</Label>
-              <Input id="edit-desc" value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} placeholder="Agent 描述" />
+              <Input id="edit-desc" value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} />
             </div>
           </div>
           <DialogFooter>
@@ -304,7 +280,7 @@ export function AgentsAdminView({
         </div>
       )}
 
-      {/* ── Search + Tabs ── */}
+      {/* ── Search + Status Tabs ── */}
       <div className="flex items-center gap-3 mb-4">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -364,7 +340,7 @@ export function AgentsAdminView({
                 {agent.calls.toLocaleString()} 次调用
               </span>
 
-              {/* 编辑按钮（阻止冒泡，直接进编排页） */}
+              {/* 编辑按钮 */}
               <Button
                 variant="outline"
                 size="sm"
@@ -374,7 +350,7 @@ export function AgentsAdminView({
                 编辑
               </Button>
 
-              {/* 状态流转 + 删除（三点菜单，次要操作） */}
+              {/* 三点菜单（状态流转 / 编辑信息 / 删除） */}
               {(actions.length > 0 || canDelete || canEdit) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
