@@ -152,3 +152,95 @@ export async function* chatStream(
 }
 
 export const AI_MODELS = { llm: LLM_MODEL, embedding: EMBED_MODEL, embeddingDim: EMBEDDING_DIM }
+
+// ── Function Calling（Path B MCP 直连） ────────────────────────
+// OpenAI 兼容的工具定义格式（DashScope 支持）
+export type FunctionTool = {
+  type: 'function'
+  function: {
+    name: string
+    description?: string
+    parameters: {
+      type: 'object'
+      properties?: Record<string, unknown>
+      required?: string[]
+    }
+  }
+}
+
+type ToolCallResponse = {
+  choices: {
+    message: {
+      role: string
+      content: string | null
+      tool_calls?: {
+        id: string
+        type: 'function'
+        function: { name: string; arguments: string }
+      }[]
+    }
+    finish_reason: string
+  }[]
+  usage?: { prompt_tokens?: number; completion_tokens?: number }
+}
+
+export type ToolCallHandler = (toolName: string, args: Record<string, unknown>) => Promise<string>
+
+// 带工具调用的对话（ReAct 循环）：LLM 可调用 tools，调用方提供 handler 执行工具后继续对话。
+// 最多循环 maxIterations 轮（防止无限递归），每轮先检查是否有 tool_call，有则执行后继续，否则返回文本。
+export async function chatWithTools(
+  messages: ChatMessage[],
+  tools: FunctionTool[],
+  handler: ToolCallHandler,
+  opts: { temperature?: number; maxTokens?: number; model?: string; maxIterations?: number } = {},
+): Promise<{ content: string; tokensIn: number; tokensOut: number; model: string }> {
+  const model = opts.model ?? LLM_MODEL
+  const maxIter = opts.maxIterations ?? 5
+  let totalIn = 0
+  let totalOut = 0
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const history: any[] = [...messages]
+
+  for (let i = 0; i < maxIter; i++) {
+    const json = await postJson('/chat/completions', {
+      model,
+      messages: history,
+      tools: tools.length > 0 ? tools : undefined,
+      tool_choice: tools.length > 0 ? 'auto' : undefined,
+      temperature: opts.temperature ?? 0.3,
+      max_tokens: opts.maxTokens ?? 2048,
+    }) as ToolCallResponse & Record<string, unknown>
+
+    const usage = (json.usage ?? {}) as { prompt_tokens?: number; completion_tokens?: number }
+    totalIn += usage.prompt_tokens ?? 0
+    totalOut += usage.completion_tokens ?? 0
+
+    const choice = json.choices?.[0]
+    const msg = choice?.message
+
+    if (!msg) break
+
+    // 追加 assistant 消息到 history
+    history.push({ role: 'assistant', content: msg.content ?? null, tool_calls: msg.tool_calls })
+
+    // 没有工具调用 → 返回最终文本
+    if (!msg.tool_calls || msg.tool_calls.length === 0) {
+      return { content: msg.content ?? '', tokensIn: totalIn, tokensOut: totalOut, model }
+    }
+
+    // 依次执行所有工具调用，将结果追加到 history
+    for (const tc of msg.tool_calls) {
+      let result: string
+      try {
+        const args = JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>
+        result = await handler(tc.function.name, args)
+      } catch (e) {
+        result = `工具调用失败：${e instanceof Error ? e.message : String(e)}`
+      }
+      history.push({ role: 'tool', tool_call_id: tc.id, content: result })
+    }
+  }
+
+  return { content: '（超过最大工具调用轮次，未能得到最终回答）', tokensIn: totalIn, tokensOut: totalOut, model }
+}

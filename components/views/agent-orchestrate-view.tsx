@@ -4,7 +4,7 @@
 // 右侧调试预览（接真实 /chat）。嵌入 dashboard 外壳（非全屏），防抖自动保存 config。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare, X } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare, X, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -67,16 +67,20 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   const [routingRules, setRoutingRules] = useState<RoutingRule[]>(agent.config.routingRules ?? []);
   const [workflows, setWorkflows] = useState<{ id: string; name: string; type: string }[]>([]);
   const [skills, setSkills] = useState<{ id: string; name: string }[]>([]);
-  // 直挂资源（4.1.11）：知识库 + Skill，存 agent_resources（独立于 config）
+  // 直挂资源（4.1.11 + Path B）：知识库 + Skill + MCP Server，存 agent_resources
   const [knowledgeBases, setKnowledgeBases] = useState<{ id: string; name: string }[]>([]);
   const [boundKbIds, setBoundKbIds] = useState<string[]>([]);
   const [boundSkillIds, setBoundSkillIds] = useState<string[]>([]);
+  // MCP Server 直连（Path B）
+  const [availableMcpServers, setAvailableMcpServers] = useState<{ id: string; name: string; description?: string; security_level?: string; type?: string }[]>([]);
+  const [boundMcpIds, setBoundMcpIds] = useState<string[]>([]);
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [wfRes, skRes, kbRes, resRes] = await Promise.all([
-          fetch('/api/workflows'), fetch('/api/skills'), fetch('/api/knowledge-bases'), fetch(`/api/agents/${agent.id}/resources`),
+        const [wfRes, skRes, kbRes, resRes, mcpRes] = await Promise.all([
+          fetch('/api/workflows'), fetch('/api/skills'), fetch('/api/knowledge-bases'),
+          fetch(`/api/agents/${agent.id}/resources`), fetch('/api/mcp-servers/available'),
         ]);
         if (active && wfRes.ok) setWorkflows((await wfRes.json()).workflows ?? []);
         if (active && skRes.ok) setSkills((await skRes.json()).skills ?? []);
@@ -85,7 +89,9 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
           const { resources } = await resRes.json();
           setBoundKbIds(resources?.knowledgeBaseIds ?? []);
           setBoundSkillIds(resources?.skillIds ?? []);
+          setBoundMcpIds(resources?.mcpServerIds ?? []);
         }
+        if (active && mcpRes.ok) setAvailableMcpServers((await mcpRes.json()).mcpServers ?? []);
       } catch { /* 列表拉取失败不阻断编辑 */ }
     })();
     return () => { active = false; };
@@ -93,6 +99,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
 
   const toggleKb = (id: string) => setBoundKbIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
   const toggleSkill = (id: string) => setBoundSkillIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
+  const toggleMcp = (id: string) => setBoundMcpIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
 
   // 依赖检测弹窗：从模板创建时展示，告知用户需在工具库中配置哪些技能
   const requiredSkills: RequiredSkill[] = agent.config.requiredSkills ?? [];
@@ -116,11 +123,11 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
     const t = setTimeout(() => {
       void fetch(`/api/agents/${agent.id}/resources`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds }),
+        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds, mcpServerIds: boundMcpIds }),
       }).then((r) => { if (!r.ok) showToast('直挂资源保存失败'); });
     }, 600);
     return () => clearTimeout(t);
-  }, [boundKbIds, boundSkillIds, canEdit, agent.id, showToast]);
+  }, [boundKbIds, boundSkillIds, boundMcpIds, canEdit, agent.id, showToast]);
 
   // 组装当前 config
   const buildConfig = useCallback((): AgentConfig => ({
@@ -552,6 +559,46 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                     className={`rounded-full border px-3 py-1 text-xs transition-colors ${boundSkillIds.includes(s.id) ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
                   >{s.name}</button>
                 ))}
+              </div>
+            )}
+          </section>
+
+          {/* MCP 直连工具（Path B）：绑定平台管理员已审批的 MCP Server，Agent 可直接调用其工具 */}
+          <section className="rounded-xl border border-border p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-violet-500" />
+              <Label className="text-sm font-medium">MCP 直连工具</Label>
+              <Badge className="bg-violet-500/10 text-violet-600 text-[10px] px-1.5 py-0 h-4">Path B</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              绑定平台管理员已审批的 MCP Server，Agent 对话时可直接通过 Function Calling 调用其工具。
+              仅 <span className="text-foreground font-medium">已审批（approved）</span> 的 MCP Server 可绑定。
+            </p>
+            {availableMcpServers.length === 0 ? (
+              <p className="text-xs text-muted-foreground">暂无可用的 MCP Server，请联系平台管理员审批注册。</p>
+            ) : (
+              <div className="space-y-1.5">
+                {availableMcpServers.map((m) => {
+                  const bound = boundMcpIds.includes(m.id);
+                  const secColor = m.security_level === 'high'
+                    ? 'text-red-500'
+                    : m.security_level === 'medium' ? 'text-amber-500' : 'text-emerald-500';
+                  return (
+                    <button
+                      key={m.id} type="button" disabled={!canEdit} onClick={() => toggleMcp(m.id)}
+                      className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${bound ? 'border-violet-500/50 bg-violet-500/5' : 'border-border hover:border-border/80'}`}
+                    >
+                      <div className={`h-2 w-2 shrink-0 rounded-full ${bound ? 'bg-violet-500' : 'bg-muted-foreground/30'}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-medium ${bound ? 'text-violet-600' : 'text-foreground'}`}>{m.name}</span>
+                          <span className={`text-[10px] ${secColor}`}>{m.security_level}</span>
+                        </div>
+                        {m.description && <p className="text-[11px] text-muted-foreground truncate mt-0.5">{m.description}</p>}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </section>
