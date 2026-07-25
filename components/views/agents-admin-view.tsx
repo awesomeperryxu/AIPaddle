@@ -36,6 +36,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { DigitalEmployeeTeamsPanel } from '@/components/views/digital-employee-teams-panel';
+import { GroupChatPanel } from '@/components/views/group-chat-panel';
 
 // 彩色首字 Avatar（确定性颜色 by 名称首字）
 const AVATAR_COLORS = [
@@ -62,6 +64,7 @@ export function AgentsAdminView({
   canEdit = false,
   canSubmit = false,
   canReview = false,
+  digitalEmployeeIds = [],
 }: {
   agents?: Agent[];
   canCreate?: boolean;
@@ -69,6 +72,7 @@ export function AgentsAdminView({
   canEdit?: boolean;
   canSubmit?: boolean;
   canReview?: boolean;
+  digitalEmployeeIds?: string[];
 }) {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -192,6 +196,11 @@ export function AgentsAdminView({
     if (activeTab === 'all') return matchesSearch;
     return matchesSearch && agent.status === activeTab;
   });
+
+  // 数字员工 = 引用了子 Agent 的 Agent（ADR-014），供团队/群聊面板选择成员
+  const digitalEmployees = agents
+    .filter((a) => digitalEmployeeIds.includes(a.id))
+    .map((a) => ({ id: a.id, name: a.name, department: a.department, avatar: a.avatar }));
 
   return (
     <div className="flex flex-col h-full">
@@ -400,6 +409,12 @@ export function AgentsAdminView({
           );
         })}
       </div>
+
+      {/* 数字员工团队（4.1.19 / ADR-014）：数字员工的扁平组合，成员须为数字员工 */}
+      <DigitalEmployeeTeamsPanel digitalEmployees={digitalEmployees} canManage={canCreate} />
+
+      {/* 数字员工群聊（4.1.21 / ADR-015）：多方群聊，人 + 数字员工/团队，@定向 + 主动捕捉 */}
+      <GroupChatPanel digitalEmployees={digitalEmployees} canManage={canCreate} />
     </div>
   );
 }
