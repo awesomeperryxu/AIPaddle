@@ -2,6 +2,7 @@ import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { createClient } from '@/lib/supabase/server'
 import { listAgents } from '@/lib/data/agents'
+import { requiresEnterprisePermission, type AgentOrigin } from '@/lib/agents/taxonomy'
 
 // GET /api/agents —— 列出本租户 Agent（RLS 隔离，agent:read 默认所有角色可读）。
 export async function GET() {
@@ -30,6 +31,14 @@ export async function POST(request: Request) {
     return Response.json({ error: { code: 'invalid', message: '名称不能为空' } }, { status: 400 })
   }
 
+  // 4.1.17 / ADR-013：来源分类。origin/mandatory 属高权写操作——设"平台来源"或"强制下发"
+  // 须企业级创建权（agent:create:enterprise / 平台超管），防越权把自建 Agent 标为平台内置强制。
+  const origin: AgentOrigin = body?.origin === 'platform' ? 'platform' : 'user'
+  const mandatory = body?.mandatory === true
+  if (requiresEnterprisePermission({ origin, mandatory }) && !can(ctx, 'agent:create:enterprise')) {
+    return Response.json({ error: { code: 'forbidden', message: '无权限：设置平台来源或强制下发的 Agent' } }, { status: 403 })
+  }
+
   const supabase = await createClient()
   const config = (body?.config && typeof body.config === 'object' && !Array.isArray(body.config))
     ? body.config as Record<string, unknown>
@@ -44,6 +53,8 @@ export async function POST(request: Request) {
       description: typeof body?.description === 'string' ? body.description : null,
       department: typeof body?.department === 'string' ? body.department : null,
       status: 'draft',
+      origin,
+      mandatory,
       ...(config ? { config } : {}),
     })
     .select('id, name, status')

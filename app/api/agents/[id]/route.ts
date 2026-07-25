@@ -3,6 +3,7 @@ import { can } from '@/lib/auth/permissions'
 import { getAgentById, saveAgent, deleteAgent } from '@/lib/data/agents'
 import { AgentConfigSchema } from '@/lib/agents/config'
 import { detectBrainCycle } from '@/lib/agents/brain'
+import { requiresEnterprisePermission, type AgentOrigin } from '@/lib/agents/taxonomy'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
@@ -35,6 +36,14 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const { id } = await params
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
 
+  // 4.1.17 / ADR-013：改动来源分类（origin/mandatory）属高权写操作——设"平台来源"或"强制下发"
+  // 须企业级创建权，防越权把自建 Agent 提权为平台内置强制。仅当入参携带这些字段时才做判定。
+  const origin: AgentOrigin | undefined = body?.origin === 'platform' ? 'platform' : body?.origin === 'user' ? 'user' : undefined
+  const mandatory = typeof body?.mandatory === 'boolean' ? (body.mandatory as boolean) : undefined
+  if (requiresEnterprisePermission({ origin, mandatory }) && !can(ctx, 'agent:create:enterprise')) {
+    return Response.json({ error: { code: 'forbidden', message: '无权限：设置平台来源或强制下发的 Agent' } }, { status: 403 })
+  }
+
   // config 全量编排配置（4.1.7）：Zod 部分校验，失败 422
   let config
   if (body?.config && typeof body.config === 'object') {
@@ -55,6 +64,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
     name: typeof body?.name === 'string' ? body.name : undefined,
     description: typeof body?.description === 'string' ? body.description : undefined,
     department: typeof body?.department === 'string' ? body.department : undefined,
+    origin,
+    mandatory,
     config,
   })
   if (!agent) {

@@ -4,6 +4,7 @@ import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
 import { TRANSITIONS, type TransitionAction } from '@/lib/agents/status'
 import type { AgentConfig } from '@/lib/agents/config'
+import { deriveAgentCategory, type AgentOrigin } from '@/lib/agents/taxonomy'
 
 // 数据层（ADR-008）：唯一访问 agents 表的地方，首参 ctx，用请求级客户端（RLS 生效）。
 // DB 行 → 视图用的 Agent 形状映射。
@@ -17,12 +18,16 @@ type Row = {
   metrics_success: number | null
   created_at: string | null
   config: { model?: string } | null
+  origin: AgentOrigin
+  mandatory: boolean
 }
 
-const COLS = 'id,name,description,department,status,metrics_calls,metrics_success,created_at,config'
+const COLS = 'id,name,description,department,status,metrics_calls,metrics_success,created_at,config,origin,mandatory'
 
 function mapRow(r: Row): Agent {
   const calls = r.metrics_calls ?? 0
+  const origin: AgentOrigin = r.origin === 'platform' ? 'platform' : 'user'
+  const mandatory = !!r.mandatory
   return {
     id: r.id,
     name: r.name,
@@ -35,6 +40,9 @@ function mapRow(r: Row): Agent {
     createdAt: (r.created_at ?? '').slice(0, 10),
     model: r.config?.model ?? '—',
     avatar: '🤖',
+    origin,
+    mandatory,
+    category: deriveAgentCategory(origin, mandatory, r.status),
   }
 }
 
@@ -109,7 +117,15 @@ export async function deleteAgent(_ctx: RequestContext, id: string): Promise<boo
 
 export async function createAgent(
   ctx: RequestContext,
-  input: { name: string; department?: string; description?: string; systemPrompt?: string; model?: string },
+  input: {
+    name: string
+    department?: string
+    description?: string
+    systemPrompt?: string
+    model?: string
+    origin?: AgentOrigin
+    mandatory?: boolean
+  },
 ): Promise<Agent> {
   const config: Record<string, unknown> = {}
   if (input.systemPrompt) config.systemPrompt = input.systemPrompt
@@ -124,6 +140,8 @@ export async function createAgent(
       department: input.department ?? null,
       description: input.description ?? null,
       status: 'draft', // AI 生成/手工创建一律 draft，发布须走审核（4.1.2/4.1.3）
+      origin: input.origin ?? 'user', // 默认租户用户来源（类三/四）
+      mandatory: input.mandatory ?? false, // 默认非强制（设强制须企业级权限，见 API 守卫）
       config,
     })
     .select(COLS)
@@ -222,13 +240,22 @@ export async function getAgentDetail(_ctx: RequestContext, id: string): Promise<
 export async function saveAgent(
   _ctx: RequestContext,
   id: string,
-  patch: { name?: string; department?: string; description?: string; config?: Partial<AgentConfig> },
+  patch: {
+    name?: string
+    department?: string
+    description?: string
+    config?: Partial<AgentConfig>
+    origin?: AgentOrigin
+    mandatory?: boolean
+  },
 ): Promise<AgentDetail | null> {
   if (!UUID_RE.test(id)) return null
   const fields: Record<string, unknown> = {}
   if (typeof patch.name === 'string') fields.name = patch.name.trim()
   if (typeof patch.description === 'string') fields.description = patch.description
   if (typeof patch.department === 'string') fields.department = patch.department
+  if (patch.origin === 'platform' || patch.origin === 'user') fields.origin = patch.origin
+  if (typeof patch.mandatory === 'boolean') fields.mandatory = patch.mandatory
   if (patch.config && typeof patch.config === 'object') {
     const cur = await getAgentDetail(_ctx, id)
     if (!cur) return null
