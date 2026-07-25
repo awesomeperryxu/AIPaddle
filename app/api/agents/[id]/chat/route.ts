@@ -7,6 +7,7 @@ import { getSkillById } from '@/lib/data/skills'
 import { evaluateSkillCall } from '@/lib/skills/invoke'
 import { retrieveSegments } from '@/lib/kb/rag'
 import { moderateText } from '@/lib/agents/moderation'
+import { substitutePromptVariables } from '@/lib/agents/prompt'
 import { recordCall } from '@/lib/data/call-logs'
 import { chatWithUsage, chatWithTools, type ChatMessage, type FunctionTool } from '@/lib/ai'
 import { getAgentResources } from '@/lib/data/agent-resources'
@@ -44,6 +45,11 @@ export async function POST(req: Request, { params }: Ctx) {
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
   const raw: unknown[] = Array.isArray(body?.messages) ? (body.messages as unknown[]) : []
+  // 4.1.15：运行期变量值（对话/试聊前用户填的表单），用于替换 systemPrompt 里的 {{变量名}}
+  const varValues: Record<string, string> =
+    body?.variables && typeof body.variables === 'object'
+      ? Object.fromEntries(Object.entries(body.variables as Record<string, unknown>).map(([k, v]) => [k, String(v ?? '')]))
+      : {}
   const history: ChatMessage[] = raw
     .filter((m): m is ChatMessage => {
       const mm = m as Partial<ChatMessage>
@@ -113,8 +119,11 @@ export async function POST(req: Request, { params }: Ctx) {
     }
   } catch { /* 检索失败不阻断对话 */ }
 
-  const systemPrompt =
-    (agent.systemPrompt?.trim() || `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`) + ragContext
+  // 系统提示：优先 Agent 配置的 systemPrompt（4.1.15 先做 {{变量名}} 运行期替换），否则按身份兜底
+  const basePrompt = agent.systemPrompt?.trim()
+    ? substitutePromptVariables(agent.systemPrompt, varValues)
+    : `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`
+  const systemPrompt = basePrompt + ragContext
 
   // Path B：检查是否绑定了直连 MCP Server
   let mcpServers: McpServerRecord[] = []

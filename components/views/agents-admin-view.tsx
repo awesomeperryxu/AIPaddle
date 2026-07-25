@@ -37,8 +37,13 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  TrendingUp
+  TrendingUp,
+  ShieldCheck,
+  Building2,
+  User,
+  Send
 } from 'lucide-react';
+import { AGENT_CATEGORY_LABEL, type AgentCategory } from '@/lib/agents/taxonomy';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,6 +57,14 @@ const statusConfig = {
   pending: { label: '待审核', className: 'bg-warning/10 text-warning', dot: 'bg-warning' },
   published: { label: '已发布', className: 'bg-success/10 text-success', dot: 'bg-success' },
   offline: { label: '已下线', className: 'bg-destructive/10 text-destructive', dot: 'bg-destructive' }
+};
+
+// Agent 四类来源分类（4.1.17 / ADR-013）：图标 + 徽章，镜像 Skill Hub 页样式；文案取 AGENT_CATEGORY_LABEL（单一事实来源）
+const categoryConfig: Record<AgentCategory, { label: string; icon: typeof ShieldCheck; className: string }> = {
+  'platform-builtin': { label: AGENT_CATEGORY_LABEL['platform-builtin'], icon: ShieldCheck, className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
+  'platform-market': { label: AGENT_CATEGORY_LABEL['platform-market'], icon: Building2, className: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20' },
+  'user-private': { label: AGENT_CATEGORY_LABEL['user-private'], icon: User, className: 'bg-muted text-muted-foreground border-border' },
+  'user-shared': { label: AGENT_CATEGORY_LABEL['user-shared'], icon: Send, className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
 };
 
 // Usage scenarios configuration
@@ -109,6 +122,7 @@ export function AgentsAdminView({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | AgentCategory>('all');
 
   // 调用日志（4.1.5）：选中 Agent 时拉取真实日志
   type CallLogItem = { id: string; model: string | null; tokensIn: number; tokensOut: number; success: boolean; createdAt: string };
@@ -138,11 +152,8 @@ export function AgentsAdminView({
   }, []);
   useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current); }, []);
 
-  // 创建 Agent 弹窗
-  const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', department: '', description: '' });
+  // 创建空白 Agent（4.1.13a）：省名称弹窗，直接以默认名建草稿并进编排页改名
   const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
 
   // AI 帮我建（Copilot，4.1.6）；个人助理意图跳转（切片2）：?assistant=<描述> → 初始即打开并预填
   const searchParams = useSearchParams();
@@ -253,23 +264,20 @@ export function AgentsAdminView({
     }
   }
 
-  async function handleCreate() {
-    if (!form.name.trim()) {
-      setCreateError('名称不能为空');
-      return;
-    }
+  // 4.1.13a：点「创建空白 Agent」直接以默认名建草稿 → 进编排页（顶栏可改名），不再弹名称输入框
+  async function handleCreateBlank() {
+    if (creating) return;
     setCreating(true);
-    setCreateError(null);
     try {
-      const res = await apiFetch<{ agent: { id: string } }>('/api/agents', { method: 'POST', body: JSON.stringify(form) });
-      setCreateOpen(false);
-      setForm({ name: '', department: '', description: '' });
+      const res = await apiFetch<{ agent: { id: string } }>('/api/agents', {
+        method: 'POST',
+        body: JSON.stringify({ name: '未命名 Agent' }),
+      });
       // 4.1.8：创建后进入编排页配置（照搬 Dify：名称→编排画布）
       if (res?.agent?.id) router.push(`/agents-admin/${res.agent.id}`);
       else router.refresh();
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : '创建失败');
-    } finally {
+      showNotice(e instanceof Error ? e.message : '创建失败');
       setCreating(false);
     }
   }
@@ -277,8 +285,9 @@ export function AgentsAdminView({
   const filteredAgents = agents.filter(agent => {
     const matchesSearch = agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       agent.department.toLowerCase().includes(searchTerm.toLowerCase());
-    if (activeTab === 'all') return matchesSearch;
-    return matchesSearch && agent.status === activeTab;
+    const matchesCategory = selectedCategory === 'all' || agent.category === selectedCategory;
+    if (activeTab === 'all') return matchesSearch && matchesCategory;
+    return matchesSearch && matchesCategory && agent.status === activeTab;
   });
 
   const stats = {
@@ -312,9 +321,9 @@ export function AgentsAdminView({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={() => setCreateOpen(true)}>
+                  <DropdownMenuItem disabled={creating} onClick={handleCreateBlank}>
                     <Plus className="h-4 w-4 mr-2" />
-                    创建空白 Agent
+                    {creating ? '创建中...' : '创建空白 Agent'}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push('/templates')}>
                     <Copy className="h-4 w-4 mr-2" />
@@ -350,52 +359,6 @@ export function AgentsAdminView({
             <DialogFooter>
               <Button onClick={handleCopilot} disabled={copiloting}>
                 {copiloting ? 'AI 生成中...' : '生成草稿'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>创建空白 Agent</DialogTitle>
-            </DialogHeader>
-            <p className="text-xs text-muted-foreground">填写基本信息，创建后进入编排页配置提示词/模型/工具（草稿态，发布须走审核）。</p>
-            {createError && (
-              <p className="text-sm text-red-500">{createError}</p>
-            )}
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="agent-name">名称</Label>
-                <Input
-                  id="agent-name"
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  placeholder="Agent 名称"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="agent-dept">部门</Label>
-                <Input
-                  id="agent-dept"
-                  value={form.department}
-                  onChange={e => setForm({ ...form, department: e.target.value })}
-                  placeholder="所属部门"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="agent-desc">描述</Label>
-                <Input
-                  id="agent-desc"
-                  value={form.description}
-                  onChange={e => setForm({ ...form, description: e.target.value })}
-                  placeholder="Agent 用途描述"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={handleCreate} disabled={creating}>
-                {creating ? '创建中...' : '创建'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -527,6 +490,22 @@ export function AgentsAdminView({
           </Tabs>
         </div>
 
+        {/* 来源分类筛选（4.1.17 / ADR-013）：镜像 Skill Hub 分段筛选 */}
+        <div className="flex mb-4 rounded-lg border border-border bg-muted/30 p-0.5 w-fit" data-testid="agent-category-filter">
+          {(['all', 'platform-builtin', 'platform-market', 'user-private', 'user-shared'] as const).map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              data-testid={`agent-category-${cat}`}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                selectedCategory === cat ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {cat === 'all' ? '全部来源' : AGENT_CATEGORY_LABEL[cat]}
+            </button>
+          ))}
+        </div>
+
         {/* Agent List */}
         <div className="flex-1 overflow-y-auto space-y-2">
           {filteredAgents.map((agent) => (
@@ -547,6 +526,14 @@ export function AgentsAdminView({
                       <h3 className="font-medium text-foreground truncate">{agent.name}</h3>
                       <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
                         {agent.department}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        data-testid="agent-category-badge"
+                        className={`text-[10px] gap-1 px-1.5 py-0 h-4 ${categoryConfig[agent.category].className}`}
+                      >
+                        {(() => { const Ic = categoryConfig[agent.category].icon; return <Ic className="h-2.5 w-2.5" />; })()}
+                        {categoryConfig[agent.category].label}
                       </Badge>
                       <div className="flex items-center gap-1.5 ml-auto">
                         <span className={`w-1.5 h-1.5 rounded-full ${statusConfig[agent.status].dot}`} />

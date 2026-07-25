@@ -26,6 +26,7 @@ const mockDelete = vi.mocked(deleteAgent)
 const mockSave = vi.mocked(saveAgent)
 
 const adminCtx: RequestContext = { userId: 'u1', orgId: 'org1', roles: ['Admin'] }
+const devCtx: RequestContext = { userId: 'u2', orgId: 'org1', roles: ['Developer'] }
 const userCtx: RequestContext = { userId: 'u3', orgId: 'org1', roles: ['User'] }
 const ID = '456d60b5-8d64-445a-b9d1-4d9c30e9ae92'
 
@@ -129,5 +130,24 @@ describe('PATCH /api/agents/[id]', () => {
     mockSave.mockResolvedValueOnce(null)
     const res = await callPatch({ name: '改名' })
     expect(res.status).toBe(404)
+  })
+
+  // 4.1.17 / ADR-013：改动为"强制/平台来源"须企业级创建权（仅 Admin），Developer 越权 → 403
+  it('Developer 设 mandatory:true → 403（无企业级权限），且不触碰数据层', async () => {
+    mockCtx.mockResolvedValueOnce(devCtx)
+    const res = await callPatch({ mandatory: true })
+    expect(res.status).toBe(403)
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
+  it('Admin 设 mandatory:true → 200（有企业级权限），origin/mandatory 透传数据层', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockSave.mockResolvedValueOnce({ id: ID, name: 'A', department: '', description: '', status: 'draft', config: {} } as never)
+    const res = await callPatch({ origin: 'platform', mandatory: true })
+    expect(res.status).toBe(200)
+    expect(mockSave).toHaveBeenCalledWith(adminCtx, ID, expect.objectContaining({
+      origin: 'platform',
+      mandatory: true,
+    }))
   })
 })

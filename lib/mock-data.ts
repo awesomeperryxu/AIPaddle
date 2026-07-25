@@ -1,5 +1,7 @@
 // AIPaddle Mock Data - Real Test Cases
 
+import type { AgentOrigin, AgentCategory } from '@/lib/agents/taxonomy';
+
 export interface Agent {
   id: string;
   name: string;
@@ -12,6 +14,9 @@ export interface Agent {
   createdAt: string;
   model: string;
   avatar: string;
+  origin: AgentOrigin;      // 平台/用户来源（4.1.17 / ADR-013）
+  mandatory: boolean;       // 类一 平台内置强制
+  category: AgentCategory;  // 四类派生
 }
 
 export interface Skill {
@@ -92,7 +97,10 @@ export const mockAgents: Agent[] = [
     tokenUsage: 2450000,
     createdAt: '2024-01-15',
     model: 'GPT-4-Turbo',
-    avatar: '🤖'
+    avatar: '🤖',
+    origin: 'user',
+    mandatory: false,
+    category: 'user-shared'
   },
   {
     id: 'agent-002',
@@ -105,7 +113,10 @@ export const mockAgents: Agent[] = [
     tokenUsage: 1280000,
     createdAt: '2024-02-01',
     model: 'Claude-3-Opus',
-    avatar: '👥'
+    avatar: '👥',
+    origin: 'user',
+    mandatory: false,
+    category: 'user-shared'
   },
   {
     id: 'agent-003',
@@ -118,7 +129,10 @@ export const mockAgents: Agent[] = [
     tokenUsage: 890000,
     createdAt: '2024-02-15',
     model: 'GPT-4-Turbo',
-    avatar: '💰'
+    avatar: '💰',
+    origin: 'user',
+    mandatory: false,
+    category: 'user-shared'
   },
   {
     id: 'agent-004',
@@ -131,7 +145,10 @@ export const mockAgents: Agent[] = [
     tokenUsage: 560000,
     createdAt: '2024-03-01',
     model: 'GPT-4-Turbo',
-    avatar: '🔧'
+    avatar: '🔧',
+    origin: 'user',
+    mandatory: false,
+    category: 'user-shared'
   },
   {
     id: 'agent-005',
@@ -144,7 +161,10 @@ export const mockAgents: Agent[] = [
     tokenUsage: 0,
     createdAt: '2024-03-10',
     model: 'Claude-3-Sonnet',
-    avatar: '📈'
+    avatar: '📈',
+    origin: 'user',
+    mandatory: false,
+    category: 'user-private'
   },
   {
     id: 'agent-006',
@@ -157,7 +177,10 @@ export const mockAgents: Agent[] = [
     tokenUsage: 1120000,
     createdAt: '2024-01-20',
     model: 'GPT-4-Turbo',
-    avatar: '📋'
+    avatar: '📋',
+    origin: 'user',
+    mandatory: false,
+    category: 'user-shared'
   }
 ];
 

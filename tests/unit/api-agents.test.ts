@@ -139,4 +139,34 @@ describe('POST /api/agents', () => {
     }))
     expect(res.status).toBe(201)
   })
+
+  // 4.1.17 / ADR-013：设"强制/平台来源"须企业级创建权（agent:create:enterprise，仅 Admin）
+  it('Developer 设 mandatory:true → 403（无企业级权限）', async () => {
+    mockCtx.mockResolvedValueOnce(devCtx)
+    const res = await POST(new Request('http://localhost/api/agents', {
+      method: 'POST',
+      body: JSON.stringify({ name: '强制下发 Agent', mandatory: true }),
+    }))
+    expect(res.status).toBe(403)
+    const body = await res.json()
+    expect(body.error.code).toBe('forbidden')
+  })
+
+  it('Developer 设 origin:platform → 403（无企业级权限）', async () => {
+    mockCtx.mockResolvedValueOnce(devCtx)
+    const res = await POST(new Request('http://localhost/api/agents', {
+      method: 'POST',
+      body: JSON.stringify({ name: '平台来源 Agent', origin: 'platform' }),
+    }))
+    expect(res.status).toBe(403)
+  })
+
+  it('Admin 设 mandatory:true → 201（有企业级权限）', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    const res = await POST(new Request('http://localhost/api/agents', {
+      method: 'POST',
+      body: JSON.stringify({ name: '平台内置强制 Agent', origin: 'platform', mandatory: true }),
+    }))
+    expect(res.status).toBe(201)
+  })
 })

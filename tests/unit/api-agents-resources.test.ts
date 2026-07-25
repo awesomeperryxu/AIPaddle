@@ -62,6 +62,6 @@ describe('PUT /api/agents/[id]/resources', () => {
     mockSetRes.mockResolvedValueOnce({ knowledgeBaseIds: ['k1'], skillIds: ['s1', 's2'] })
     const res = await put({ knowledgeBaseIds: ['k1'], skillIds: ['s1', 's2'] })
     expect(res.status).toBe(200)
-    expect(mockSetRes).toHaveBeenCalledWith(admin, ID, { knowledgeBaseIds: ['k1'], skillIds: ['s1', 's2'] })
+    expect(mockSetRes).toHaveBeenCalledWith(admin, ID, { knowledgeBaseIds: ['k1'], skillIds: ['s1', 's2'], mcpServerIds: [] })
   })
 })

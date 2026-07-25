@@ -28,7 +28,7 @@ describe('个人助理会话 API（切片1）', () => {
 
   it('GET → 返回本人会话列表', async () => {
     mockCtx.mockResolvedValue(ctx as never)
-    const res = await GET()
+    const res = await GET(new Request('http://localhost/api/assistant/conversations'))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.conversations).toHaveLength(1)
