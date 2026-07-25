@@ -155,12 +155,27 @@ export function AssistantView() {
     } catch { return []; }
   }, []);
 
+  // 初次加载：一次请求同时取会话列表 + 最新会话消息，消除串行瀑布
+  // preloadedId 记录已随会话列表一起预加载消息的会话 id，避免 activeId 变化时重复请求
+  const preloadedId = useRef<string | null>(null);
   useEffect(() => {
-    loadConversations().then((cs) => { if (cs.length) setActiveId(cs[0].id); });
-  }, [loadConversations]);
+    apiFetch<{ conversations: Conversation[]; firstMessages?: Msg[]; firstConversationId?: string }>(
+      '/api/assistant/conversations?withMessages=true'
+    ).then((r) => {
+      setConversations(r.conversations);
+      if (r.firstConversationId) {
+        preloadedId.current = r.firstConversationId;
+        setActiveId(r.firstConversationId);
+        setMessages(r.firstMessages ?? []);
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // 用户手动切换会话时加载消息（跳过已预加载的初始会话）
   useEffect(() => {
     if (!activeId) { setMessages([]); return; }
+    if (activeId === preloadedId.current) { preloadedId.current = null; return; }
     apiFetch<{ messages: Msg[] }>(`/api/assistant/conversations/${activeId}/messages`)
       .then((r) => setMessages(r.messages))
       .catch(() => setMessages([]));
