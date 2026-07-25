@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Search, X, Bot, MessageSquare, Workflow, FileText, Cpu, Info } from 'lucide-react'
+import { Search, X, Bot, MessageSquare, Workflow, FileText, Cpu, Info, CheckCircle2, Loader2, AlertCircle, Wrench } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { Template, TemplateType } from '@/lib/data/templates'
+import type { RequiredSkill } from '@/lib/agents/config'
 import { apiFetch } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
 
@@ -261,6 +262,9 @@ function TemplateCard({
 
 // ── 使用模板弹窗 ─────────────────────────────────────────────────────────────
 
+type DepStatus = 'pending' | 'installing' | 'done' | 'error'
+type DepItem = RequiredSkill & { status: DepStatus }
+
 function UseTemplateDialog({
   template,
   open,
@@ -271,9 +275,17 @@ function UseTemplateDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const router = useRouter()
-  const [name, setName]       = useState(template?.name ?? '')
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
+  const [name, setName]             = useState(template?.name ?? '')
+  const [loading, setLoading]       = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+  const [phase, setPhase]           = useState<'input' | 'deps'>('input')
+  const [deps, setDeps]             = useState<DepItem[]>([])
+  const [installing, setInstalling] = useState(false)
+  const [installDone, setInstallDone] = useState(false)
+
+  const requiredSkills: RequiredSkill[] = Array.isArray(template?.dsl?.requiredSkills)
+    ? (template!.dsl.requiredSkills as RequiredSkill[])
+    : []
 
   async function handleCreate() {
     if (!template || !name.trim()) { setError('名称不能为空'); return }
@@ -289,12 +301,17 @@ function UseTemplateDialog({
         if (dsl.temperature !== undefined)           config.temperature    = dsl.temperature
         if (dsl.requiredSkills)                      config.requiredSkills = dsl.requiredSkills
         if (Array.isArray(dsl.variables))            config.variables      = dsl.variables
-        const { agent } = await apiFetch<{ agent: { id: string } }>('/api/agents', {
+        await apiFetch<{ agent: { id: string } }>('/api/agents', {
           method: 'POST',
           body: JSON.stringify({ name: name.trim(), description: template.description, config }),
         })
-        onOpenChange(false)
-        router.push(`/agents-admin/${agent.id}?fromTemplate=1`)
+        if (requiredSkills.length > 0) {
+          setDeps(requiredSkills.map(s => ({ ...s, status: 'pending' as const })))
+          setPhase('deps')
+        } else {
+          onOpenChange(false)
+          router.push('/agents-admin')
+        }
       } else if (t === 'chatflow' || t === 'workflow') {
         const { workflow } = await apiFetch<{ workflow: { id: string } }>('/api/workflows', {
           method: 'POST',
@@ -303,7 +320,7 @@ function UseTemplateDialog({
         onOpenChange(false)
         router.push(`/workflows/${workflow.id}`)
       } else {
-        // text-generation → Prompt Skill，将 prompt_template/variables/model 写入 config
+        // text-generation → Prompt Skill
         const config: Record<string, unknown> = {}
         if (dsl.prompt_template)           config.promptTemplate = dsl.prompt_template
         if (Array.isArray(dsl.variables))  config.variables      = dsl.variables
@@ -323,6 +340,32 @@ function UseTemplateDialog({
     }
   }
 
+  async function handleInstall() {
+    setInstalling(true)
+    const items = deps.map(d => ({ ...d }))
+    for (let i = 0; i < items.length; i++) {
+      items[i].status = 'installing'
+      setDeps([...items])
+      try {
+        await apiFetch('/api/skills', {
+          method: 'POST',
+          body: JSON.stringify({ name: items[i].name, type: 'Prompt', description: items[i].description ?? '' }),
+        })
+        items[i].status = 'done'
+      } catch {
+        items[i].status = 'error'
+      }
+      setDeps([...items])
+    }
+    setInstalling(false)
+    setInstallDone(true)
+  }
+
+  function handleFinish() {
+    onOpenChange(false)
+    router.push('/agents-admin')
+  }
+
   const TARGET_LABEL: Record<TemplateType, string> = {
     agent:            'Agent',
     assistant:        'Agent（聊天助手）',
@@ -331,6 +374,76 @@ function UseTemplateDialog({
     'text-generation':'Prompt Skill',
   }
 
+  // ── 依赖安装阶段 ──
+  if (phase === 'deps') {
+    const doneCount  = deps.filter(d => d.status === 'done').length
+    const errorCount = deps.filter(d => d.status === 'error').length
+
+    return (
+      <Dialog open={open} onOpenChange={open => { if (!open && !installing) handleFinish() }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-primary" />
+              检测到依赖工具
+            </DialogTitle>
+            <DialogDescription>
+              此模板需要以下工具才能发挥完整能力，点击「一键安装」自动创建到工具库。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2">
+            {deps.map(dep => (
+              <div key={dep.key} className="flex items-center gap-3 bg-muted/40 rounded-xl px-4 py-3">
+                <span className="text-xl shrink-0">{dep.icon ?? '🔧'}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">{dep.name}</p>
+                  {dep.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{dep.description}</p>
+                  )}
+                </div>
+                <span className="shrink-0">
+                  {dep.status === 'pending'    && <span className="w-5 h-5 rounded-full border-2 border-muted-foreground/30 inline-block" />}
+                  {dep.status === 'installing' && <Loader2 className="h-5 w-5 text-primary animate-spin" />}
+                  {dep.status === 'done'       && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                  {dep.status === 'error'      && <AlertCircle className="h-5 w-5 text-destructive" />}
+                </span>
+              </div>
+            ))}
+
+            {installDone && (
+              <p className="text-xs text-center text-muted-foreground pt-1">
+                {errorCount === 0
+                  ? `✓ 已成功安装 ${doneCount} 个工具，可在工具库中查看和配置`
+                  : `已安装 ${doneCount} 个，${errorCount} 个失败（可能权限不足）`}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            {!installDone ? (
+              <>
+                <Button variant="outline" onClick={handleFinish} disabled={installing}>
+                  跳过
+                </Button>
+                <Button onClick={handleInstall} disabled={installing}>
+                  {installing
+                    ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />安装中…</>
+                    : '一键安装'}
+                </Button>
+              </>
+            ) : (
+              <Button onClick={handleFinish} className="w-full">
+                确认，返回 Agent 管理
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  // ── 输入阶段 ──
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -355,11 +468,16 @@ function UseTemplateDialog({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
-          {/* chatflow/workflow 框架模板提示 */}
           {template && (template.type === 'chatflow' || template.type === 'workflow') && (
             <div className="flex gap-2 items-start bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400">
               <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <span>此为框架模板，仅预置名称与分类。创建后进入空白画布，节点图需手动搭建。</span>
+            </div>
+          )}
+          {requiredSkills.length > 0 && (
+            <div className="flex gap-2 items-start bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2.5 text-xs text-blue-700 dark:text-blue-400">
+              <Wrench className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>此模板依赖 {requiredSkills.length} 个工具，创建后将引导你一键安装。</span>
             </div>
           )}
           <div className="space-y-1.5">
