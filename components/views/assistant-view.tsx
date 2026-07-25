@@ -2,35 +2,29 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { apiFetch } from '@/lib/api/client';
 import {
-  Send, Bot, User, Sparkles, Plus, Zap, FileText, Image as ImageIcon,
-  Loader2, Trash2, MessageSquare, X,
+  Send, Bot, Sparkles, SquarePen, Zap, FileText, Image as ImageIcon,
+  Loader2, Trash2, MessageSquare, X, Paperclip, AtSign, ChevronRight,
 } from 'lucide-react';
 
 type Citation = { documentId: string; filename: string; snippet: string; similarity: number };
-// 消息附件（#55）：仅用于气泡展示（doc 只留文件名，image 可缩略）
 type MsgAttachment = { kind: 'doc' | 'image'; filename: string; dataUrl?: string };
 type Msg = { id: string; role: 'user' | 'assistant' | 'system'; content: string; citations: Citation[]; attachments?: MsgAttachment[] };
 type Conversation = { id: string; title: string; updatedAt: string };
 type Res = { id: string; name: string };
-// 待发送附件（#55 · Block B/C）：doc 携带解析文本；image 携带 base64 data URL
 type ClientAttachment =
   | { kind: 'doc'; filename: string; text: string }
   | { kind: 'image'; filename: string; dataUrl: string };
 
-const MAX_ATTACHMENTS = 8; // 单条最多附件数
-const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 图片原图上限 20MB（前端压缩后再上传）
-const IMG_MAX_EDGE = 1600; // 压缩后最大边（qwen-vl 足够，兼顾清晰与体积）
-const IMG_QUALITY = 0.82; // JPEG 质量
+const MAX_ATTACHMENTS = 8;
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
+const IMG_MAX_EDGE = 1600;
+const IMG_QUALITY = 0.82;
 
-// 前端图片压缩：解码 → 缩到最大边 ≤ IMG_MAX_EDGE → 转 JPEG，显著降低 base64 体积与 VL 调用开销。
-// 解码失败（非位图等）回退原图 base64。
 async function compressImage(file: File): Promise<string> {
   const rawDataUrl = () =>
     new Promise<string>((resolve, reject) => {
@@ -45,8 +39,7 @@ async function compressImage(file: File): Promise<string> {
     const w = Math.round(bitmap.width * scale);
     const h = Math.round(bitmap.height * scale);
     const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) { bitmap.close?.(); return await rawDataUrl(); }
     ctx.drawImage(bitmap, 0, 0, w, h);
@@ -57,6 +50,13 @@ async function compressImage(file: File): Promise<string> {
   }
 }
 
+const SUGGESTIONS = [
+  { icon: '📝', text: '总结一份文档的要点', sub: '上传 PDF / Word / PPT' },
+  { icon: '🔍', text: '搜索知识库中的内容', sub: '带来源引用的精准回答' },
+  { icon: '🤖', text: '让 Agent 帮我处理事务', sub: '输入 @AgentName 指定' },
+  { icon: '⚡', text: '运行一个 Skill 工具', sub: '输入 /SkillName 调用' },
+];
+
 export function AssistantView() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -66,34 +66,37 @@ export function AssistantView() {
   const [streamText, setStreamText] = useState('');
   const [streamCitations, setStreamCitations] = useState<Citation[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
-  // 切片3：@Agent / /Skill 资源调取
+
   const [resources, setResources] = useState<{ agents: Res[]; skills: Res[]; knowledgeBases: (Res & { documentCount?: number })[] }>({ agents: [], skills: [], knowledgeBases: [] });
   const [pickedAgent, setPickedAgent] = useState<Res | null>(null);
   const [pickedSkill, setPickedSkill] = useState<Res | null>(null);
-  // #55 Block A：/skill、@agent 引用列表（插入文本 token）
   const [skillList, setSkillList] = useState<Res[]>([]);
   const [agentList, setAgentList] = useState<Res[]>([]);
-  // #55 Block B/C：待发送附件 + 上传态 + 文件选择器
   const [attachments, setAttachments] = useState<ClientAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const docInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    apiFetch<typeof resources>('/api/assistant/resources')
-      .then(setResources)
-      .catch(() => {});
+    apiFetch<typeof resources>('/api/assistant/resources').then(setResources).catch(() => {});
     apiFetch<{ skills: Res[] }>('/api/skills').then((r) => setSkillList(r.skills ?? [])).catch(() => {});
     apiFetch<{ agents: Res[] }>('/api/agents').then((r) => setAgentList(r.agents ?? [])).catch(() => {});
   }, []);
 
-  // 在输入框末尾插入 /{name} 或 @{name} 引用 token（Block A）
-  function insertToken(token: string) {
-    setInput((v) => `${v}${v && !v.endsWith(' ') ? ' ' : ''}${token} `);
+  function autoResize() {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
   }
 
-  // 选文档 → 上传 /api/assistant/attachments 解析为文本（Block B）
+  function insertToken(token: string) {
+    setInput((v) => `${v}${v && !v.endsWith(' ') ? ' ' : ''}${token} `);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }
+
   async function onPickDocs(files: FileList | null) {
     if (!files || files.length === 0) return;
     const room = MAX_ATTACHMENTS - attachments.length;
@@ -115,7 +118,6 @@ export function AssistantView() {
     }
   }
 
-  // 选图片 → 前端读为 base64 data URL（Block C）
   async function onPickImages(files: FileList | null) {
     if (!files || files.length === 0) return;
     const room = MAX_ATTACHMENTS - attachments.length;
@@ -134,7 +136,6 @@ export function AssistantView() {
     setAttachments((a) => a.filter((_, idx) => idx !== i));
   }
 
-  // 输入以 @ 或 / 开头时显示资源选择器
   const pickerMode: 'agent' | 'skill' | null =
     !pickedAgent && !pickedSkill && input.startsWith('@') ? 'agent'
       : !pickedAgent && !pickedSkill && input.startsWith('/') ? 'skill'
@@ -174,6 +175,7 @@ export function AssistantView() {
     setConversations((c) => [r.conversation, ...c]);
     setActiveId(r.conversation.id);
     setMessages([]);
+    setTimeout(() => textareaRef.current?.focus(), 100);
   }
 
   async function deleteConversation(id: string) {
@@ -195,12 +197,12 @@ export function AssistantView() {
     let text = input.trim();
     const atts = attachments;
     if ((!text && atts.length === 0) || sending) return;
-    // 仅附件无提问：给个默认指令，后端要求 content 非空
     if (!text) text = atts.some((a) => a.kind === 'image') ? '请分析这些图片' : '请总结这些文档';
     const agent = pickedAgent, skill = pickedSkill;
     setInput('');
     setAttachments([]);
     setSending(true); setStreamText(''); setStreamCitations([]);
+    setTimeout(() => { if (textareaRef.current) textareaRef.current.style.height = 'auto'; }, 0);
     const convId = await ensureConversation();
     const prefix = agent ? `@${agent.name} ` : skill ? `/${skill.name} ` : '';
     const msgAtts: MsgAttachment[] = atts.map((a) => ({ kind: a.kind, filename: a.filename, dataUrl: a.kind === 'image' ? a.dataUrl : undefined }));
@@ -233,7 +235,6 @@ export function AssistantView() {
       }
       setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: full, citations: cites }]);
       loadConversations();
-      // 切片2：识别为创建意图 → 整页跳转创建页并预填描述
       if (redirect) {
         setTimeout(() => router.push(`${redirect!.target}?assistant=${encodeURIComponent(redirect!.description)}`), 700);
       }
@@ -246,86 +247,119 @@ export function AssistantView() {
   }
 
   const hasChat = messages.length > 0 || sending;
+  const canSend = (input.trim().length > 0 || attachments.length > 0) && !sending;
 
   return (
-    <div className="flex h-full gap-6">
-      {/* 会话历史 */}
-      <div className="w-72 flex flex-col gap-4 min-h-0">
-        <Button className="w-full gap-2" onClick={newConversation}>
-          <Plus className="h-4 w-4" />新建对话
-        </Button>
-        <div className="space-y-2 overflow-y-auto min-h-0">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-2">历史会话</p>
-          {conversations.length === 0 && <p className="px-2 text-xs text-muted-foreground">暂无会话，直接提问即可</p>}
+    <div className="flex h-full">
+
+      {/* ── 左侧会话列表 ─────────────────────────────── */}
+      <aside className="w-60 flex flex-col border-r border-border/40 bg-sidebar/20 shrink-0">
+        <div className="flex items-center justify-between px-3 py-3.5 border-b border-border/40">
+          <span className="text-[13px] font-medium text-foreground/80 flex items-center gap-2">
+            <MessageSquare className="h-3.5 w-3.5 text-primary" />
+            个人助理
+          </span>
+          <button
+            onClick={newConversation}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            title="新建对话"
+          >
+            <SquarePen className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+          {conversations.length === 0 && (
+            <p className="px-3 py-6 text-xs text-muted-foreground text-center">暂无历史对话</p>
+          )}
           {conversations.map((conv) => (
             <div
               key={conv.id}
-              className={`group p-3 rounded-lg cursor-pointer transition-colors flex items-start gap-2 ${
-                activeId === conv.id ? 'bg-primary/10 border border-primary/20' : 'bg-card hover:bg-muted/50'
-              }`}
               onClick={() => setActiveId(conv.id)}
+              className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${
+                activeId === conv.id
+                  ? 'bg-primary/10 text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+              }`}
             >
-              <MessageSquare className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-              <span className="text-sm text-foreground truncate flex-1">{conv.title}</span>
+              <span className="flex-1 truncate text-[13px]">{conv.title || '新对话'}</span>
               <button
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
                 onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                aria-label="删除会话"
+                className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded hover:text-destructive transition-all"
+                aria-label="删除"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="h-3 w-3" />
               </button>
             </div>
           ))}
         </div>
-      </div>
+      </aside>
 
-      {/* 主对话区 */}
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex items-center gap-3 pb-4 border-b border-border">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-            <Bot className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h2 className="font-medium text-foreground">个人助理</h2>
-            <p className="text-xs text-muted-foreground">基于企业知识库的 AI 助理</p>
-          </div>
-        </div>
+      {/* ── 主对话区 ─────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto py-6 space-y-6">
-          {!hasChat && (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center space-y-3">
-                <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                  <Sparkles className="h-8 w-8 text-primary" />
-                </div>
-                <h2 className="text-xl font-semibold text-foreground">你好！我是你的 AI 助理</h2>
-                <p className="text-muted-foreground">可就企业知识库内容提问，回答会带来源引用</p>
+        {/* 消息滚动区 */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          {!hasChat ? (
+            /* 欢迎屏 */
+            <div className="h-full flex flex-col items-center justify-center px-6 pb-12">
+              <div className="w-16 h-16 mb-5 rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-accent/20 flex items-center justify-center ring-1 ring-border/30 shadow-sm">
+                <Sparkles className="h-8 w-8 text-primary" />
+              </div>
+              <h1 className="text-[22px] font-semibold text-foreground mb-2 tracking-tight">
+                你好！我是你的 AI 助理
+              </h1>
+              <p className="text-sm text-muted-foreground mb-10 text-center max-w-sm leading-relaxed">
+                可就企业知识库提问、调用 Agent 处理事务、运行 Skill 工具，回答会带来源引用
+              </p>
+              <div className="grid grid-cols-2 gap-2.5 w-full max-w-md">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s.text}
+                    onClick={() => { setInput(s.text); setTimeout(() => textareaRef.current?.focus(), 0); }}
+                    className="group text-left p-3.5 rounded-xl border border-border/60 bg-card/50 hover:bg-card hover:border-primary/30 hover:shadow-sm transition-all"
+                  >
+                    <div className="text-lg mb-1">{s.icon}</div>
+                    <div className="text-[13px] font-medium text-foreground/90 group-hover:text-primary transition-colors line-clamp-1 leading-snug">{s.text}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{s.sub}</div>
+                  </button>
+                ))}
               </div>
             </div>
-          )}
-
-          {messages.map((msg) => (
-            <MessageBubble key={msg.id} role={msg.role} content={msg.content} citations={msg.citations} attachments={msg.attachments} />
-          ))}
-
-          {sending && (
-            <MessageBubble role="assistant" content={streamText} citations={streamCitations} streaming />
+          ) : (
+            <div className="max-w-2xl mx-auto w-full px-4 py-6 space-y-6">
+              {messages.map((msg) => (
+                <MessageBubble
+                  key={msg.id}
+                  role={msg.role}
+                  content={msg.content}
+                  citations={msg.citations}
+                  attachments={msg.attachments}
+                />
+              ))}
+              {sending && (
+                <MessageBubble role="assistant" content={streamText} citations={streamCitations} streaming />
+              )}
+            </div>
           )}
         </div>
 
-        {/* 输入区（#61：整体上抬，加下内边距不再贴底）*/}
-        <div className="relative pt-4 pb-6 border-t border-border space-y-3">
-          {/* @Agent / /Skill 选择器（切片3）*/}
+        {/* ── 输入区 ───────────────────────────────────── */}
+        <div className="px-4 pb-4 pt-1.5 max-w-2xl mx-auto w-full">
+          {/* @Agent / /Skill 浮层选择器 */}
           {pickerMode && pickerItems.length > 0 && (
-            <div className="absolute bottom-full left-0 mb-1 w-80 max-h-56 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg z-20 p-1">
-              <p className="px-2 py-1 text-[11px] text-muted-foreground">{pickerMode === 'agent' ? '@ 选择 Agent（本条由其回答）' : '/ 选择 Skill（触发试跑）'}</p>
+            <div className="mb-2 rounded-xl border border-border bg-popover shadow-lg p-1 max-h-48 overflow-y-auto">
+              <p className="px-3 py-1 text-[11px] text-muted-foreground">
+                {pickerMode === 'agent' ? '@ 指定 Agent 回答' : '/ 调用 Skill'}
+              </p>
               {pickerItems.map((it) => (
                 <button
                   key={it.id}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm text-foreground hover:bg-muted"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] text-foreground hover:bg-muted transition-colors"
                   onClick={() => {
                     if (pickerMode === 'agent') setPickedAgent(it); else setPickedSkill(it);
                     setInput('');
+                    setTimeout(() => textareaRef.current?.focus(), 0);
                   }}
                 >
                   {pickerMode === 'agent' ? <Bot className="h-4 w-4 text-primary" /> : <Zap className="h-4 w-4 text-primary" />}
@@ -334,66 +368,124 @@ export function AssistantView() {
               ))}
             </div>
           )}
-          {/* 隐藏文件选择器 */}
-          <input ref={docInputRef} type="file" multiple accept=".doc,.docx,.pdf,.ppt,.pptx,.xls,.xlsx,.txt,.md" className="hidden"
-            onChange={(e) => onPickDocs(e.target.files)} />
-          <input ref={imgInputRef} type="file" multiple accept="image/*" className="hidden"
-            onChange={(e) => onPickImages(e.target.files)} />
-          {/* 快捷动作（#55 Block A）：总结文档 / 分析图片 / /skill / @agent */}
-          <div className="flex gap-2 items-center flex-wrap">
-            <Button variant="outline" size="sm" className="gap-2" disabled={uploading || attachments.length >= MAX_ATTACHMENTS}
-              onClick={() => docInputRef.current?.click()}>
-              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}📄 总结文档
-            </Button>
-            <Button variant="outline" size="sm" className="gap-2" disabled={attachments.length >= MAX_ATTACHMENTS}
-              onClick={() => imgInputRef.current?.click()}>
-              <ImageIcon className="h-4 w-4" />🖼 分析图片
-            </Button>
-            <RefPicker kind="skill" items={skillList} onInsert={insertToken} />
-            <RefPicker kind="agent" items={agentList} onInsert={insertToken} />
-            <span className="ml-auto text-xs text-muted-foreground">@ 调 Agent，/ 调 Skill</span>
-          </div>
-          {/* 待发送附件 chips（#55 Block B/C）*/}
-          {attachments.length > 0 && (
-            <div className="flex gap-2 flex-wrap">
-              {attachments.map((a, i) => (
-                <Badge key={`${a.filename}-${i}`} variant="secondary" className="gap-1 max-w-[16rem]">
-                  {a.kind === 'image' ? <ImageIcon className="h-3 w-3 shrink-0" /> : <FileText className="h-3 w-3 shrink-0" />}
-                  <span className="truncate">{a.filename}</span>
-                  <button onClick={() => removeAttachment(i)} aria-label="移除附件" className="ml-0.5 shrink-0"><X className="h-3 w-3" /></button>
-                </Badge>
-              ))}
-            </div>
-          )}
-          {(pickedAgent || pickedSkill) && (
-            <div>
-              <Badge variant="secondary" className="gap-1">
-                {pickedAgent ? <><Bot className="h-3 w-3" />@{pickedAgent.name}</> : <><Zap className="h-3 w-3" />/{pickedSkill!.name}</>}
-                <button onClick={() => { setPickedAgent(null); setPickedSkill(null); }} aria-label="取消" className="ml-1">×</button>
-              </Badge>
-            </div>
-          )}
-          <div className="flex items-end gap-3">
-            <Input
+
+          {/* 输入框主体 */}
+          <div className="rounded-2xl border border-border bg-card shadow-sm focus-within:border-primary/40 focus-within:shadow-md transition-all">
+
+            {/* 附件 + 已选引用 chips */}
+            {(attachments.length > 0 || pickedAgent || pickedSkill) && (
+              <div className="px-3.5 pt-3 pb-1 flex flex-wrap gap-1.5">
+                {(pickedAgent || pickedSkill) && (
+                  <Badge variant="secondary" className="gap-1.5 pr-1 text-xs font-normal">
+                    {pickedAgent
+                      ? <><Bot className="h-3 w-3 text-primary" />@{pickedAgent.name}</>
+                      : <><Zap className="h-3 w-3 text-primary" />/{pickedSkill!.name}</>
+                    }
+                    <button
+                      onClick={() => { setPickedAgent(null); setPickedSkill(null); }}
+                      className="ml-0.5 rounded p-0.5 hover:bg-muted/60"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </Badge>
+                )}
+                {attachments.map((a, i) => (
+                  <Badge key={`${a.filename}-${i}`} variant="secondary" className="gap-1 pr-1 max-w-[13rem] text-xs font-normal">
+                    {a.kind === 'image' ? <ImageIcon className="h-3 w-3 shrink-0" /> : <FileText className="h-3 w-3 shrink-0" />}
+                    <span className="truncate">{a.filename}</span>
+                    <button onClick={() => removeAttachment(i)} className="ml-0.5 rounded p-0.5 hover:bg-muted/60 shrink-0">
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            {/* Textarea */}
+            <textarea
+              ref={textareaRef}
               aria-label="输入消息"
-              placeholder={pickedAgent ? `向 @${pickedAgent.name} 提问…` : pickedSkill ? `给 /${pickedSkill.name} 的输入…` : '输入你的问题；@ 调 Agent，/ 调 Skill…'}
+              placeholder={
+                pickedAgent ? `向 @${pickedAgent.name} 提问…`
+                  : pickedSkill ? `给 /${pickedSkill.name} 的指令…`
+                    : '输入问题；@ 指定 Agent，/ 调用 Skill，Shift+Enter 换行'
+              }
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !pickerMode) { e.preventDefault(); send(); } }}
+              rows={1}
+              onChange={(e) => { setInput(e.target.value); autoResize(); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !pickerMode) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
               disabled={sending}
-              className="py-6 bg-card border-border"
+              className="w-full resize-none bg-transparent px-3.5 pt-3.5 pb-2 text-sm text-foreground placeholder:text-muted-foreground/70 outline-none min-h-[52px]"
+              style={{ maxHeight: '200px', overflowY: 'auto' }}
             />
-            <Button size="icon" aria-label="发送" className="h-12 w-12 rounded-xl" onClick={send} disabled={sending || (!input.trim() && attachments.length === 0)}>
-              {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-            </Button>
+
+            {/* 底部工具栏 */}
+            <div className="flex items-center px-2.5 pb-2.5 gap-0.5">
+              {/* 隐藏 input */}
+              <input ref={docInputRef} type="file" multiple
+                accept=".doc,.docx,.pdf,.ppt,.pptx,.xls,.xlsx,.txt,.md" className="hidden"
+                onChange={(e) => onPickDocs(e.target.files)} />
+              <input ref={imgInputRef} type="file" multiple accept="image/*" className="hidden"
+                onChange={(e) => onPickImages(e.target.files)} />
+
+              <ToolBtn title="上传文档" disabled={uploading || attachments.length >= MAX_ATTACHMENTS} onClick={() => docInputRef.current?.click()}>
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+              </ToolBtn>
+              <ToolBtn title="上传图片" disabled={attachments.length >= MAX_ATTACHMENTS} onClick={() => imgInputRef.current?.click()}>
+                <ImageIcon className="h-4 w-4" />
+              </ToolBtn>
+              <RefPicker kind="agent" items={agentList} onInsert={insertToken} />
+              <RefPicker kind="skill" items={skillList} onInsert={insertToken} />
+
+              <div className="flex-1" />
+
+              {/* 发送 */}
+              <button
+                onClick={send}
+                disabled={!canSend}
+                aria-label="发送"
+                className={`flex items-center justify-center w-8 h-8 rounded-xl transition-all ${
+                  canSend
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
+                    : 'bg-muted text-muted-foreground/40 cursor-not-allowed'
+                }`}
+              >
+                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              </button>
+            </div>
           </div>
+
+          <p className="text-center text-[11px] text-muted-foreground/50 mt-2">
+            由通义千问驱动 · 回答仅供参考
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-// #55 Block A：/skill、@agent 引用选择器 —— Popover + Command 搜索，选中插入文本 token
+// ── 工具栏图标按钮 ────────────────────────────────────────────
+function ToolBtn({ children, title, disabled, onClick }: {
+  children: React.ReactNode; title: string; disabled?: boolean; onClick?: () => void;
+}) {
+  return (
+    <button
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── @Agent / /Skill Popover 选择器 ───────────────────────────
 function RefPicker({ kind, items, onInsert }: {
   kind: 'agent' | 'skill'; items: Res[]; onInsert: (token: string) => void;
 }) {
@@ -403,20 +495,30 @@ function RefPicker({ kind, items, onInsert }: {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2" data-testid={`ref-${kind}`}>
-          {isAgent ? <Bot className="h-4 w-4" /> : <Zap className="h-4 w-4" />}{isAgent ? '@agent' : '/skill'}
-        </Button>
+        <button
+          data-testid={`ref-${kind}`}
+          title={isAgent ? '指定 Agent' : '调用 Skill'}
+          className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 transition-colors"
+        >
+          {isAgent ? <AtSign className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+        </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-0" align="start">
+      <PopoverContent className="w-60 p-0" align="start" side="top">
         <Command>
           <CommandInput placeholder={isAgent ? '搜索 Agent…' : '搜索 Skill…'} />
           <CommandList>
-            <CommandEmpty>无匹配</CommandEmpty>
-            <CommandGroup heading={isAgent ? '插入 @Agent 引用' : '插入 /Skill 引用'}>
+            <CommandEmpty>无匹配项</CommandEmpty>
+            <CommandGroup heading={isAgent ? '选择 Agent' : '选择 Skill'}>
               {items.map((it) => (
-                <CommandItem key={it.id} value={it.name} onSelect={() => { onInsert(`${prefix}${it.name}`); setOpen(false); }}>
+                <CommandItem
+                  key={it.id}
+                  value={it.name}
+                  onSelect={() => { onInsert(`${prefix}${it.name}`); setOpen(false); }}
+                  className="gap-2"
+                >
                   {isAgent ? <Bot className="h-4 w-4 text-primary" /> : <Zap className="h-4 w-4 text-primary" />}
                   {it.name}
+                  <ChevronRight className="h-3 w-3 ml-auto text-muted-foreground" />
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -427,46 +529,63 @@ function RefPicker({ kind, items, onInsert }: {
   );
 }
 
+// ── 消息气泡 ─────────────────────────────────────────────────
 function MessageBubble({ role, content, citations, streaming, attachments }: {
   role: Msg['role']; content: string; citations: Citation[]; streaming?: boolean; attachments?: MsgAttachment[];
 }) {
   const isUser = role === 'user';
-  return (
-    <div
-      data-testid={isUser ? 'assistant-msg-user' : 'assistant-msg'}
-      className={`flex gap-4 ${isUser ? 'flex-row-reverse' : ''}`}
-    >
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isUser ? 'bg-primary/10' : 'bg-gradient-to-br from-primary/20 to-accent/20'}`}>
-        {isUser ? <User className="h-4 w-4 text-primary" /> : <Bot className="h-4 w-4 text-primary" />}
-      </div>
-      <div className={`max-w-[72%] ${isUser ? 'text-right' : ''}`}>
-        <div className={`p-4 rounded-2xl ${isUser ? 'bg-primary text-primary-foreground rounded-tr-sm' : 'bg-card border border-border rounded-tl-sm'}`}>
-          <p className={`text-sm whitespace-pre-wrap leading-relaxed ${isUser ? 'text-primary-foreground' : 'text-foreground'}`}>
-            {content}{streaming && <span className="inline-block w-1.5 h-4 ml-0.5 align-middle bg-primary animate-pulse" />}
-          </p>
+
+  if (isUser) {
+    return (
+      <div data-testid="assistant-msg-user" className="flex justify-end">
+        <div className="max-w-[82%] space-y-1.5">
           {attachments && attachments.length > 0 && (
-            <div className={`mt-2 flex gap-1.5 flex-wrap ${isUser ? 'justify-end' : ''}`}>
+            <div className="flex gap-1.5 flex-wrap justify-end">
               {attachments.map((a, i) => (
-                <span key={`${a.filename}-${i}`} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] max-w-[12rem] ${isUser ? 'bg-primary-foreground/15' : 'bg-muted'}`}>
+                <span key={`${a.filename}-${i}`} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] bg-muted text-muted-foreground max-w-[12rem]">
                   {a.kind === 'image' ? <ImageIcon className="h-3 w-3 shrink-0" /> : <FileText className="h-3 w-3 shrink-0" />}
                   <span className="truncate">{a.filename}</span>
                 </span>
               ))}
             </div>
           )}
+          <div className="bg-primary text-primary-foreground px-4 py-3 rounded-2xl rounded-br-sm text-sm leading-relaxed whitespace-pre-wrap">
+            {content}
+          </div>
         </div>
-        {!isUser && citations.length > 0 && (
-          <div className="mt-2 space-y-1 text-left">
-            <p className="text-xs text-muted-foreground">引用来源（{citations.length}）</p>
-            {citations.map((c, i) => (
-              <div key={c.documentId + i} className="rounded-lg bg-muted/40 p-2 text-xs">
-                <div className="flex items-center gap-1.5 text-foreground">
-                  <FileText className="h-3 w-3 text-muted-foreground" />
-                  <span className="font-medium truncate">{c.filename}</span>
-                  <Badge variant="secondary" className="ml-auto text-[10px]">{Math.round(c.similarity * 100)}%</Badge>
+      </div>
+    );
+  }
+
+  // Assistant 消息 —— 无气泡框，更接近 Claude 风格
+  return (
+    <div data-testid="assistant-msg" className="flex gap-3">
+      <div className="shrink-0 w-7 h-7 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mt-0.5 ring-1 ring-border/30">
+        <Bot className="h-3.5 w-3.5 text-primary" />
+      </div>
+
+      <div className="flex-1 min-w-0 space-y-3">
+        <div className="text-sm leading-7 text-foreground whitespace-pre-wrap">
+          {content || (streaming && '')}
+          {streaming && (
+            <span className="inline-block w-0.5 h-4 ml-0.5 align-middle bg-primary/70 animate-pulse rounded-full" />
+          )}
+        </div>
+
+        {!streaming && citations.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[11px] text-muted-foreground">引用来源 · {citations.length} 条</p>
+            <div className="flex flex-wrap gap-1.5">
+              {citations.map((c, i) => (
+                <div key={c.documentId + i} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-muted/40 border border-border/40 text-xs max-w-[200px]">
+                  <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="truncate text-foreground/75 font-medium">{c.filename}</span>
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 ml-auto shrink-0 border-border/50">
+                    {Math.round(c.similarity * 100)}%
+                  </Badge>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>
