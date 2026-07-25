@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Search, X, Bot, MessageSquare, Workflow, FileText, Cpu } from 'lucide-react'
+import { Search, X, Bot, MessageSquare, Workflow, FileText, Cpu, Info } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -220,16 +220,23 @@ function TemplateCard({
       onClick={onDetail}
     >
       {/* 图标 + 类型徽标 */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-1">
         <div
-          className="h-10 w-10 rounded-lg flex items-center justify-center text-xl"
+          className="h-10 w-10 rounded-lg flex items-center justify-center text-xl shrink-0"
           style={{ backgroundColor: tpl.iconBackground }}
         >
           {tpl.icon}
         </div>
-        <Badge className={cn('text-[11px] font-medium', TYPE_COLORS[tpl.type])}>
-          {TYPE_LABELS[tpl.type]}
-        </Badge>
+        <div className="flex flex-col items-end gap-1">
+          <Badge className={cn('text-[11px] font-medium', TYPE_COLORS[tpl.type])}>
+            {TYPE_LABELS[tpl.type]}
+          </Badge>
+          {(tpl.type === 'chatflow' || tpl.type === 'workflow') && (
+            <Badge variant="outline" className="text-[10px] border-amber-400/60 text-amber-600 dark:text-amber-400">
+              框架
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* 名称 + 描述 */}
@@ -274,13 +281,14 @@ function UseTemplateDialog({
     setError(null)
     try {
       const t = template.type
+      const dsl = template.dsl as Record<string, unknown>
       if (t === 'agent' || t === 'assistant') {
-        const dsl = template.dsl as Record<string, unknown>
         const config: Record<string, unknown> = {}
-        if (dsl.systemPrompt)   config.systemPrompt   = dsl.systemPrompt
-        if (dsl.model)          config.model          = dsl.model
-        if (dsl.temperature)    config.temperature    = dsl.temperature
-        if (dsl.requiredSkills) config.requiredSkills = dsl.requiredSkills
+        if (dsl.systemPrompt)                        config.systemPrompt   = dsl.systemPrompt
+        if (dsl.model)                               config.model          = dsl.model
+        if (dsl.temperature !== undefined)           config.temperature    = dsl.temperature
+        if (dsl.requiredSkills)                      config.requiredSkills = dsl.requiredSkills
+        if (Array.isArray(dsl.variables))            config.variables      = dsl.variables
         const { agent } = await apiFetch<{ agent: { id: string } }>('/api/agents', {
           method: 'POST',
           body: JSON.stringify({ name: name.trim(), description: template.description, config }),
@@ -295,10 +303,15 @@ function UseTemplateDialog({
         onOpenChange(false)
         router.push(`/workflows/${workflow.id}`)
       } else {
-        // text-generation → Prompt Skill
+        // text-generation → Prompt Skill，将 prompt_template/variables/model 写入 config
+        const config: Record<string, unknown> = {}
+        if (dsl.prompt_template)           config.promptTemplate = dsl.prompt_template
+        if (Array.isArray(dsl.variables))  config.variables      = dsl.variables
+        if (dsl.model)                     config.model          = dsl.model
+        if (dsl.temperature !== undefined) config.temperature    = dsl.temperature
         await apiFetch('/api/skills', {
           method: 'POST',
-          body: JSON.stringify({ name: name.trim(), type: 'Prompt', description: template.description }),
+          body: JSON.stringify({ name: name.trim(), type: 'Prompt', description: template.description, config }),
         })
         onOpenChange(false)
         router.push('/my-skills')
@@ -342,6 +355,13 @@ function UseTemplateDialog({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
+          {/* chatflow/workflow 框架模板提示 */}
+          {template && (template.type === 'chatflow' || template.type === 'workflow') && (
+            <div className="flex gap-2 items-start bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400">
+              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>此为框架模板，仅预置名称与分类。创建后进入空白画布，节点图需手动搭建。</span>
+            </div>
+          )}
           <div className="space-y-1.5">
             <label className="text-sm font-medium">名称</label>
             <Input
