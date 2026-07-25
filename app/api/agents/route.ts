@@ -31,6 +31,10 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createClient()
+  const config = (body?.config && typeof body.config === 'object' && !Array.isArray(body.config))
+    ? body.config as Record<string, unknown>
+    : undefined
+
   const { data, error } = await supabase
     .from('agents')
     .insert({
@@ -40,6 +44,7 @@ export async function POST(request: Request) {
       description: typeof body?.description === 'string' ? body.description : null,
       department: typeof body?.department === 'string' ? body.department : null,
       status: 'draft',
+      ...(config ? { config } : {}),
     })
     .select('id, name, status')
     .single()

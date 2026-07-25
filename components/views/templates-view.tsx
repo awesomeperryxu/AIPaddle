@@ -275,9 +275,14 @@ function UseTemplateDialog({
     try {
       const t = template.type
       if (t === 'agent' || t === 'assistant') {
+        const dsl = template.dsl as Record<string, unknown>
+        const config: Record<string, unknown> = {}
+        if (dsl.systemPrompt)  config.systemPrompt  = dsl.systemPrompt
+        if (dsl.model)         config.model         = dsl.model
+        if (dsl.temperature)   config.temperature   = dsl.temperature
         const { agent } = await apiFetch<{ agent: { id: string } }>('/api/agents', {
           method: 'POST',
-          body: JSON.stringify({ name: name.trim(), description: template.description }),
+          body: JSON.stringify({ name: name.trim(), description: template.description, config }),
         })
         onOpenChange(false)
         router.push(`/agents-admin/${agent.id}`)
