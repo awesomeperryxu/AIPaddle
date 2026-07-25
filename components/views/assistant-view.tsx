@@ -72,18 +72,10 @@ export function AssistantView() {
   const [resources, setResources] = useState<{ agents: Res[]; skills: Res[]; knowledgeBases: (Res & { documentCount?: number })[] }>({ agents: [], skills: [], knowledgeBases: [] });
   const [pickedAgent, setPickedAgent] = useState<Res | null>(null);
   const [pickedSkill, setPickedSkill] = useState<Res | null>(null);
-  const [skillList, setSkillList] = useState<Res[]>([]);
-  const [agentList, setAgentList] = useState<Res[]>([]);
   const [attachments, setAttachments] = useState<ClientAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const docInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    apiFetch<typeof resources>('/api/assistant/resources').then(setResources).catch(() => {});
-    apiFetch<{ skills: Res[] }>('/api/skills').then((r) => setSkillList(r.skills ?? [])).catch(() => {});
-    apiFetch<{ agents: Res[] }>('/api/agents').then((r) => setAgentList(r.agents ?? [])).catch(() => {});
-  }, []);
 
   function autoResize() {
     const el = textareaRef.current;
@@ -155,21 +147,25 @@ export function AssistantView() {
     } catch { return []; }
   }, []);
 
-  // 初次加载：一次请求同时取会话列表 + 最新会话消息，消除串行瀑布
-  // preloadedId 记录已随会话列表一起预加载消息的会话 id，避免 activeId 变化时重复请求
+  // 初次加载：单一 /api/assistant/init 请求同时取会话、资源、第一条会话消息
+  // 消除原来 4 个并行客户端请求，改为服务端一次并行聚合后返回
   const preloadedId = useRef<string | null>(null);
   useEffect(() => {
-    apiFetch<{ conversations: Conversation[]; firstMessages?: Msg[]; firstConversationId?: string }>(
-      '/api/assistant/conversations?withMessages=true'
-    ).then((r) => {
+    type InitData = {
+      conversations: Conversation[];
+      firstConversationId: string | null;
+      firstMessages: Msg[];
+      resources: { agents: Res[]; skills: Res[]; knowledgeBases: (Res & { documentCount?: number })[] };
+    };
+    apiFetch<InitData>('/api/assistant/init').then((r) => {
       setConversations(r.conversations);
+      setResources(r.resources);
       if (r.firstConversationId) {
         preloadedId.current = r.firstConversationId;
         setActiveId(r.firstConversationId);
         setMessages(r.firstMessages ?? []);
       }
     }).catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 用户手动切换会话时加载消息（跳过已预加载的初始会话）
@@ -454,8 +450,8 @@ export function AssistantView() {
               <ToolBtn title="上传图片" disabled={attachments.length >= MAX_ATTACHMENTS} onClick={() => imgInputRef.current?.click()}>
                 <ImageIcon className="h-4 w-4" />
               </ToolBtn>
-              <RefPicker kind="agent" items={agentList} onInsert={insertToken} />
-              <RefPicker kind="skill" items={skillList} onInsert={insertToken} />
+              <RefPicker kind="agent" items={resources.agents} onInsert={insertToken} />
+              <RefPicker kind="skill" items={resources.skills} onInsert={insertToken} />
 
               <div className="flex-1" />
 
