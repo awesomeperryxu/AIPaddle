@@ -195,6 +195,8 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   // 调试预览
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState('');
+  // 4.1.15：试聊前填入的变量值，随对话上送，服务端替换提示词里的 {{变量名}}
+  const [varValues, setVarValues] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const send = async () => {
     const text = input.trim();
@@ -207,7 +209,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
       await saveNow(); // 先落最新配置，保证预览用当前提示词/模型
       const res = await fetch(`/api/agents/${agent.id}/chat`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: next, variables: varValues }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) { setMessages((m) => [...m, { role: 'assistant', content: `⚠️ ${body?.error?.message ?? '对话失败'}` }]); return; }
@@ -564,6 +566,24 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
         <div className="flex w-[420px] shrink-0 flex-col border-l border-border">
           <div className="border-b border-border px-4 py-3 text-sm font-medium">调试与预览</div>
           <div className="flex-1 overflow-auto p-4 space-y-3">
+            {variables.filter((v) => v.key.trim()).length > 0 && (
+              <div className="rounded-lg border border-border p-3">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">变量（试聊前填入，替换提示词里的 {'{{变量}}'}）</p>
+                <div className="flex flex-col gap-2">
+                  {variables.filter((v) => v.key.trim()).map((v) => (
+                    <div key={v.key} className="flex items-center gap-2">
+                      <span className="w-20 shrink-0 truncate text-xs text-muted-foreground" title={v.label || v.key}>{v.label || v.key}</span>
+                      <Input
+                        className="h-8 flex-1"
+                        value={varValues[v.key] ?? ''}
+                        onChange={(e) => setVarValues((s) => ({ ...s, [v.key]: e.target.value }))}
+                        placeholder={`{{${v.key}}}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {messages.length === 0 && (
               <div className="space-y-3">
                 {openingStatement ? (
