@@ -4,7 +4,7 @@
 // 右侧调试预览（接真实 /chat）。嵌入 dashboard 外壳（非全屏），防抖自动保存 config。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -94,14 +94,9 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   const toggleKb = (id: string) => setBoundKbIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
   const toggleSkill = (id: string) => setBoundSkillIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
 
-  // 依赖检测弹窗：从模板创建时，检查 requiredSkills 是否已在工具库中配置
+  // 依赖检测弹窗：从模板创建时展示，告知用户需在工具库中配置哪些技能
   const requiredSkills: RequiredSkill[] = agent.config.requiredSkills ?? [];
   const [depDialogOpen, setDepDialogOpen] = useState(fromTemplate && requiredSkills.length > 0);
-  // 技能名称匹配（org 内已有的 skill names），依赖 skills 列表加载完成后更新
-  const skillNames = skills.map((s) => s.name.toLowerCase());
-  const getSkillStatus = (req: RequiredSkill): 'installed' | 'missing' => {
-    return skillNames.some((n) => n.includes(req.key.toLowerCase()) || n.includes(req.name.toLowerCase())) ? 'installed' : 'missing';
-  };
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [toast, setToast] = useState('');
@@ -235,30 +230,19 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                 <X className="h-4 w-4" />
               </button>
             </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              以下技能需要在工具库中手动创建，才能让此 Agent 获得完整能力：
+            </p>
             <div className="space-y-2 mb-5">
-              {requiredSkills.map((req) => {
-                const status = getSkillStatus(req);
-                return (
-                  <div key={req.key} className="flex items-center gap-3 bg-muted/40 rounded-xl px-4 py-3">
-                    <span className="text-xl shrink-0">{req.icon ?? '🔧'}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-foreground">{req.name}</div>
-                      {req.description && <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{req.description}</div>}
-                    </div>
-                    <div className="shrink-0">
-                      {status === 'installed' ? (
-                        <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-500/10 rounded-full px-2 py-0.5">
-                          <CheckCircle2 className="h-3 w-3" /> 已配置
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-500/10 rounded-full px-2 py-0.5">
-                          <AlertCircle className="h-3 w-3" /> 未配置
-                        </span>
-                      )}
-                    </div>
+              {requiredSkills.map((req) => (
+                <div key={req.key} className="flex items-center gap-3 bg-muted/40 rounded-xl px-4 py-3">
+                  <span className="text-xl shrink-0">{req.icon ?? '🔧'}</span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-foreground">{req.name}</div>
+                    {req.description && <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{req.description}</div>}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
             <div className="flex gap-2 justify-end">
               <button
