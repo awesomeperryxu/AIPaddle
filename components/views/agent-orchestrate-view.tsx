@@ -4,7 +4,7 @@
 // 右侧调试预览（接真实 /chat）。嵌入 dashboard 外壳（非全屏），防抖自动保存 config。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,6 +22,7 @@ import {
   type AgentVariable,
   type BrainMode,
   type RoutingRule,
+  type RequiredSkill,
 } from '@/lib/agents/config';
 
 type AgentDetail = {
@@ -42,7 +43,7 @@ const STATUS_LABEL: Record<AgentDetail['status'], { text: string; cls: string }>
 
 type ChatMsg = { role: 'user' | 'assistant'; content: string };
 
-export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; canEdit: boolean }) {
+export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: AgentDetail; canEdit: boolean; fromTemplate?: boolean }) {
   const router = useRouter();
 
   // 配置状态（从 agent.config 初始化，缺省用默认）
@@ -92,6 +93,15 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
 
   const toggleKb = (id: string) => setBoundKbIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
   const toggleSkill = (id: string) => setBoundSkillIds((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]);
+
+  // 依赖检测弹窗：从模板创建时，检查 requiredSkills 是否已在工具库中配置
+  const requiredSkills: RequiredSkill[] = agent.config.requiredSkills ?? [];
+  const [depDialogOpen, setDepDialogOpen] = useState(fromTemplate && requiredSkills.length > 0);
+  // 技能名称匹配（org 内已有的 skill names），依赖 skills 列表加载完成后更新
+  const skillNames = skills.map((s) => s.name.toLowerCase());
+  const getSkillStatus = (req: RequiredSkill): 'installed' | 'missing' => {
+    return skillNames.some((n) => n.includes(req.key.toLowerCase()) || n.includes(req.name.toLowerCase())) ? 'installed' : 'missing';
+  };
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [toast, setToast] = useState('');
@@ -212,6 +222,61 @@ export function AgentOrchestrateView({ agent, canEdit }: { agent: AgentDetail; c
 
   return (
     <div className="h-full flex flex-col bg-background">
+      {/* 依赖检测弹窗 */}
+      {depDialogOpen && requiredSkills.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="text-base font-semibold text-foreground">检测到模板工具依赖</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">此模板建议配置以下工具技能以获得完整体验</p>
+              </div>
+              <button onClick={() => setDepDialogOpen(false)} className="text-muted-foreground hover:text-foreground p-1 rounded-md transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-2 mb-5">
+              {requiredSkills.map((req) => {
+                const status = getSkillStatus(req);
+                return (
+                  <div key={req.key} className="flex items-center gap-3 bg-muted/40 rounded-xl px-4 py-3">
+                    <span className="text-xl shrink-0">{req.icon ?? '🔧'}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-foreground">{req.name}</div>
+                      {req.description && <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{req.description}</div>}
+                    </div>
+                    <div className="shrink-0">
+                      {status === 'installed' ? (
+                        <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-500/10 rounded-full px-2 py-0.5">
+                          <CheckCircle2 className="h-3 w-3" /> 已配置
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-500/10 rounded-full px-2 py-0.5">
+                          <AlertCircle className="h-3 w-3" /> 未配置
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setDepDialogOpen(false)}
+                className="text-sm text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg transition-colors"
+              >
+                跳过
+              </button>
+              <button
+                onClick={() => { setDepDialogOpen(false); router.push('/my-skills'); }}
+                className="text-sm bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg transition-colors font-medium"
+              >
+                前往工具库配置 →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 顶栏 */}
       <div className="flex items-center justify-between border-b border-border px-4 h-14 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
