@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { AGENT_CATEGORY_LABEL, type AgentCategory } from '@/lib/agents/taxonomy';
 import { DigitalEmployeeTeamsPanel } from '@/components/views/digital-employee-teams-panel';
+import { GroupChatPanel } from '@/components/views/group-chat-panel';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -800,6 +801,9 @@ export function AgentsAdminView({
 
       {/* 数字员工团队（4.1.19 / ADR-014）：数字员工的扁平组合，成员须为数字员工 */}
       <DigitalEmployeeTeamsPanel digitalEmployees={digitalEmployees} canManage={canCreate} />
+
+      {/* 数字员工群聊（4.1.21 / ADR-015）：多方群聊，人 + 数字员工/团队，@定向 + 主动捕捉 */}
+      <GroupChatPanel digitalEmployees={digitalEmployees} canManage={canCreate} />
     </div>
   );
 }
