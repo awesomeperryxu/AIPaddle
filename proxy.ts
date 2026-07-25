@@ -1,15 +1,16 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const SESSION_MAX_MS = 24 * 60 * 60 * 1000 // 24 小时强制重登
-const COOKIE_MAX_AGE = 24 * 60 * 60 // 会话 cookie 持久 24 小时（跨浏览器关闭保留，与上限一致）
+const SESSION_MAX_MS = 24 * 60 * 60 * 1000 // 24 小时绝对上限，超过强制重登
 const SESSION_START_COOKIE = 'aipaddle_session_start'
 
-// 将 Supabase cookie 设为持久 24 小时（此前为 session cookie·关浏览器即清除；
-// 改为持久后，24 小时内重开浏览器无需重新登录，超过 24h 仍强制重登）。
-function toSessionCookieOptions(options: Record<string, unknown> = {}) {
-  const { expires: _e, ...rest } = options
-  return { ...rest, maxAge: COOKIE_MAX_AGE }
+// 将 Supabase 认证 cookie 设为**会话 cookie**（不设 maxAge/expires）：
+// - 浏览器不关：cookie 一直在，24 小时内免密（token 到期自动刷新），达 24h 上限强制重登；
+// - 浏览器关闭：会话 cookie 被清除 → 下次访问需重新输入密码。
+// 剥离 Supabase 可能自带的 maxAge/expires，确保是纯会话 cookie。
+export function toSessionCookieOptions(options: Record<string, unknown> = {}) {
+  const { expires: _e, maxAge: _m, ...rest } = options
+  return rest
 }
 
 export async function proxy(request: NextRequest) {
@@ -47,12 +48,11 @@ export async function proxy(request: NextRequest) {
     const now = Date.now()
 
     if (!sessionStart) {
-      // 首次请求，打上登录时间戳
+      // 首次请求，打上登录时间戳（会话 cookie，不设 maxAge → 关浏览器即清除）
       supabaseResponse.cookies.set(SESSION_START_COOKIE, String(now), {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
-        maxAge: COOKIE_MAX_AGE, // 持久 24 小时，跨浏览器关闭保留
       })
     } else if (now - parseInt(sessionStart) > SESSION_MAX_MS) {
       // 超过 24 小时，强制退出
