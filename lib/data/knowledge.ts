@@ -84,6 +84,34 @@ export async function createKnowledgeBase(
   }
 }
 
+/** 取单个知识库详情（按 id + org_id）。返回 null 表示不存在或无权限。 */
+export async function getKnowledgeBase(_ctx: RequestContext, kbId: string): Promise<KnowledgeBase | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('knowledge_bases')
+    .select('id,name,description,status,visibility,created_at')
+    .eq('id', kbId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  const r = data as KbRow
+  const { data: docs } = await supabase
+    .from('documents')
+    .select('id')
+    .eq('kb_id', kbId)
+    .is('deleted_at', null)
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description ?? '',
+    status: r.status,
+    visibility: (r.visibility as KbVisibility) ?? 'org',
+    documentCount: (docs as { id: string }[] | null)?.length ?? 0,
+    createdAt: (r.created_at ?? '').slice(0, 10),
+  }
+}
+
 /** 取本租户第一个知识库；没有则建一个默认库（供文档上传挂载）。 */
 export async function ensureDefaultKb(ctx: RequestContext): Promise<string> {
   const supabase = await createClient()

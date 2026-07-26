@@ -3,10 +3,8 @@ import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { listKnowledgeBases } from '@/lib/data/knowledge'
 import { listDocuments } from '@/lib/data/documents'
-import { listAgents } from '@/lib/data/agents'
 import { KnowledgeAdminView } from '@/components/views/knowledge-admin-view'
 
-// 真实库状态 → 原型视图的向量化状态
 const VECTOR_STATUS: Record<string, 'processing' | 'completed' | 'failed'> = {
   active: 'completed',
   indexing: 'processing',
@@ -24,19 +22,14 @@ export default async function Page() {
   const ctx = await getRequestContext()
   if (!ctx) redirect('/login')
 
-  const [kbs, docs, agentList] = await Promise.all([
-    listKnowledgeBases(ctx),
-    listDocuments(ctx),
-    listAgents(ctx),
-  ])
+  const [kbs, docs] = await Promise.all([listKnowledgeBases(ctx), listDocuments(ctx)])
 
-  // 各库存储大小
   const sizeByKb = new Map<string, number>()
   for (const d of docs) {
     sizeByKb.set(d.kbId, (sizeByKb.get(d.kbId) ?? 0) + (d.sizeBytes ?? 0))
   }
 
-  const knowledgeBases = kbs.map((kb) => ({
+  const knowledgeBases = kbs.map(kb => ({
     id: kb.id,
     name: kb.name,
     description: kb.description || '—',
@@ -47,21 +40,12 @@ export default async function Page() {
     size: formatSize(sizeByKb.get(kb.id) ?? 0),
   }))
 
-  const agents = agentList.map((a) => ({ id: a.id, name: a.name }))
-
-  const documents = docs.map((d) => ({
-    id: d.id,
-    filename: d.filename,
-    kbId: d.kbId,
-    status: d.status,
-    createdAt: d.createdAt,
-  }))
+  const documents = docs.map(d => ({ id: d.id, kbId: d.kbId }))
 
   return (
     <KnowledgeAdminView
       knowledgeBases={knowledgeBases}
       documents={documents}
-      agents={agents}
       canManage={can(ctx, 'knowledge:create')}
     />
   )
