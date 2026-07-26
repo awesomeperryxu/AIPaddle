@@ -1,14 +1,26 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
-import { deleteKnowledgeBase, listKbAgents, setKbAgents, setKbVisibility, type KbVisibility } from '@/lib/data/knowledge'
+import {
+  deleteKnowledgeBase,
+  getKbChunkConfig,
+  listKbAgents,
+  setKbAgents,
+  setKbChunkConfig,
+  setKbVisibility,
+  type KbVisibility,
+} from '@/lib/data/knowledge'
+import { normalizeChunkConfig } from '@/lib/kb/ingest'
 
 // GET /api/knowledge-bases/[id] —— 该知识库当前关联的 Agent（4.2.8 权限范围面板用）
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await getRequestContext()
   if (!ctx) return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
   const { id } = await params
-  const agents = await listKbAgents(ctx, id)
-  return Response.json({ agents })
+  const [agents, chunkConfig] = await Promise.all([
+    listKbAgents(ctx, id),
+    getKbChunkConfig(ctx, id),
+  ])
+  return Response.json({ agents, chunkConfig })
 }
 
 // PATCH /api/knowledge-bases/[id] —— 设置可见性 / 覆盖关联 Agent（4.2.8）
@@ -34,6 +46,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return Response.json({ error: { code: 'invalid', message: 'agentIds 非法' } }, { status: 400 })
     }
     await setKbAgents(ctx, id, body.agentIds as string[])
+  }
+
+  // 4.2.7：切块参数（应用层规整后落库）
+  if (body?.chunkConfig !== undefined && body.chunkConfig !== null) {
+    if (typeof body.chunkConfig !== 'object') {
+      return Response.json({ error: { code: 'invalid', message: 'chunkConfig 非法' } }, { status: 400 })
+    }
+    await setKbChunkConfig(ctx, id, normalizeChunkConfig(body.chunkConfig as Record<string, unknown>))
   }
 
   return Response.json({ ok: true })

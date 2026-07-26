@@ -99,6 +99,40 @@ export async function ensureDefaultKb(ctx: RequestContext): Promise<string> {
   return kb.id
 }
 
+// ── 4.2.7 切块参数 ─────────────────────────────────────────
+
+export type KbChunkConfig = { chunkSize: number; chunkOverlap: number; separator: string }
+export const DEFAULT_KB_CHUNK_CONFIG: KbChunkConfig = { chunkSize: 800, chunkOverlap: 100, separator: '\n\n' }
+
+/** 读取知识库切块参数；缺列/异常回落默认（向后兼容旧库）。 */
+export async function getKbChunkConfig(_ctx: RequestContext, kbId: string): Promise<KbChunkConfig> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('knowledge_bases')
+    .select('chunk_config')
+    .eq('id', kbId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const c = (data as { chunk_config?: Partial<KbChunkConfig> | null } | null)?.chunk_config
+  return {
+    chunkSize: Number(c?.chunkSize) || DEFAULT_KB_CHUNK_CONFIG.chunkSize,
+    chunkOverlap: Number.isFinite(Number(c?.chunkOverlap)) ? Number(c?.chunkOverlap) : DEFAULT_KB_CHUNK_CONFIG.chunkOverlap,
+    separator: typeof c?.separator === 'string' ? c.separator : DEFAULT_KB_CHUNK_CONFIG.separator,
+  }
+}
+
+/** 保存知识库切块参数（应用层已规整）。 */
+export async function setKbChunkConfig(_ctx: RequestContext, kbId: string, config: KbChunkConfig): Promise<void> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('knowledge_bases')
+    .update({ chunk_config: config, updated_at: new Date().toISOString() })
+    .eq('id', kbId)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+}
+
 // ── 4.2.8 知识库权限范围 ────────────────────────────────────
 
 /** 设置知识库可见性（org=全员可见 / restricted=仅关联 Agent 可用）。 */
