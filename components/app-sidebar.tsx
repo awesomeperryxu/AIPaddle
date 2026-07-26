@@ -121,8 +121,9 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ activeView, onViewChange, orgName = '—', userName = '用户', userRole = '成员' }: AppSidebarProps) {
+  // 默认全部展开（需求：左侧菜单默认全展开）
   const [openSections, setOpenSections] = useState<string[]>(
-    navSections.filter(s => s.defaultOpen).map(s => s.title)
+    navSections.map(s => s.title)
   );
   // 主题：走 next-themes（持久化 + 与 <html> class 同步）。切换入口在关闭的下拉菜单内，
   // 初始 SSR 不渲染 → 无水合不一致，直接用 resolvedTheme。
@@ -249,7 +250,7 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—', userName
       <div className="p-3 border-t border-sidebar-border">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-sidebar-accent transition-colors">
+            <button data-testid="user-menu" className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-sidebar-accent transition-colors">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary/20 text-primary text-xs font-medium">
                   {userName.slice(0, 1)}
