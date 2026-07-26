@@ -63,7 +63,12 @@ function RegisterInner() {
             </div>
           )}
 
-          <form action={register} noValidate className="space-y-4">
+          <form
+            action={register}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault(); }} /* 回车在输入框内不提交，须点按钮 */
+            noValidate
+            className="space-y-4"
+          >
             <div>
               <label htmlFor="displayName" className="block text-xs text-white/50 mb-1.5">显示名称</label>
               <input

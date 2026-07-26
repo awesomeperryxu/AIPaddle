@@ -163,7 +163,7 @@ export function MySkillsWorkspaceView({
                 placeholder="新 Skill 名称…"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') createSkill(); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }} /* 回车不提交，须点按钮 */
                 disabled={creating}
                 className="h-9"
               />
@@ -378,7 +378,7 @@ function SkillCopilotChat({ onCreated }: { onCreated: (id: string) => Promise<vo
           placeholder="描述需求…"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
           disabled={sending}
           className="h-10"
         />

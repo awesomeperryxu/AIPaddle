@@ -237,7 +237,7 @@ export function VersionHistoryPanel({
                           onChange={(e) => setEditValue(e.target.value)}
                           onBlur={() => handleSaveEdit(version.id)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveEdit(version.id);
+                            if (e.key === 'Enter') e.preventDefault(); /* 回车不提交，失焦/点击外部保存 */
                             if (e.key === 'Escape') setEditingId(null);
                           }}
                           className="h-6 text-xs"
