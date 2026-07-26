@@ -165,3 +165,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* 多窗口标签条：隐藏横向滚动条 */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

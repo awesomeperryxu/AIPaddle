@@ -56,7 +56,12 @@ function LoginForm() {
         </div>
       )}
 
-      <form onSubmit={onSubmit} noValidate className="space-y-4">
+      <form
+        onSubmit={onSubmit}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault(); }} /* 回车在输入框内不提交，须点按钮 */
+        noValidate
+        className="space-y-4"
+      >
         <div>
           <label htmlFor="email" className="block text-xs text-white/50 mb-1.5">邮箱</label>
           <input

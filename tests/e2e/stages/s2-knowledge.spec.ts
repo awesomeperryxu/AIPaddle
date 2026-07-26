@@ -47,6 +47,23 @@ test.describe('S2-UPL 文档上传 @stage2', () => {
     });
   }
 
+  test('S2-CRT-01 创建向导（替 window.prompt）：填名称+切块参数创建知识库', async ({ page }) => {
+    await login(page, 'devA');
+    await page.goto('/knowledge-admin');
+    await page.getByRole('button', { name: '创建知识库' }).click();
+    const dialog = page.getByTestId('kb-create-dialog');
+    await expect(dialog).toBeVisible();
+    // 空名称拦截
+    await page.getByTestId('kb-create-submit').click();
+    await expect(page.getByTestId('kb-create-err')).toBeVisible();
+    const name = `E2E向导库-${Date.now()}`;
+    await page.getByTestId('kb-create-name').fill(name);
+    await page.getByTestId('kb-create-submit').click();
+    // 创建后对话框关闭、新库卡片出现
+    await expect(dialog).toBeHidden();
+    await expect(page.locator(`[data-testid="kb-card"][data-kb-name="${name}"]`)).toBeVisible({ timeout: 15_000 });
+  });
+
   test('S2-UPL-04 删除文档后内容块同步清理', async ({ page }) => {
     // 删除走 window.confirm，自动接受
     page.on('dialog', (d) => d.accept());

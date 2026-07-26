@@ -21,7 +21,7 @@ jobs:
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
-      - name: SSH 部署到服务器
+      - name: SSH 部署到服务器（原子构建切换 · BUG-87 加固）
         env:
           GH_PAT: ${{ secrets.GITHUB_TOKEN }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -44,19 +44,69 @@ jobs:
           [ -f .env.local ] || { echo "FATAL: /opt/aipaddle/.env.local 缺失，终止部署"; exit 1; }
 
           pnpm install --frozen-lockfile
-          rm -rf .next
-          # build 失败则不重启（PM2 继续跑旧版本），部署整体失败
-          pnpm build
+
+          # ── 原子构建切换（BUG-87）──────────────────────────────
+          # 关键：绝不在构建前删/动线上 .next。先构建到临时目录 .next.new，
+          # 校验完整后再原子换成 .next；构建或校验失败则线上 .next 与运行进程纹丝不动。
+          rm -rf .next.new
+          echo ">> 构建到临时目录 .next.new（线上 .next 不受影响）"
+          NEXT_DIST_DIR=.next.new pnpm build
+
+          echo ">> 校验新构建完整性"
+          MISSING=""
+          for f in .next.new/BUILD_ID .next.new/prerender-manifest.json .next.new/required-server-files.json .next.new/routes-manifest.json; do
+            [ -f "$f" ] || MISSING="$MISSING $f"
+          done
+          [ -d .next.new/static ] || MISSING="$MISSING .next.new/static/"
+          if [ -n "$MISSING" ]; then
+            echo "FATAL: 新构建不完整，缺:$MISSING —— 放弃切换，线上保持旧版本"
+            rm -rf .next.new
+            exit 1
+          fi
+
+          echo ">> 原子切换 .next.new → .next（保留旧版 .next.old 供回滚）"
+          rm -rf .next.old
+          mv .next .next.old
+          mv .next.new .next
+          # fork 模式用 restart（reload 在 fork 模式不保证干净重启），强制进程重读新 .next
           pm2 restart aipaddle --update-env
+
+          # 真实健康检查：直连 :3000 请求一个 CSS 静态资源，连续拿到 200 才算健康。
+          # 任何原因（进程崩/静态 500/构建怪异）导致不健康 → 自动回滚到旧构建 .next.old，
+          # 保证线上永远不停在坏状态（BUG-86 裸奔的根治性防线）。
+          CSSFILE=$(ls .next/static/css/*.css 2>/dev/null | head -1 | xargs -r -n1 basename 2>/dev/null || true)
+          PROBE="http://localhost:3000/login"
+          [ -n "$CSSFILE" ] && PROBE="http://localhost:3000/_next/static/css/$CSSFILE"
+          HEALTHY=0; CODE=""
+          for i in 1 2 3 4 5 6 7 8; do
+            sleep 2
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$PROBE" || true)
+            [ "$CODE" = "200" ] && { HEALTHY=$((HEALTHY+1)); } || HEALTHY=0
+            [ "$HEALTHY" -ge 3 ] && break   # 连续 3 次 200 才判健康，防抖
+          done
+          if [ "$HEALTHY" -lt 3 ]; then
+            echo "FATAL: 新版本健康检查失败（最后 code=$CODE, probe=$PROBE）→ 回滚旧构建 .next.old"
+            rm -rf .next.broken; mv .next .next.broken; mv .next.old .next
+            pm2 restart aipaddle --update-env
+            exit 1
+          fi
+
           pm2 save
-          echo "部署完成: $(git log --oneline -1)"
+          echo "部署完成（健康检查连续 3×200）: $(git log --oneline -1)"
           REMOTE
 
-      - name: 冒烟检查（https://aipaddle.net/login 期望 200）
+      - name: 冒烟检查（login + CSS 静态资源都要 200）
         run: |
+          ok=0
           for i in 1 2 3 4 5 6; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://aipaddle.net/login || true)
-            if [ "$code" = "200" ]; then echo "冒烟通过 (HTTP $code)"; exit 0; fi
-            echo "第 $i 次: HTTP $code，10s 后重试…"; sleep 10
+            login=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 https://aipaddle.net/login || true)
+            # 从 login HTML 里取第一个 CSS 资源，验证静态资源也能 200（防"进程崩→静态 500"裸奔）
+            css=$(curl -s --max-time 15 https://aipaddle.net/login | grep -oE '/_next/static/css/[a-f0-9]+\.css' | head -1 || true)
+            csscode="none"
+            [ -n "$css" ] && csscode=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://aipaddle.net${css}" || true)
+            if [ "$login" = "200" ] && [ "$csscode" = "200" ]; then
+              echo "冒烟通过：login=200, css($css)=200"; ok=1; break
+            fi
+            echo "第 $i 次: login=$login css=$csscode，10s 后重试…"; sleep 10
           done
-          echo "冒烟失败：/login 未返回 200"; exit 1
+          [ "$ok" = "1" ] || { echo "冒烟失败：login 或 CSS 未稳定 200"; exit 1; }

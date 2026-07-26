@@ -1,6 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { listDocuments, uploadDocument } from '@/lib/data/documents'
+import { isSupportedDocExt, SUPPORTED_DOC_EXTS } from '@/lib/office/extract'
 import { ensureDefaultKb } from '@/lib/data/knowledge'
 
 const MAX_SIZE = 50 * 1024 * 1024 // 50MB
@@ -27,8 +28,12 @@ export async function POST(request: Request) {
   if (!(file instanceof File)) {
     return Response.json({ error: { code: 'invalid', message: '缺少上传文件' } }, { status: 400 })
   }
-  if (file.type !== 'application/pdf') {
-    return Response.json({ error: { code: 'unsupported', message: '不支持的格式（仅 PDF）' } }, { status: 400 })
+  // 4.2.6：多格式支持（PDF/Word/Excel/PPT/TXT/MD/HTML…），按扩展名白名单校验。
+  if (!isSupportedDocExt(file.name)) {
+    return Response.json(
+      { error: { code: 'unsupported', message: `不支持的格式（支持：${SUPPORTED_DOC_EXTS.join('/')}）` } },
+      { status: 400 },
+    )
   }
   if (file.size > MAX_SIZE) {
     return Response.json({ error: { code: 'too_large', message: '超出大小限制（50MB）' } }, { status: 400 })

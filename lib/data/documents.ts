@@ -53,6 +53,19 @@ export async function getDocumentStoragePath(_ctx: RequestContext, id: string): 
   return (data as { storage_path: string } | null)?.storage_path ?? null
 }
 
+/** 取文档所属知识库 id（4.2.7 入库读切块参数用）。 */
+export async function getDocumentKbId(_ctx: RequestContext, id: string): Promise<string | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('documents')
+    .select('kb_id')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data as { kb_id: string } | null)?.kb_id ?? null
+}
+
 /** 从存储下载文件字节（系统级）。 */
 export async function downloadDocumentBytes(storagePath: string): Promise<ArrayBuffer> {
   const admin = createAdminClient()

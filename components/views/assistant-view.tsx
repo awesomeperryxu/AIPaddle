@@ -552,7 +552,7 @@ export function AssistantView() {
               rows={1}
               onChange={(e) => { setInput(e.target.value); autoResize(); }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !pickerMode) {
+                if (e.key === 'Enter' && !e.shiftKey && !pickerMode && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   send();
                 }

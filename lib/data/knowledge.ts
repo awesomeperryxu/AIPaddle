@@ -1,6 +1,7 @@
 import 'server-only'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
+import { deleteChunksByDocument } from '@/lib/data/chunks'
 
 // 知识库数据层（ADR-008）：请求级客户端 + RLS，按租户隔离。
 export type KbVisibility = 'org' | 'restricted'
@@ -83,6 +84,34 @@ export async function createKnowledgeBase(
   }
 }
 
+/** 取单个知识库详情（按 id + org_id）。返回 null 表示不存在或无权限。 */
+export async function getKnowledgeBase(_ctx: RequestContext, kbId: string): Promise<KnowledgeBase | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('knowledge_bases')
+    .select('id,name,description,status,visibility,created_at')
+    .eq('id', kbId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+  const r = data as KbRow
+  const { data: docs } = await supabase
+    .from('documents')
+    .select('id')
+    .eq('kb_id', kbId)
+    .is('deleted_at', null)
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description ?? '',
+    status: r.status,
+    visibility: (r.visibility as KbVisibility) ?? 'org',
+    documentCount: (docs as { id: string }[] | null)?.length ?? 0,
+    createdAt: (r.created_at ?? '').slice(0, 10),
+  }
+}
+
 /** 取本租户第一个知识库；没有则建一个默认库（供文档上传挂载）。 */
 export async function ensureDefaultKb(ctx: RequestContext): Promise<string> {
   const supabase = await createClient()
@@ -98,6 +127,85 @@ export async function ensureDefaultKb(ctx: RequestContext): Promise<string> {
   return kb.id
 }
 
+// ── 4.2.7 切块参数 ─────────────────────────────────────────
+
+export type KbChunkConfig = { chunkSize: number; chunkOverlap: number; separator: string; removeUrls?: boolean }
+export const DEFAULT_KB_CHUNK_CONFIG: KbChunkConfig = { chunkSize: 1024, chunkOverlap: 50, separator: '\n\n' }
+
+/** 读取知识库切块参数；缺列/异常回落默认（向后兼容旧库）。 */
+export async function getKbChunkConfig(_ctx: RequestContext, kbId: string): Promise<KbChunkConfig> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('knowledge_bases')
+    .select('chunk_config')
+    .eq('id', kbId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const c = (data as { chunk_config?: Partial<KbChunkConfig> | null } | null)?.chunk_config
+  return {
+    chunkSize: Number(c?.chunkSize) || DEFAULT_KB_CHUNK_CONFIG.chunkSize,
+    chunkOverlap: Number.isFinite(Number(c?.chunkOverlap)) ? Number(c?.chunkOverlap) : DEFAULT_KB_CHUNK_CONFIG.chunkOverlap,
+    separator: typeof c?.separator === 'string' ? c.separator : DEFAULT_KB_CHUNK_CONFIG.separator,
+  }
+}
+
+/** 保存知识库切块参数（应用层已规整）。 */
+export async function setKbChunkConfig(_ctx: RequestContext, kbId: string, config: KbChunkConfig): Promise<void> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('knowledge_bases')
+    .update({ chunk_config: config, updated_at: new Date().toISOString() })
+    .eq('id', kbId)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+}
+
+// ── 4.2.8 检索参数 ─────────────────────────────────────────
+
+export type SearchMethod = 'vector' | 'fulltext' | 'hybrid'
+export type KbRetrievalConfig = { topK: number; scoreThreshold: number; searchMethod: SearchMethod }
+export const DEFAULT_KB_RETRIEVAL_CONFIG: KbRetrievalConfig = {
+  topK: 5, scoreThreshold: 0.28, searchMethod: 'vector',
+}
+
+/** 规整检索参数：topK∈[1,20]、阈值∈[0,1]；searchMethod 目前仅 vector 生效（其余回落 vector）。 */
+export function normalizeRetrievalConfig(c?: Partial<KbRetrievalConfig> | null): KbRetrievalConfig {
+  const rawK = Number(c?.topK)
+  const topK = Math.min(Math.max(Math.floor(Number.isFinite(rawK) ? rawK : DEFAULT_KB_RETRIEVAL_CONFIG.topK), 1), 20)
+  const rawTh = Number(c?.scoreThreshold)
+  const scoreThreshold = Number.isFinite(rawTh) ? Math.min(Math.max(rawTh, 0), 1) : DEFAULT_KB_RETRIEVAL_CONFIG.scoreThreshold
+  // 全文/混合检索尚未落地（待 M 道 + tsvector），暂只接受 vector。
+  const searchMethod: SearchMethod = c?.searchMethod === 'fulltext' || c?.searchMethod === 'hybrid'
+    ? c.searchMethod
+    : 'vector'
+  return { topK, scoreThreshold, searchMethod }
+}
+
+/** 读取知识库检索参数；缺列/异常回落默认。 */
+export async function getKbRetrievalConfig(_ctx: RequestContext, kbId: string): Promise<KbRetrievalConfig> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('knowledge_bases')
+    .select('retrieval_config')
+    .eq('id', kbId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return normalizeRetrievalConfig((data as { retrieval_config?: Partial<KbRetrievalConfig> | null } | null)?.retrieval_config)
+}
+
+/** 保存知识库检索参数（应用层已规整）。 */
+export async function setKbRetrievalConfig(_ctx: RequestContext, kbId: string, config: KbRetrievalConfig): Promise<void> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('knowledge_bases')
+    .update({ retrieval_config: config, updated_at: new Date().toISOString() })
+    .eq('id', kbId)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+}
+
 // ── 4.2.8 知识库权限范围 ────────────────────────────────────
 
 /** 设置知识库可见性（org=全员可见 / restricted=仅关联 Agent 可用）。 */
@@ -110,6 +218,47 @@ export async function setKbVisibility(
   const { error } = await supabase
     .from('knowledge_bases')
     .update({ visibility, updated_at: new Date().toISOString() })
+    .eq('id', kbId)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+}
+
+/** 软删除知识库（4.2.9）：连带软删其文档与内容块，使检索不再命中已删库。 */
+export async function updateKnowledgeBase(
+  _ctx: RequestContext,
+  kbId: string,
+  patch: { name?: string; description?: string },
+): Promise<void> {
+  const supabase = await createClient()
+  await supabase
+    .from('knowledge_bases')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', kbId)
+    .is('deleted_at', null)
+}
+
+export async function deleteKnowledgeBase(ctx: RequestContext, kbId: string): Promise<void> {
+  const supabase = await createClient()
+  const now = new Date().toISOString()
+  // 先取本库文档，逐个失效其内容块（与删单文档一致的失效语义）
+  const { data: docs } = await supabase
+    .from('documents')
+    .select('id')
+    .eq('kb_id', kbId)
+    .is('deleted_at', null)
+  for (const d of (docs as { id: string }[] | null) ?? []) {
+    await deleteChunksByDocument(ctx, d.id)
+  }
+  // 软删文档
+  await supabase
+    .from('documents')
+    .update({ deleted_at: now })
+    .eq('kb_id', kbId)
+    .is('deleted_at', null)
+  // 软删知识库本体
+  const { error } = await supabase
+    .from('knowledge_bases')
+    .update({ deleted_at: now, updated_at: now })
     .eq('id', kbId)
     .is('deleted_at', null)
   if (error) throw new Error(error.message)

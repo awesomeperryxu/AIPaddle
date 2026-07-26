@@ -245,7 +245,7 @@ export function KnowledgeQaView() {
                 <input
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && ask()}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }} /* 回车不提交，须点按钮 */
                   placeholder={`向「${activeKb.name}」提问，例如：公司的年假政策是怎样的？`}
                   className="h-[42px] w-full rounded-lg border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary/60"
                 />

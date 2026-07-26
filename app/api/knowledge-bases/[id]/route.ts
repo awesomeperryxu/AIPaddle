@@ -1,14 +1,31 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
-import { listKbAgents, setKbAgents, setKbVisibility, type KbVisibility } from '@/lib/data/knowledge'
+import {
+  deleteKnowledgeBase,
+  getKbChunkConfig,
+  getKbRetrievalConfig,
+  listKbAgents,
+  normalizeRetrievalConfig,
+  setKbAgents,
+  setKbChunkConfig,
+  setKbRetrievalConfig,
+  setKbVisibility,
+  updateKnowledgeBase,
+  type KbVisibility,
+} from '@/lib/data/knowledge'
+import { normalizeChunkConfig } from '@/lib/kb/ingest'
 
 // GET /api/knowledge-bases/[id] —— 该知识库当前关联的 Agent（4.2.8 权限范围面板用）
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await getRequestContext()
   if (!ctx) return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
   const { id } = await params
-  const agents = await listKbAgents(ctx, id)
-  return Response.json({ agents })
+  const [agents, chunkConfig, retrievalConfig] = await Promise.all([
+    listKbAgents(ctx, id),
+    getKbChunkConfig(ctx, id),
+    getKbRetrievalConfig(ctx, id),
+  ])
+  return Response.json({ agents, chunkConfig, retrievalConfig })
 }
 
 // PATCH /api/knowledge-bases/[id] —— 设置可见性 / 覆盖关联 Agent（4.2.8）
@@ -20,6 +37,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   const { id } = await params
   const body = await request.json().catch(() => ({} as Record<string, unknown>))
+
+  if (body?.name !== undefined || body?.description !== undefined) {
+    const patch: Record<string, string> = {}
+    if (typeof body.name === 'string' && body.name.trim()) patch.name = body.name.trim()
+    if (typeof body.description === 'string') patch.description = body.description.trim()
+    if (Object.keys(patch).length > 0) await updateKnowledgeBase(ctx, id, patch)
+  }
 
   if (body?.visibility !== undefined) {
     const v = String(body.visibility)
@@ -36,5 +60,33 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await setKbAgents(ctx, id, body.agentIds as string[])
   }
 
+  // 4.2.7：切块参数（应用层规整后落库）
+  if (body?.chunkConfig !== undefined && body.chunkConfig !== null) {
+    if (typeof body.chunkConfig !== 'object') {
+      return Response.json({ error: { code: 'invalid', message: 'chunkConfig 非法' } }, { status: 400 })
+    }
+    await setKbChunkConfig(ctx, id, normalizeChunkConfig(body.chunkConfig as Record<string, unknown>))
+  }
+
+  // 4.2.8：检索参数
+  if (body?.retrievalConfig !== undefined && body.retrievalConfig !== null) {
+    if (typeof body.retrievalConfig !== 'object') {
+      return Response.json({ error: { code: 'invalid', message: 'retrievalConfig 非法' } }, { status: 400 })
+    }
+    await setKbRetrievalConfig(ctx, id, normalizeRetrievalConfig(body.retrievalConfig as Record<string, unknown>))
+  }
+
+  return Response.json({ ok: true })
+}
+
+// DELETE /api/knowledge-bases/[id] —— 软删除知识库及其文档（4.2.9）
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = await getRequestContext()
+  if (!ctx) return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
+  if (!can(ctx, 'knowledge:delete')) {
+    return Response.json({ error: { code: 'forbidden', message: '无权限：删除知识库' } }, { status: 403 })
+  }
+  const { id } = await params
+  await deleteKnowledgeBase(ctx, id)
   return Response.json({ ok: true })
 }

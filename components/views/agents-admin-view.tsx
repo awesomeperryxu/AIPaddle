@@ -400,7 +400,6 @@ export function AgentsAdminView({
           );
         })}
       </div>
-
     </div>
   );
 }
