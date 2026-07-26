@@ -3,18 +3,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // 4.2.8：RAG 按可访问知识库范围检索——
 // 通用问答只查全员可见 KB；无可访问 KB → searchChunks 收到空范围 → 拒答。
 
-const { embedOne, chat, searchChunks, getDocumentFilenames, listAccessibleKbIds } = vi.hoisted(() => ({
+const { embedOne, chat, searchChunks, getDocumentFilenames, listAccessibleKbIds, getKbRetrievalConfig, DEFAULT_KB_RETRIEVAL_CONFIG } = vi.hoisted(() => ({
   embedOne: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
   chat: vi.fn().mockResolvedValue('答案 [1]'),
   searchChunks: vi.fn(),
   getDocumentFilenames: vi.fn().mockResolvedValue({ d1: '手册.pdf' }),
   listAccessibleKbIds: vi.fn(),
+  getKbRetrievalConfig: vi.fn().mockResolvedValue({ topK: 5, scoreThreshold: 0.28, searchMethod: 'vector' }),
+  DEFAULT_KB_RETRIEVAL_CONFIG: { topK: 5, scoreThreshold: 0.28, searchMethod: 'vector' },
 }))
 
 vi.mock('@/lib/ai', () => ({ embedOne, chat }))
 vi.mock('@/lib/data/chunks', () => ({ searchChunks }))
 vi.mock('@/lib/data/documents', () => ({ getDocumentFilenames }))
-vi.mock('@/lib/data/knowledge', () => ({ listAccessibleKbIds }))
+vi.mock('@/lib/data/knowledge', () => ({ listAccessibleKbIds, getKbRetrievalConfig, DEFAULT_KB_RETRIEVAL_CONFIG }))
 
 import { answerQuestion } from '@/lib/kb/rag'
 

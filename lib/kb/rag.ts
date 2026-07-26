@@ -88,8 +88,7 @@ export async function answerQuestion(
   if (!q) return { answer: '请输入问题。', citations: [], refused: true }
 
   const kbIds = await listAccessibleKbIds(ctx, { agentId: opts?.agentId })
-  if (kbIds.length === 0) return { answer: '未找到相关信息。', citations: [], refused: true }
-  // 4.2.8：单库时按其检索配置；多库回落默认。
+  // 4.2.8：单库时按其检索配置；多库/空范围回落默认。
   const cfg = kbIds.length === 1 ? await getKbRetrievalConfig(ctx, kbIds[0]) : null
   const topK = cfg?.topK ?? TOP_K
   const threshold = cfg?.scoreThreshold ?? MIN_SIMILARITY
