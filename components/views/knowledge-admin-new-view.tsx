@@ -23,6 +23,7 @@ import {
 
 type ChunkConfig = { chunkSize: number; chunkOverlap: number; separator: string };
 type RetrievalConfig = { topK: number; scoreThreshold: number; searchMethod: string };
+type PreprocessRules = { stripWhitespace: boolean; removeUrls: boolean };
 
 const SAMPLE_TEXT = `AIPaddle 是面向企业的 AI 业务赋能平台，统一管理 Agent、Skill、知识库与工作流。
 
@@ -80,6 +81,10 @@ export function KnowledgeAdminNewView() {
     chunkSize: 800,
     chunkOverlap: 100,
     separator: '\n\n',
+  });
+  const [preprocessRules, setPreprocessRules] = useState<PreprocessRules>({
+    stripWhitespace: true,
+    removeUrls: false,
   });
 
   // Step 3
@@ -368,6 +373,32 @@ export function KnowledgeAdminNewView() {
                     <span className="text-xs text-muted-foreground whitespace-nowrap">建议 10-20%</span>
                   </div>
                 </label>
+
+                <div className="space-y-2">
+                  <span className="text-sm font-medium text-foreground">文本预处理规则</span>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={preprocessRules.stripWhitespace}
+                      onChange={e => setPreprocessRules(r => ({ ...r, stripWhitespace: e.target.checked }))}
+                      className="mt-0.5 h-4 w-4 accent-primary"
+                    />
+                    <span className="text-xs text-muted-foreground leading-relaxed">
+                      替换连续的空格、换行符和制表符
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={preprocessRules.removeUrls}
+                      onChange={e => setPreprocessRules(r => ({ ...r, removeUrls: e.target.checked }))}
+                      className="mt-0.5 h-4 w-4 accent-primary"
+                    />
+                    <span className="text-xs text-muted-foreground leading-relaxed">
+                      删除所有 URL 和电子邮件地址
+                    </span>
+                  </label>
+                </div>
               </div>
 
               {/* 预览区 */}
