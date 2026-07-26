@@ -1,6 +1,7 @@
 import 'server-only'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
+import { deleteChunksByDocument } from '@/lib/data/chunks'
 
 // 知识库数据层（ADR-008）：请求级客户端 + RLS，按租户隔离。
 export type KbVisibility = 'org' | 'restricted'
@@ -110,6 +111,34 @@ export async function setKbVisibility(
   const { error } = await supabase
     .from('knowledge_bases')
     .update({ visibility, updated_at: new Date().toISOString() })
+    .eq('id', kbId)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+}
+
+/** 软删除知识库（4.2.9）：连带软删其文档与内容块，使检索不再命中已删库。 */
+export async function deleteKnowledgeBase(ctx: RequestContext, kbId: string): Promise<void> {
+  const supabase = await createClient()
+  const now = new Date().toISOString()
+  // 先取本库文档，逐个失效其内容块（与删单文档一致的失效语义）
+  const { data: docs } = await supabase
+    .from('documents')
+    .select('id')
+    .eq('kb_id', kbId)
+    .is('deleted_at', null)
+  for (const d of (docs as { id: string }[] | null) ?? []) {
+    await deleteChunksByDocument(ctx, d.id)
+  }
+  // 软删文档
+  await supabase
+    .from('documents')
+    .update({ deleted_at: now })
+    .eq('kb_id', kbId)
+    .is('deleted_at', null)
+  // 软删知识库本体
+  const { error } = await supabase
+    .from('knowledge_bases')
+    .update({ deleted_at: now, updated_at: now })
     .eq('id', kbId)
     .is('deleted_at', null)
   if (error) throw new Error(error.message)

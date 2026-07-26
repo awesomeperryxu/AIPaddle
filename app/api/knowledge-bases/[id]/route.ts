@@ -1,6 +1,6 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
-import { listKbAgents, setKbAgents, setKbVisibility, type KbVisibility } from '@/lib/data/knowledge'
+import { deleteKnowledgeBase, listKbAgents, setKbAgents, setKbVisibility, type KbVisibility } from '@/lib/data/knowledge'
 
 // GET /api/knowledge-bases/[id] —— 该知识库当前关联的 Agent（4.2.8 权限范围面板用）
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -36,5 +36,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await setKbAgents(ctx, id, body.agentIds as string[])
   }
 
+  return Response.json({ ok: true })
+}
+
+// DELETE /api/knowledge-bases/[id] —— 软删除知识库及其文档（4.2.9）
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const ctx = await getRequestContext()
+  if (!ctx) return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
+  if (!can(ctx, 'knowledge:delete')) {
+    return Response.json({ error: { code: 'forbidden', message: '无权限：删除知识库' } }, { status: 403 })
+  }
+  const { id } = await params
+  await deleteKnowledgeBase(ctx, id)
   return Response.json({ ok: true })
 }
