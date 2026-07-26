@@ -3,6 +3,7 @@ import { can } from '@/lib/auth/permissions'
 import { listDocuments, uploadDocument } from '@/lib/data/documents'
 import { isSupportedDocExt, SUPPORTED_DOC_EXTS } from '@/lib/office/extract'
 import { ensureDefaultKb } from '@/lib/data/knowledge'
+import { checkStorageQuota } from '@/lib/data/quota'
 
 const MAX_SIZE = 50 * 1024 * 1024 // 50MB
 
@@ -37,6 +38,15 @@ export async function POST(request: Request) {
   }
   if (file.size > MAX_SIZE) {
     return Response.json({ error: { code: 'too_large', message: '超出大小限制（50MB）' } }, { status: 400 })
+  }
+  // 配额强制（4.8.2）：本次上传后是否超出租户存储配额，超限拒绝（413）。
+  const storage = await checkStorageQuota(ctx, file.size)
+  if (!storage.ok) {
+    const gb = (n: number) => (n / 1024 / 1024 / 1024).toFixed(1)
+    return Response.json(
+      { error: { code: 'storage_quota_exceeded', message: `存储配额不足（已用 ${gb(storage.used)}GB / 配额 ${gb(storage.limit)}GB），请联系管理员提升配额` } },
+      { status: 413 },
+    )
   }
 
   const kbIdRaw = String(formData?.get('kbId') ?? '').trim()
