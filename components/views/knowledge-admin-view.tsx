@@ -481,7 +481,7 @@ export function KnowledgeAdminView({
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="application/pdf"
+                  accept=".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.odt,.odp,.ods,.txt,.md,.markdown,.csv,.html,.htm"
                   aria-label="上传文件"
                   data-testid="kb-upload-input"
                   className="hidden"
@@ -515,7 +515,7 @@ export function KnowledgeAdminView({
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
-                {['PDF', 'Word', 'Excel', 'Markdown', 'TXT', 'HTML'].map((format) => (
+                {['PDF', 'Word', 'PPT', 'Excel', 'Markdown', 'TXT', 'CSV', 'HTML'].map((format) => (
                   <Badge key={format} variant="outline" className="text-xs">
                     {format}
                   </Badge>

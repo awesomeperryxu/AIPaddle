@@ -7,7 +7,12 @@ import {
   getDocumentStoragePath,
   downloadDocumentBytes,
   setDocumentStatus,
+  getDocumentFilenames,
 } from '@/lib/data/documents'
+import { extractTextFromFile } from '@/lib/office/extract'
+
+// 知识库入库不截断（大文档全量切块）；给个大上限防跑飞（约 30 万字）。
+const KB_MAX_CHARS = 300000
 
 const CHUNK_SIZE = 800
 const OVERLAP = 100
@@ -46,7 +51,10 @@ export async function ingestDocument(
   await setDocumentStatus(ctx, documentId, 'parsing')
   try {
     const bytes = await downloadDocumentBytes(storagePath)
-    const text = await extractPdfText(bytes)
+    // 4.2.6：多格式解析（PDF/Word/Excel/PPT/TXT/MD/HTML…），按文件名扩展名分派。
+    const filenames = await getDocumentFilenames(ctx, [documentId])
+    const filename = filenames[documentId] ?? storagePath
+    const text = await extractTextFromFile(filename, bytes, { maxChars: KB_MAX_CHARS })
     const parts = chunkText(text)
 
     if (parts.length === 0) {
