@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +35,13 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { MoreHorizontal } from 'lucide-react';
 
 type ChatMsg = { role: 'user' | 'assistant'; content: string };
 
@@ -64,6 +72,7 @@ export function AgentsView({
   digitalEmployeeIds?: string[];
   canManage?: boolean;
 }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'de' | 'teams'>('de');
 
   // ── 数字员工 Tab 状态 ──
@@ -385,7 +394,24 @@ export function AgentsView({
                           </div>
                         )}
                       </div>
-                      {selectedAgent && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                      {selectedAgent
+                        ? <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                        : canManage && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+                              <button className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" onClick={e => e.stopPropagation()}>
+                              <DropdownMenuItem onSelect={() => router.push(`/agent-schedules/new?agentId=${agent.id}`)}>
+                                <Clock className="h-4 w-4 mr-2" />
+                                配置定时执行
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )
+                      }
                     </div>
                   </CardContent>
                 </Card>
