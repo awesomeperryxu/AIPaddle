@@ -8,24 +8,43 @@ import {
   downloadDocumentBytes,
   setDocumentStatus,
   getDocumentFilenames,
+  getDocumentKbId,
 } from '@/lib/data/documents'
+import { getKbChunkConfig } from '@/lib/data/knowledge'
 import { extractTextFromFile } from '@/lib/office/extract'
 
 // 知识库入库不截断（大文档全量切块）；给个大上限防跑飞（约 30 万字）。
 const KB_MAX_CHARS = 300000
 
-const CHUNK_SIZE = 800
-const OVERLAP = 100
+// 4.2.7：切块参数可配（原 800/100 硬编码）。默认与历史一致。
+export type ChunkConfig = { chunkSize: number; chunkOverlap: number; separator: string }
+export const DEFAULT_CHUNK_CONFIG: ChunkConfig = { chunkSize: 800, chunkOverlap: 100, separator: '\n\n' }
 
-/** 按字符切块（含重叠）。生产可换按句/段，首版够用。 */
-export function chunkText(text: string): string[] {
-  const clean = text.replace(/\s+/g, ' ').trim()
-  if (!clean) return []
-  const step = CHUNK_SIZE - OVERLAP
+/** 规整切块参数：夹取合法区间，重叠恒小于长度，防跑飞/死循环。 */
+export function normalizeChunkConfig(c?: Partial<ChunkConfig> | null): ChunkConfig {
+  const chunkSize = Math.min(Math.max(Math.floor(c?.chunkSize ?? DEFAULT_CHUNK_CONFIG.chunkSize), 50), 4000)
+  const overlapRaw = Math.max(Math.floor(c?.chunkOverlap ?? DEFAULT_CHUNK_CONFIG.chunkOverlap), 0)
+  const chunkOverlap = Math.min(overlapRaw, chunkSize - 1)
+  const separator = typeof c?.separator === 'string' ? c.separator : DEFAULT_CHUNK_CONFIG.separator
+  return { chunkSize, chunkOverlap, separator }
+}
+
+/**
+ * 按分隔符 + 字符窗口切块（含重叠）。
+ * 有分隔符时先切成语义段（块不跨段），每段内用 size/overlap 窗口；无分隔符时整体切窗口。
+ */
+export function chunkText(text: string, config?: Partial<ChunkConfig> | null): string[] {
+  const { chunkSize, chunkOverlap, separator } = normalizeChunkConfig(config)
+  const step = chunkSize - chunkOverlap
+  const segments = separator ? text.split(separator) : [text]
   const chunks: string[] = []
-  for (let i = 0; i < clean.length; i += step) {
-    chunks.push(clean.slice(i, i + CHUNK_SIZE))
-    if (i + CHUNK_SIZE >= clean.length) break
+  for (const seg of segments) {
+    const clean = seg.replace(/\s+/g, ' ').trim()
+    if (!clean) continue
+    for (let i = 0; i < clean.length; i += step) {
+      chunks.push(clean.slice(i, i + chunkSize))
+      if (i + chunkSize >= clean.length) break
+    }
   }
   return chunks
 }
@@ -55,7 +74,10 @@ export async function ingestDocument(
     const filenames = await getDocumentFilenames(ctx, [documentId])
     const filename = filenames[documentId] ?? storagePath
     const text = await extractTextFromFile(filename, bytes, { maxChars: KB_MAX_CHARS })
-    const parts = chunkText(text)
+    // 4.2.7：按知识库配置的切块参数切块（缺省回落 800/100）。
+    const kbId = await getDocumentKbId(ctx, documentId)
+    const chunkConfig = kbId ? await getKbChunkConfig(ctx, kbId) : undefined
+    const parts = chunkText(text, chunkConfig)
 
     if (parts.length === 0) {
       await setDocumentStatus(ctx, documentId, 'active')

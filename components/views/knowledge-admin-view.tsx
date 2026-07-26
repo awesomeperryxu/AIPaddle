@@ -68,6 +68,10 @@ export function KnowledgeAdminView({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [linkedAgentIds, setLinkedAgentIds] = useState<string[]>([]);
+  // 4.2.7 切块参数
+  const [chunkCfg, setChunkCfg] = useState<{ chunkSize: number; chunkOverlap: number; separator: string }>(
+    { chunkSize: 800, chunkOverlap: 100, separator: '\n\n' }
+  );
   // 4.2.5 检索测试
   const [retrieveOpen, setRetrieveOpen] = useState(false);
   const [rQuery, setRQuery] = useState('');
@@ -85,9 +89,27 @@ export function KnowledgeAdminView({
     setSelectedKB(kb);
     setLinkedAgentIds([]);
     try {
-      const r = await apiFetch<{ agents: { agentId: string }[] }>(`/api/knowledge-bases/${kb.id}`);
+      const r = await apiFetch<{
+        agents: { agentId: string }[];
+        chunkConfig?: { chunkSize: number; chunkOverlap: number; separator: string };
+      }>(`/api/knowledge-bases/${kb.id}`);
       setLinkedAgentIds(r.agents.map(a => a.agentId));
+      if (r.chunkConfig) setChunkCfg(r.chunkConfig);
     } catch { /* 忽略拉取失败 */ }
+  }
+
+  async function handleSaveChunkConfig() {
+    if (!selectedKB || busy) return;
+    setBusy(true); setMsg('保存切块参数…');
+    try {
+      await apiFetch(`/api/knowledge-bases/${selectedKB.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ chunkConfig: chunkCfg }),
+      });
+      setMsg('已保存（下次向量化生效）');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '保存失败');
+    } finally { setBusy(false); setTimeout(() => setMsg(null), 2500); }
   }
 
   async function handleToggleVisibility() {
@@ -540,6 +562,50 @@ export function KnowledgeAdminView({
                   </div>
                 )}
               </div>
+
+              {/* 切块参数（4.2.7） */}
+              {canManage && (
+                <div className="space-y-3" data-testid="kb-chunk-config">
+                  <h4 className="text-sm font-medium text-foreground">切块参数</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="space-y-1">
+                      <span className="text-xs text-muted-foreground">最大长度（字符）</span>
+                      <Input
+                        type="number" min={50} max={4000}
+                        value={chunkCfg.chunkSize}
+                        onChange={(e) => setChunkCfg(c => ({ ...c, chunkSize: Number(e.target.value) }))}
+                        disabled={busy}
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs text-muted-foreground">重叠（字符）</span>
+                      <Input
+                        type="number" min={0} max={2000}
+                        value={chunkCfg.chunkOverlap}
+                        onChange={(e) => setChunkCfg(c => ({ ...c, chunkOverlap: Number(e.target.value) }))}
+                        disabled={busy}
+                      />
+                    </label>
+                  </div>
+                  <label className="space-y-1 block">
+                    <span className="text-xs text-muted-foreground">分段分隔符</span>
+                    <select
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      value={chunkCfg.separator}
+                      onChange={(e) => setChunkCfg(c => ({ ...c, separator: e.target.value }))}
+                      disabled={busy}
+                    >
+                      <option value={'\n\n'}>空行（段落）</option>
+                      <option value={'\n'}>换行</option>
+                      <option value={''}>不分段（仅按长度）</option>
+                    </select>
+                  </label>
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleSaveChunkConfig} disabled={busy}>
+                    保存切块参数
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">修改后需对文档「重新向量化」方可生效。</p>
+                </div>
+              )}
 
               {/* Actions */}
               <div className="space-y-2">
