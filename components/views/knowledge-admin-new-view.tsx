@@ -58,20 +58,45 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function chunkSample(text: string, cfg: ChunkConfig): string[] {
-  const step = cfg.chunkSize - cfg.chunkOverlap;
-  if (step <= 0) return [text.slice(0, cfg.chunkSize)];
-  const segments = cfg.separator ? text.split(cfg.separator) : [text];
-  const chunks: string[] = [];
-  for (const seg of segments) {
-    const clean = seg.replace(/\s+/g, ' ').trim();
-    if (!clean) continue;
-    for (let i = 0; i < clean.length; i += step) {
-      chunks.push(clean.slice(i, i + cfg.chunkSize));
-      if (i + cfg.chunkSize >= clean.length) break;
-    }
+// 客户端预览算法与服务端 chunkText 保持一致（多级分隔符递归 + overlap）
+function splitHierarchically(text: string, seps: string[], maxSize: number): string[] {
+  if (!text.trim()) return [];
+  const [sep, ...rest] = seps;
+  // 无更细分隔符（或空分隔符）→ 字符窗口兜底
+  if (!sep) {
+    const clean = text.replace(/\s+/g, ' ').trim();
+    if (!clean || clean.length <= maxSize) return clean ? [clean] : [];
+    const chunks: string[] = [];
+    for (let i = 0; i < clean.length; i += maxSize) chunks.push(clean.slice(i, i + maxSize));
+    return chunks;
   }
-  return chunks;
+  // 先按当前分隔符切（保留原始换行，不预先折叠空白）
+  const parts = text.split(sep).map(s => s.trim()).filter(Boolean);
+  if (parts.length <= 1) return splitHierarchically(text, rest, maxSize);
+  const result: string[] = [];
+  for (const part of parts) {
+    const normalized = part.replace(/\s+/g, ' ').trim();
+    if (!normalized) continue;
+    if (normalized.length <= maxSize) result.push(normalized);
+    else result.push(...splitHierarchically(part, rest, maxSize));
+  }
+  return result;
+}
+
+function chunkSample(text: string, cfg: ChunkConfig): string[] {
+  const seps = !cfg.separator ? []
+    : cfg.separator === '\n\n' ? ['\n\n', '\n']
+    : cfg.separator === '\n' ? ['\n']
+    : [cfg.separator, '\n\n', '\n'];
+  const rawSegs = splitHierarchically(text, seps, cfg.chunkSize);
+  if (rawSegs.length === 0) return [];
+  if (cfg.chunkOverlap === 0) return rawSegs;
+  const result = [rawSegs[0]];
+  for (let i = 1; i < rawSegs.length; i++) {
+    const tail = rawSegs[i - 1].slice(-cfg.chunkOverlap);
+    result.push((tail + ' ' + rawSegs[i]).trim().slice(0, cfg.chunkSize));
+  }
+  return result;
 }
 
 const STEPS = [
@@ -95,8 +120,8 @@ export function KnowledgeAdminNewView() {
 
   // Step 2
   const [chunkCfg, setChunkCfg] = useState<ChunkConfig>({
-    chunkSize: 800,
-    chunkOverlap: 100,
+    chunkSize: 1024,
+    chunkOverlap: 50,
     separator: '\n\n',
   });
   const [preprocessRules, setPreprocessRules] = useState<PreprocessRules>({
@@ -181,7 +206,7 @@ export function KnowledgeAdminNewView() {
       if (!kbId) throw new Error('创建知识库失败');
 
       // 2. 保存非默认配置
-      const isDefaultChunk = chunkCfg.chunkSize === 800 && chunkCfg.chunkOverlap === 100 && chunkCfg.separator === '\n\n';
+      const isDefaultChunk = chunkCfg.chunkSize === 1024 && chunkCfg.chunkOverlap === 50 && chunkCfg.separator === '\n\n';
       const isDefaultRetr = retrCfg.topK === 5 && retrCfg.scoreThreshold === 0.28 && retrCfg.searchMethod === 'vector';
       await Promise.all([
         !isDefaultChunk && apiFetch(`/api/knowledge-bases/${kbId}`, {
