@@ -1,399 +1,215 @@
-'use client';
+'use client'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Building2, Zap, Activity, Wallet, AlertTriangle } from 'lucide-react'
 import {
-  Wallet,
-  Building2,
-  Zap,
-  AlertCircle,
-  AlertTriangle,
-  ArrowRight,
-  Clock,
-} from 'lucide-react';
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+  Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts'
+import type { PlatformDashboard } from '@/lib/data/platform-dashboard'
 
-// ===== 内联 Mock 数据（平台运营方视角，不接后端）=====
+const CURRENCY = '¥'
+const fmtTokens = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n)
+const fmtCost = (n: number) => `${CURRENCY}${n.toFixed(2)}`
 
-// 4 个核心 KPI
-const saasKpis = {
-  mrr: 6810,
-  mrrDelta: '+18.2%',
-  activeTenants: 6,
-  tenantsDelta: '+1',
-  tokens30d: '24.1M',
-  tokensDelta: '+11.4%',
-  arpu: 1362,
-  overdueSum: 2910,
-};
-
-// 收入趋势 MRR（近 12 个月，单位 ¥）
-const mrrTrend = [
-  { m: '08', v: 2400 },
-  { m: '09', v: 2870 },
-  { m: '10', v: 3120 },
-  { m: '11', v: 3660 },
-  { m: '12', v: 4020 },
-  { m: '01', v: 4480 },
-  { m: '02', v: 4890 },
-  { m: '03', v: 5340 },
-  { m: '04', v: 5760 },
-  { m: '05', v: 6120 },
-  { m: '06', v: 6440 },
-  { m: '07', v: 6810 },
-];
-
-// 租户增长（近 6 个月 新增 vs 流失）
-const tenantGrowth = [
-  { m: '2月', add: 1, churn: 0 },
-  { m: '3月', add: 2, churn: 0 },
-  { m: '4月', add: 0, churn: 0 },
-  { m: '5月', add: 1, churn: 1 },
-  { m: '6月', add: 1, churn: 0 },
-  { m: '7月', add: 1, churn: 0 },
-];
-
-// 租户消耗排行（本月），按 Token 用量降序
-interface TenantUsage {
-  name: string;
-  tokenUsage: number;
-  tokenQuota: number;
-  monthlyBill: number;
-}
-const tenantUsage: TenantUsage[] = [
-  { name: '品器资产', tokenUsage: 8450000, tokenQuota: 10000000, monthlyBill: 2890 },
-  { name: '云帆物流', tokenUsage: 5400000, tokenQuota: 5000000, monthlyBill: 1680 },
-  { name: '创新金融集团', tokenUsage: 5230000, tokenQuota: 8000000, monthlyBill: 1560 },
-  { name: '智慧零售有限公司', tokenUsage: 4120000, tokenQuota: 5000000, monthlyBill: 1230 },
-  { name: '华润三九', tokenUsage: 3260000, tokenQuota: 5000000, monthlyBill: 1450 },
-  { name: '未来科技', tokenUsage: 1890000, tokenQuota: 3000000, monthlyBill: 450 },
-];
-
-// 模型成本结构（本月）
-const modelCost = [
-  { model: 'GPT-4-Turbo', cost: 3420, pct: 50 },
-  { model: 'Claude-3-Opus', cost: 1580, pct: 23 },
-  { model: 'Qwen-Max', cost: 890, pct: 13 },
-  { model: 'GPT-4o', cost: 620, pct: 9 },
-  { model: '其他', cost: 300, pct: 5 },
-];
-
-// 运营风险与待办
-type AlertLevel = 'high' | 'mid';
-interface OpsAlert {
-  level: AlertLevel;
-  title: string;
-  detail: string;
-  time: string;
-}
-const opsAlerts: OpsAlert[] = [
-  {
-    level: 'high',
-    title: '智慧零售有限公司 · 连续 2 期逾期',
-    detail: '逾期 ¥1,230 + 未付 ¥1,230，已发 2 次催缴，建议触发限流',
-    time: '今天 09:00',
-  },
-  {
-    level: 'high',
-    title: '云帆物流 · Token 超配额 8%',
-    detail: '本月已用 5.40M / 5.00M，超量部分按 1.5 倍计费中',
-    time: '今天 08:30',
-  },
-  {
-    level: 'mid',
-    title: '华润三九医药 · 目录全量同步待校验',
-    detail: 'SSO（企业微信）已接入，已导入 2,134 名员工，待校验部门映射',
-    time: '07-10',
-  },
-  {
-    level: 'mid',
-    title: '创新金融集团 · 服务将于 45 天后到期',
-    detail: '2026-08-01 到期，续约商机已同步销售',
-    time: '06-17',
-  },
-];
-
-const CURRENCY = '¥';
-const maxTokenUsage = tenantUsage[0].tokenUsage;
+const PLAN_LABEL: Record<string, string> = { free: '免费版', standard: '标准版', pro: '专业版', enterprise: '企业版' }
 
 const tooltipStyle = {
-  backgroundColor: 'var(--card)',
-  border: '1px solid var(--border)',
-  borderRadius: '8px',
-  color: 'var(--foreground)',
-  fontSize: '12px',
-} as const;
+  backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px',
+  color: 'var(--foreground)', fontSize: '12px',
+} as const
 
-export function SaasDashboardView() {
+export function SaasDashboardView({ data }: { data: PlatformDashboard }) {
+  const { tenants, usage30d, tokenTrend, tenantRanking, modelCost, risks } = data
+  const maxUsage = tenantRanking[0]?.tokenUsage ?? 0
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="saas-dashboard-view">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">运营看板</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">平台 SaaS 运营数据总览（平台运营方视角）</p>
+          <p className="text-sm text-muted-foreground mt-0.5">平台 SaaS 运营数据总览（平台超管视角 · 真实聚合）</p>
         </div>
-        <Button variant="outline" size="sm">
-          <Clock className="h-4 w-4 mr-1.5" />
-          近 12 个月
-        </Button>
+        <Badge variant="outline" className="text-xs">近 30 天 / 6 个月</Badge>
       </div>
 
-      {/* KPI Cards */}
+      {/* 计费未上线诚实提示 */}
+      <div className="flex items-start gap-2.5 rounded-lg border border-warning/20 bg-warning/5 p-3">
+        <Wallet className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+        <p className="text-xs text-muted-foreground">
+          <span className="text-foreground font-medium">计费相关指标（MRR / ARPU / 逾期应收）即将上线</span>
+          ——计费引擎属通道 G 4.8.7 / 阶段 6，未接通前本页只展示<span className="text-foreground">真实用量与租户</span>数据，不显示收入类估算。
+        </p>
+      </div>
+
+      {/* KPI Cards（全部真实） */}
       <div className="grid grid-cols-4 gap-4">
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">月度经常性收入 MRR</p>
-                <p className="text-2xl font-semibold text-foreground mt-1">
-                  {CURRENCY}
-                  {saasKpis.mrr.toLocaleString('en-US')}
-                </p>
-                <p className="text-xs text-green-500 mt-1.5">{saasKpis.mrrDelta} vs 上月</p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Wallet className="h-5 w-5 text-primary" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">活跃租户</p>
-                <p className="text-2xl font-semibold text-foreground mt-1">{saasKpis.activeTenants}</p>
-                <p className="text-xs text-green-500 mt-1.5">{saasKpis.tenantsDelta} 本月净增</p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
-                <Building2 className="h-5 w-5 text-accent" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">近 30 天平台 Token</p>
-                <p className="text-2xl font-semibold text-foreground mt-1">{saasKpis.tokens30d}</p>
-                <p className="text-xs text-green-500 mt-1.5">{saasKpis.tokensDelta} vs 上期</p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-chart-3/10 flex items-center justify-center">
-                <Zap className="h-5 w-5 text-chart-3" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border shadow-sm">
-          <CardContent className="p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">逾期应收</p>
-                <p className="text-2xl font-semibold text-destructive mt-1">
-                  {CURRENCY}
-                  {saasKpis.overdueSum.toLocaleString('en-US')}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1.5">
-                  ARPU {CURRENCY}
-                  {saasKpis.arpu.toLocaleString('en-US')}
-                </p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center">
-                <AlertCircle className="h-5 w-5 text-destructive" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard icon={<Building2 className="h-5 w-5 text-primary" />} label="租户总数"
+          value={String(tenants.total)} sub={`活跃 ${tenants.active} · 停用 ${tenants.suspended}`} />
+        <KpiCard icon={<Zap className="h-5 w-5 text-chart-3" />} label="近 30 天平台 Token"
+          value={fmtTokens(usage30d.tokens)} sub={`${usage30d.calls.toLocaleString('en-US')} 次调用`} />
+        <KpiCard icon={<Activity className="h-5 w-5 text-accent" />} label="近 30 天调用次数"
+          value={usage30d.calls.toLocaleString('en-US')} sub="来自 call_logs 真实记录" />
+        <KpiCard icon={<Wallet className="h-5 w-5 text-primary" />} label="近 30 天估算成本"
+          value={fmtCost(usage30d.estCost)} sub="按通义 Qwen 单价估算，非结算金额" />
       </div>
 
-      {/* Charts Row: MRR trend + tenant growth */}
+      {/* Token 趋势 + 套餐分布 */}
       <div className="grid grid-cols-3 gap-4">
         <Card className="col-span-2 bg-card border-border shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-foreground">收入趋势（MRR）</CardTitle>
-            <CardDescription className="text-xs">近 12 个月，单位 {CURRENCY}</CardDescription>
+            <CardTitle className="text-sm text-foreground">平台 Token 趋势</CardTitle>
+            <CardDescription className="text-xs">近 6 个月，来自 call_logs 真实聚合</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[220px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mrrTrend}>
-                  <defs>
-                    <linearGradient id="colorMrr" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="m" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    formatter={(value: number) => [`${CURRENCY}${value.toLocaleString('en-US')}`, 'MRR']}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="v"
-                    stroke="var(--primary)"
-                    strokeWidth={2}
-                    fill="url(#colorMrr)"
-                    name="MRR"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              {usage30d.calls === 0 && tokenTrend.every((t) => t.tokens === 0) ? (
+                <EmptyBox text="暂无调用记录" />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={tokenTrend}>
+                    <defs>
+                      <linearGradient id="colorTok" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={fmtTokens} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [fmtTokens(v), 'Token']} />
+                    <Area type="monotone" dataKey="tokens" stroke="var(--primary)" strokeWidth={2} fill="url(#colorTok)" name="Token" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-card border-border shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-foreground">租户增长</CardTitle>
-            <CardDescription className="text-xs">近 6 个月 新增 vs 流失</CardDescription>
+            <CardTitle className="text-sm text-foreground">套餐分布</CardTitle>
+            <CardDescription className="text-xs">按租户数</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={tenantGrowth} barGap={2}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="m" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="add" name="新增" fill="var(--primary)" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="churn" name="流失" fill="var(--destructive)" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex gap-4 mt-3">
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="w-2 h-2 rounded-sm bg-primary" />
-                新增
-              </span>
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="w-2 h-2 rounded-sm bg-destructive" />
-                流失
-              </span>
-            </div>
+          <CardContent className="space-y-2.5">
+            {(['free', 'standard', 'pro', 'enterprise'] as const).map((p) => {
+              const count = tenants.byPlan[p] ?? 0
+              const pct = tenants.total > 0 ? Math.round((count / tenants.total) * 100) : 0
+              return (
+                <div key={p} className="flex items-center gap-3">
+                  <span className="w-16 text-sm text-foreground shrink-0">{PLAN_LABEL[p]}</span>
+                  <div className="flex-1 h-1.5 bg-muted rounded-full">
+                    <div className="h-1.5 rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="w-8 text-xs text-muted-foreground text-right shrink-0">{count}</span>
+                </div>
+              )
+            })}
           </CardContent>
         </Card>
       </div>
 
-      {/* Tenant usage ranking + model cost structure */}
+      {/* 租户消耗排行 + 模型成本 */}
       <div className="grid grid-cols-2 gap-4">
         <Card className="bg-card border-border shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-foreground">租户消耗排行（本月）</CardTitle>
+            <CardTitle className="text-sm text-foreground">租户消耗排行（近 30 天）</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2.5">
-              {tenantUsage.map((t, index) => {
-                const pct = Math.min(100, Math.round((t.tokenUsage / maxTokenUsage) * 100));
-                const over = t.tokenUsage > t.tokenQuota;
-                return (
-                  <div key={t.name} className="flex items-center gap-3">
-                    <span className="w-5 text-xs text-muted-foreground shrink-0">{index + 1}</span>
-                    <span className="w-32 text-sm text-foreground truncate shrink-0">{t.name}</span>
-                    <div className="flex-1 h-1.5 bg-muted rounded-full">
-                      <div
-                        className={`h-1.5 rounded-full ${over ? 'bg-destructive' : 'bg-primary'}`}
-                        style={{ width: `${pct}%` }}
-                      />
+            {tenantRanking.length === 0 ? <EmptyBox text="暂无用量数据" /> : (
+              <div className="space-y-2.5">
+                {tenantRanking.map((t, i) => {
+                  const pct = maxUsage > 0 ? Math.min(100, Math.round((t.tokenUsage / maxUsage) * 100)) : 0
+                  return (
+                    <div key={t.name + i} className="flex items-center gap-3">
+                      <span className="w-5 text-xs text-muted-foreground shrink-0">{i + 1}</span>
+                      <span className="w-32 text-sm text-foreground truncate shrink-0">{t.name}</span>
+                      <div className="flex-1 h-1.5 bg-muted rounded-full">
+                        <div className={`h-1.5 rounded-full ${t.over ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-14 text-xs text-muted-foreground text-right shrink-0">{fmtTokens(t.tokenUsage)}</span>
+                      {t.over && <Badge className="text-[10px] bg-destructive/10 text-destructive shrink-0">超配额</Badge>}
                     </div>
-                    <span className="w-14 text-xs text-muted-foreground text-right shrink-0">
-                      {(t.tokenUsage / 1000000).toFixed(2)}M
-                    </span>
-                    <span className="w-16 text-xs text-foreground text-right shrink-0">
-                      {CURRENCY}
-                      {t.monthlyBill.toLocaleString('en-US')}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="mt-3 text-xs text-warning">
-              ⚠ 云帆物流已超配额 8%（超量 1.5 倍计费），智慧零售连续 2 期逾期
-            </p>
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <Card className="bg-card border-border shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-foreground">模型成本结构（本月）</CardTitle>
+            <CardTitle className="text-sm text-foreground">模型成本结构（近 30 天 · 估算）</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2.5">
-              {modelCost.map((mc) => (
-                <div key={mc.model} className="flex items-center gap-3">
-                  <span className="w-28 text-sm text-foreground shrink-0">{mc.model}</span>
-                  <div className="flex-1 h-1.5 bg-muted rounded-full">
-                    <div className="h-1.5 rounded-full bg-chart-3" style={{ width: `${mc.pct}%` }} />
+            {modelCost.length === 0 ? <EmptyBox text="暂无调用记录" /> : (
+              <div className="space-y-2.5">
+                {modelCost.map((mc) => (
+                  <div key={mc.model} className="flex items-center gap-3">
+                    <span className="w-28 text-sm text-foreground truncate shrink-0">{mc.model}</span>
+                    <div className="flex-1 h-1.5 bg-muted rounded-full">
+                      <div className="h-1.5 rounded-full bg-chart-3" style={{ width: `${mc.pct}%` }} />
+                    </div>
+                    <span className="w-16 text-xs text-muted-foreground text-right shrink-0">{fmtCost(mc.cost)}</span>
+                    <span className="w-10 text-xs text-foreground text-right shrink-0">{mc.pct}%</span>
                   </div>
-                  <span className="w-16 text-xs text-muted-foreground text-right shrink-0">
-                    {CURRENCY}
-                    {mc.cost.toLocaleString('en-US')}
-                  </span>
-                  <span className="w-10 text-xs text-foreground text-right shrink-0">{mc.pct}%</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Ops risk & todo */}
+      {/* 运营风险与待办（真实计算） */}
       <Card className="bg-card border-border shadow-sm">
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm text-foreground flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-              运营风险与待办
-            </CardTitle>
-            <Button variant="ghost" size="sm" className="text-xs h-7 gap-1">
-              去租户管理处理 <ArrowRight className="h-3 w-3" />
-            </Button>
-          </div>
+          <CardTitle className="text-sm text-foreground flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-destructive" />运营风险与待办
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-2">
-            {opsAlerts.map((al) => {
-              const high = al.level === 'high';
-              return (
-                <div
-                  key={al.title}
-                  className={`flex items-start gap-2.5 p-3 rounded-lg border ${
-                    high ? 'bg-destructive/5 border-destructive/20' : 'bg-warning/5 border-warning/20'
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${high ? 'bg-destructive' : 'bg-warning'}`}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">{al.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{al.detail}</p>
+          {risks.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">暂无风险项：无停用租户、无超配额租户</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {risks.map((al, i) => {
+                const high = al.level === 'high'
+                return (
+                  <div key={al.title + i} className={`flex items-start gap-2.5 p-3 rounded-lg border ${high ? 'bg-destructive/5 border-destructive/20' : 'bg-warning/5 border-warning/20'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${high ? 'bg-destructive' : 'bg-warning'}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground">{al.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{al.detail}</p>
+                    </div>
                   </div>
-                  <Badge variant="outline" className="text-[10px] h-5 shrink-0">
-                    {al.time}
-                  </Badge>
-                </div>
-              );
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
-  );
+  )
+}
+
+function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub: string }) {
+  return (
+    <Card className="bg-card border-border shadow-sm">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">{label}</p>
+            <p className="text-2xl font-semibold text-foreground mt-1">{value}</p>
+            <p className="text-xs text-muted-foreground mt-1.5">{sub}</p>
+          </div>
+          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">{icon}</div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function EmptyBox({ text }: { text: string }) {
+  return <div className="h-full flex items-center justify-center text-sm text-muted-foreground">{text}</div>
 }

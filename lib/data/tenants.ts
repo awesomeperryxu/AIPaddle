@@ -81,7 +81,49 @@ export async function provisionTenant(input: ProvisionInput): Promise<TenantSumm
     })
     .select(COLS).single()
   if (error) throw new Error(error.message)
-  return map(data as Row)
+  const tenant = map(data as Row)
+
+  // 4.8.3 开户闭环：开通即建首个 Admin（联系邮箱），发 Auth 邀请邮件让其设密登录。
+  // 平台级跨租户写，全程 service_role（新租户尚无成员，无法用请求级客户端）。
+  // 失败则回滚（软删刚建的租户），不残留「无管理员」的租户。
+  try {
+    await createFirstAdmin(admin, {
+      orgId: tenant.id,
+      name: input.contactName?.trim() || input.contactEmail.trim(),
+      email: input.contactEmail.trim(),
+    })
+  } catch (e) {
+    await admin.from('tenants').update({ deleted_at: new Date().toISOString() }).eq('id', tenant.id)
+    throw new Error(`租户已创建但首个管理员开通失败，已回滚：${e instanceof Error ? e.message : '未知错误'}`)
+  }
+  return tenant
+}
+
+type AdminClient = ReturnType<typeof createAdminClient>
+
+/** 为新租户创建首个 Admin：Auth 邀请 + users 预建 + user_roles=Admin。返回 authUserId。 */
+export async function createFirstAdmin(
+  admin: AdminClient,
+  input: { orgId: string; name: string; email: string },
+): Promise<string> {
+  const { data: invited, error: invErr } = await admin.auth.admin.inviteUserByEmail(
+    input.email,
+    { data: { org_id: input.orgId, name: input.name } },
+  )
+  if (invErr) throw new Error(invErr.message)
+  const uid = invited.user.id
+
+  const { error: uErr } = await admin
+    .from('users')
+    .insert({ id: uid, org_id: input.orgId, name: input.name, email: input.email, status: 'active' })
+  if (uErr) throw new Error(uErr.message)
+
+  const { error: rErr } = await admin
+    .from('user_roles')
+    .insert({ user_id: uid, org_id: input.orgId, role: 'Admin' })
+  if (rErr) throw new Error(rErr.message)
+
+  return uid
 }
 
 /** 停用 / 启用租户。 */

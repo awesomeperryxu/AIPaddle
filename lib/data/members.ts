@@ -3,6 +3,7 @@ import type { Member } from '@/lib/mock-data'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { writeAudit } from '@/lib/data/audit'
 
 // 角色优先级：用于多角色时取"最高权"角色展示
 const ROLE_PRIORITY: Member['role'][] = ['Admin', 'Developer', 'Auditor', 'User']
@@ -73,6 +74,9 @@ export async function updateMemberRole(
     .from('user_roles')
     .insert({ user_id: userId, org_id: ctx.orgId, role })
   if (insErr) throw new Error(insErr.message)
+
+  // 4.8.4：成员授权留痕（ADR-007 §4）。写失败不阻断（业务已落库）。
+  await writeAudit(ctx, 'member.role_updated', 'user', userId, { role })
 }
 
 export async function setMemberStatus(
@@ -106,6 +110,9 @@ export async function setMemberStatus(
     ban_duration: banDuration,
   })
   if (authErr) throw new Error(authErr.message)
+
+  // 4.8.4：成员启停留痕（ADR-007 §4）。
+  await writeAudit(ctx, 'member.status_changed', 'user', userId, { status })
 }
 
 export async function inviteMember(

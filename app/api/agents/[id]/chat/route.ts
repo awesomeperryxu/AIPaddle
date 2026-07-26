@@ -9,6 +9,7 @@ import { retrieveSegments } from '@/lib/kb/rag'
 import { moderateText } from '@/lib/agents/moderation'
 import { substitutePromptVariables } from '@/lib/agents/prompt'
 import { recordCall } from '@/lib/data/call-logs'
+import { enforceLlmQuota } from '@/lib/data/quota'
 import { chatWithUsage, chatWithTools, type ChatMessage, type FunctionTool } from '@/lib/ai'
 import { getAgentResources } from '@/lib/data/agent-resources'
 import { createClient } from '@/lib/supabase/server'
@@ -36,6 +37,11 @@ export async function POST(req: Request, { params }: Ctx) {
   }
   if (!can(ctx, 'agent:chat')) {
     return Response.json({ error: { code: 'forbidden', message: '无权限：对话' } }, { status: 403 })
+  }
+  // 配额强制（4.8.2）：QPS 令牌桶 + Token 熔断，超限前置拒绝，不进入模型调用。
+  const quota = await enforceLlmQuota(ctx)
+  if (!quota.ok) {
+    return Response.json({ error: { code: quota.code, message: quota.message } }, { status: quota.status })
   }
   const { id } = await params
   const agent = await getAgentForChat(ctx, id)

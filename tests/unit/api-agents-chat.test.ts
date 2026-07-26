@@ -13,11 +13,14 @@ vi.mock('@/lib/context', () => ({ getRequestContext: vi.fn() }))
 vi.mock('@/lib/data/agents', () => ({ getAgentForChat: vi.fn() }))
 vi.mock('@/lib/data/call-logs', () => ({ recordCall: vi.fn() }))
 vi.mock('@/lib/ai', () => ({ chatWithUsage: vi.fn() }))
+// 4.8.2 配额强制：默认放行，配额逻辑单测在 quota-ratelimit.test.ts。
+vi.mock('@/lib/data/quota', () => ({ enforceLlmQuota: vi.fn().mockResolvedValue({ ok: true }) }))
 
 import { getRequestContext } from '@/lib/context'
 import { getAgentForChat } from '@/lib/data/agents'
 import { recordCall } from '@/lib/data/call-logs'
 import { chatWithUsage } from '@/lib/ai'
+import { enforceLlmQuota } from '@/lib/data/quota'
 import { POST } from '@/app/api/agents/[id]/chat/route'
 
 const mockCtx = vi.mocked(getRequestContext)
@@ -110,5 +113,14 @@ describe('POST /api/agents/[id]/chat', () => {
     expect((await call([{ role: 'user', content: '你好' }])).status).toBe(502)
     // 4.1.5：失败也落日志
     expect(mockRecord).toHaveBeenCalledWith(userCtx, expect.objectContaining({ agentId: ID, success: false }))
+  })
+
+  it('配额超限 → 429，不进入模型调用（4.8.2）', async () => {
+    mockCtx.mockResolvedValueOnce(userCtx)
+    vi.mocked(enforceLlmQuota).mockResolvedValueOnce({ ok: false, status: 429, code: 'token_quota_exceeded', message: '配额已用尽' })
+    const res = await call([{ role: 'user', content: '你好' }])
+    expect(res.status).toBe(429)
+    expect(mockGetAgent).not.toHaveBeenCalled()   // 前置拒绝，未查 Agent、未调模型
+    expect(mockChat).not.toHaveBeenCalled()
   })
 })
