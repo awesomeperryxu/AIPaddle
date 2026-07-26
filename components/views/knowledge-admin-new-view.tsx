@@ -25,13 +25,30 @@ type ChunkConfig = { chunkSize: number; chunkOverlap: number; separator: string 
 type RetrievalConfig = { topK: number; scoreThreshold: number; searchMethod: string };
 type PreprocessRules = { stripWhitespace: boolean; removeUrls: boolean };
 
-const SAMPLE_TEXT = `AIPaddle 是面向企业的 AI 业务赋能平台，统一管理 Agent、Skill、知识库与工作流。
+const SAMPLE_TEXT = `（示例文本）AIPaddle 是面向企业的 AI 业务赋能平台，统一管理 Agent、Skill、知识库与工作流。
 
 平台核心功能包括：数字员工管理、多轮对话、知识库问答、工作流编排。
 
 企业可通过 AIPaddle 快速部署 AI 助手，提升业务效率，降低人力成本。
 
 知识库支持多格式文档（PDF、Word、Excel、TXT、Markdown），自动向量化并提供语义检索。`;
+
+// 客户端可直接读取文本内容的扩展名
+const TEXT_EXTS = new Set(['.txt', '.md', '.html', '.htm', '.csv']);
+
+function getExt(filename: string): string {
+  const m = filename.match(/\.[^.]+$/);
+  return m ? m[0].toLowerCase() : '';
+}
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve((e.target?.result as string) ?? '');
+    reader.onerror = () => reject(new Error('读取失败'));
+    reader.readAsText(file, 'utf-8');
+  });
+}
 
 const ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.html,.htm';
 
@@ -86,16 +103,19 @@ export function KnowledgeAdminNewView() {
     stripWhitespace: true,
     removeUrls: false,
   });
+  // 预览文本：null=尚未读取，'' =读取中/读取失败
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState<string | null>(null);
+  const [previewIsReal, setPreviewIsReal] = useState(false);
 
   // Step 3
-  const [indexMethod] = useState<'high'>('high');
   const [retrCfg, setRetrCfg] = useState<RetrievalConfig>({
     topK: 5,
     scoreThreshold: 0.28,
     searchMethod: 'vector',
   });
 
-  const previewChunks = chunkSample(SAMPLE_TEXT, chunkCfg);
+  const previewChunks = chunkSample(previewText ?? SAMPLE_TEXT, chunkCfg);
 
   function addFiles(newFiles: FileList | null) {
     if (!newFiles) return;
@@ -116,10 +136,32 @@ export function KnowledgeAdminNewView() {
     return null;
   }
 
-  function next() {
+  async function next() {
     const e = validateStep();
     if (e) { setErr(e); return; }
     setErr(null);
+
+    // Step 0 → Step 1：尝试读取第一个文本文件内容作为真实预览
+    if (step === 0) {
+      const textFile = files.find(f => TEXT_EXTS.has(getExt(f.name)));
+      if (textFile) {
+        try {
+          const content = await readFileAsText(textFile);
+          setPreviewText(content.slice(0, 8000)); // 最多取 8000 字用于预览
+          setPreviewFilename(textFile.name);
+          setPreviewIsReal(true);
+        } catch {
+          setPreviewText(null);
+          setPreviewIsReal(false);
+        }
+      } else {
+        // PDF/Office 文件需服务端解析，无法客户端预览
+        setPreviewText(null);
+        setPreviewFilename(files[0]?.name ?? null);
+        setPreviewIsReal(false);
+      }
+    }
+
     setStep(s => s + 1);
   }
 
@@ -407,7 +449,25 @@ export function KnowledgeAdminNewView() {
                   <h2 className="text-base font-semibold text-foreground">分段预览</h2>
                   <Badge variant="outline" className="text-xs">{previewChunks.length} 块</Badge>
                 </div>
-                <p className="text-xs text-muted-foreground">以下为示例文本的分块效果</p>
+
+                {/* 数据来源说明 */}
+                {previewIsReal ? (
+                  <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                    <FileText className="h-3.5 w-3.5" />
+                    来自上传文件：{previewFilename}
+                  </div>
+                ) : files.length > 0 ? (
+                  <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-400">
+                    <span className="font-medium">注意：</span>
+                    {previewFilename
+                      ? `「${previewFilename}」为 PDF/Office 格式，需服务端解析，`
+                      : '上传的文件需服务端解析，'}
+                    以下预览使用示例文本。实际分段将在文件处理后生效。
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">未上传文件，以下为示例文本的分块效果</p>
+                )}
+
                 <div className="flex-1 overflow-y-auto space-y-2 max-h-72">
                   {previewChunks.map((chunk, i) => (
                     <div key={i} className="rounded-lg border border-border bg-muted/30 p-3">
