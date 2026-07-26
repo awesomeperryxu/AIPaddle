@@ -75,12 +75,18 @@ export function KnowledgeAdminView({
   const [chunkCfg, setChunkCfg] = useState<{ chunkSize: number; chunkOverlap: number; separator: string }>(
     { chunkSize: 800, chunkOverlap: 100, separator: '\n\n' }
   );
-  // 4.2.5 检索测试
+  // 4.2.8 检索参数
+  const [retrCfg, setRetrCfg] = useState<{ topK: number; scoreThreshold: number; searchMethod: string }>(
+    { topK: 5, scoreThreshold: 0.28, searchMethod: 'vector' }
+  );
+  // 4.2.5 检索测试 / 4.2.10 命中调参
   const [retrieveOpen, setRetrieveOpen] = useState(false);
   const [rQuery, setRQuery] = useState('');
   const [rLoading, setRLoading] = useState(false);
   const [rSegments, setRSegments] = useState<RetrievedSeg[]>([]);
   const [rDone, setRDone] = useState(false);
+  const [rTopK, setRTopK] = useState(5);
+  const [rThreshold, setRThreshold] = useState(0.28);
 
   const filteredKBs = knowledgeBases.filter(kb =>
     kb.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -95,10 +101,30 @@ export function KnowledgeAdminView({
       const r = await apiFetch<{
         agents: { agentId: string }[];
         chunkConfig?: { chunkSize: number; chunkOverlap: number; separator: string };
+        retrievalConfig?: { topK: number; scoreThreshold: number; searchMethod: string };
       }>(`/api/knowledge-bases/${kb.id}`);
       setLinkedAgentIds(r.agents.map(a => a.agentId));
       if (r.chunkConfig) setChunkCfg(r.chunkConfig);
+      if (r.retrievalConfig) {
+        setRetrCfg(r.retrievalConfig);
+        setRTopK(r.retrievalConfig.topK);
+        setRThreshold(r.retrievalConfig.scoreThreshold);
+      }
     } catch { /* 忽略拉取失败 */ }
+  }
+
+  async function handleSaveRetrievalConfig() {
+    if (!selectedKB || busy) return;
+    setBusy(true); setMsg('保存检索参数…');
+    try {
+      await apiFetch(`/api/knowledge-bases/${selectedKB.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ retrievalConfig: retrCfg }),
+      });
+      setMsg('已保存');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '保存失败');
+    } finally { setBusy(false); setTimeout(() => setMsg(null), 2500); }
   }
 
   async function handleSaveChunkConfig() {
@@ -149,7 +175,10 @@ export function KnowledgeAdminView({
   }
 
   function openRetrieve() {
-    setRQuery(''); setRSegments([]); setRDone(false); setRetrieveOpen(true);
+    setRQuery(''); setRSegments([]); setRDone(false);
+    // 4.2.10：命中调参默认取该库检索配置
+    setRTopK(retrCfg.topK); setRThreshold(retrCfg.scoreThreshold);
+    setRetrieveOpen(true);
   }
 
   async function runRetrieve() {
@@ -159,7 +188,7 @@ export function KnowledgeAdminView({
     try {
       const r = await apiFetch<{ segments: RetrievedSeg[] }>('/api/knowledge/retrieve', {
         method: 'POST',
-        body: JSON.stringify({ question: q, kbId: selectedKB.id }),
+        body: JSON.stringify({ question: q, kbId: selectedKB.id, topK: rTopK, scoreThreshold: rThreshold }),
       });
       setRSegments(r.segments);
     } catch (e) {
@@ -702,6 +731,50 @@ export function KnowledgeAdminView({
                 </div>
               )}
 
+              {/* 检索参数（4.2.8） */}
+              {canManage && (
+                <div className="space-y-3" data-testid="kb-retrieval-config">
+                  <h4 className="text-sm font-medium text-foreground">检索参数</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="space-y-1">
+                      <span className="text-xs text-muted-foreground">召回数量 topK</span>
+                      <Input
+                        type="number" min={1} max={20}
+                        value={retrCfg.topK}
+                        onChange={(e) => setRetrCfg(c => ({ ...c, topK: Number(e.target.value) }))}
+                        disabled={busy}
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs text-muted-foreground">相似度阈值 0–1</span>
+                      <Input
+                        type="number" min={0} max={1} step={0.01}
+                        value={retrCfg.scoreThreshold}
+                        onChange={(e) => setRetrCfg(c => ({ ...c, scoreThreshold: Number(e.target.value) }))}
+                        disabled={busy}
+                      />
+                    </label>
+                  </div>
+                  <label className="space-y-1 block">
+                    <span className="text-xs text-muted-foreground">检索方式</span>
+                    <select
+                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      value={retrCfg.searchMethod}
+                      onChange={(e) => setRetrCfg(c => ({ ...c, searchMethod: e.target.value }))}
+                      disabled={busy}
+                    >
+                      <option value="vector">向量检索</option>
+                      <option value="fulltext" disabled>全文检索（待模型供应商就绪）</option>
+                      <option value="hybrid" disabled>混合检索 + rerank（待模型供应商就绪）</option>
+                    </select>
+                  </label>
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleSaveRetrievalConfig} disabled={busy}>
+                    保存检索参数
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">全文/混合检索与 rerank 待 M 道模型供应商就绪后开放。</p>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="space-y-2">
                 <input
@@ -770,6 +843,26 @@ export function KnowledgeAdminView({
               <Button onClick={runRetrieve} disabled={rLoading || !rQuery.trim()}>
                 {rLoading ? '检索中…' : '检索'}
               </Button>
+            </div>
+            {/* 4.2.10 命中调参：本次检索临时覆盖 topK/阈值（不改库配置） */}
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <label className="flex items-center gap-1">
+                topK
+                <Input
+                  type="number" min={1} max={20} value={rTopK}
+                  onChange={(e) => setRTopK(Math.min(Math.max(Number(e.target.value), 1), 20))}
+                  className="h-7 w-16" aria-label="topK"
+                />
+              </label>
+              <label className="flex items-center gap-1">
+                阈值
+                <Input
+                  type="number" min={0} max={1} step={0.01} value={rThreshold}
+                  onChange={(e) => setRThreshold(Math.min(Math.max(Number(e.target.value), 0), 1))}
+                  className="h-7 w-20" aria-label="阈值"
+                />
+              </label>
+              <span className="text-[11px]">调参仅作用于本次测试</span>
             </div>
             <div className="space-y-2 max-h-[50vh] overflow-y-auto">
               {rDone && rSegments.length === 0 && (

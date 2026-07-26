@@ -133,6 +133,51 @@ export async function setKbChunkConfig(_ctx: RequestContext, kbId: string, confi
   if (error) throw new Error(error.message)
 }
 
+// ── 4.2.8 检索参数 ─────────────────────────────────────────
+
+export type SearchMethod = 'vector' | 'fulltext' | 'hybrid'
+export type KbRetrievalConfig = { topK: number; scoreThreshold: number; searchMethod: SearchMethod }
+export const DEFAULT_KB_RETRIEVAL_CONFIG: KbRetrievalConfig = {
+  topK: 5, scoreThreshold: 0.28, searchMethod: 'vector',
+}
+
+/** 规整检索参数：topK∈[1,20]、阈值∈[0,1]；searchMethod 目前仅 vector 生效（其余回落 vector）。 */
+export function normalizeRetrievalConfig(c?: Partial<KbRetrievalConfig> | null): KbRetrievalConfig {
+  const rawK = Number(c?.topK)
+  const topK = Math.min(Math.max(Math.floor(Number.isFinite(rawK) ? rawK : DEFAULT_KB_RETRIEVAL_CONFIG.topK), 1), 20)
+  const rawTh = Number(c?.scoreThreshold)
+  const scoreThreshold = Number.isFinite(rawTh) ? Math.min(Math.max(rawTh, 0), 1) : DEFAULT_KB_RETRIEVAL_CONFIG.scoreThreshold
+  // 全文/混合检索尚未落地（待 M 道 + tsvector），暂只接受 vector。
+  const searchMethod: SearchMethod = c?.searchMethod === 'fulltext' || c?.searchMethod === 'hybrid'
+    ? c.searchMethod
+    : 'vector'
+  return { topK, scoreThreshold, searchMethod }
+}
+
+/** 读取知识库检索参数；缺列/异常回落默认。 */
+export async function getKbRetrievalConfig(_ctx: RequestContext, kbId: string): Promise<KbRetrievalConfig> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('knowledge_bases')
+    .select('retrieval_config')
+    .eq('id', kbId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return normalizeRetrievalConfig((data as { retrieval_config?: Partial<KbRetrievalConfig> | null } | null)?.retrieval_config)
+}
+
+/** 保存知识库检索参数（应用层已规整）。 */
+export async function setKbRetrievalConfig(_ctx: RequestContext, kbId: string, config: KbRetrievalConfig): Promise<void> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('knowledge_bases')
+    .update({ retrieval_config: config, updated_at: new Date().toISOString() })
+    .eq('id', kbId)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+}
+
 // ── 4.2.8 知识库权限范围 ────────────────────────────────────
 
 /** 设置知识库可见性（org=全员可见 / restricted=仅关联 Agent 可用）。 */
