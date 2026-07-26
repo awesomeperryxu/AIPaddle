@@ -224,6 +224,19 @@ export async function setKbVisibility(
 }
 
 /** 软删除知识库（4.2.9）：连带软删其文档与内容块，使检索不再命中已删库。 */
+export async function updateKnowledgeBase(
+  _ctx: RequestContext,
+  kbId: string,
+  patch: { name?: string; description?: string },
+): Promise<void> {
+  const supabase = await createClient()
+  await supabase
+    .from('knowledge_bases')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', kbId)
+    .is('deleted_at', null)
+}
+
 export async function deleteKnowledgeBase(ctx: RequestContext, kbId: string): Promise<void> {
   const supabase = await createClient()
   const now = new Date().toISOString()

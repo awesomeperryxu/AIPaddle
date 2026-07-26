@@ -10,6 +10,7 @@ import {
   setKbChunkConfig,
   setKbRetrievalConfig,
   setKbVisibility,
+  updateKnowledgeBase,
   type KbVisibility,
 } from '@/lib/data/knowledge'
 import { normalizeChunkConfig } from '@/lib/kb/ingest'
@@ -36,6 +37,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   const { id } = await params
   const body = await request.json().catch(() => ({} as Record<string, unknown>))
+
+  if (body?.name !== undefined || body?.description !== undefined) {
+    const patch: Record<string, string> = {}
+    if (typeof body.name === 'string' && body.name.trim()) patch.name = body.name.trim()
+    if (typeof body.description === 'string') patch.description = body.description.trim()
+    if (Object.keys(patch).length > 0) await updateKnowledgeBase(ctx, id, patch)
+  }
 
   if (body?.visibility !== undefined) {
     const v = String(body.visibility)
