@@ -1,6 +1,7 @@
 import 'server-only'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
+import { AGENT_MODELS } from '@/lib/agents/config'
 
 export type TenantInfo = {
   id: string
@@ -94,6 +95,35 @@ export async function updateTenant(
   const { error } = await supabase
     .from('tenants')
     .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', ctx.orgId)
+
+  if (error) throw new Error(error.message)
+}
+
+/** 读当前租户的默认 LLM 模型（RLS 只允许读本租户那行）。 */
+export async function getTenantDefaultModel(ctx: RequestContext): Promise<string> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('tenants')
+    .select('default_model')
+    .eq('id', ctx.orgId)
+    .single()
+
+  if (error || !data) throw new Error(error?.message ?? 'tenant not found')
+  return (data.default_model as string) ?? 'qwen-plus'
+}
+
+/** 设置当前租户的默认 LLM 模型；model 必须 ∈ AGENT_MODELS.value（服务端兜底校验）。 */
+export async function setTenantDefaultModel(ctx: RequestContext, model: string): Promise<void> {
+  if (!AGENT_MODELS.some((m) => m.value === model)) {
+    throw new Error(`非法模型：${model}`)
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('tenants')
+    .update({ default_model: model, updated_at: new Date().toISOString() })
     .eq('id', ctx.orgId)
 
   if (error) throw new Error(error.message)

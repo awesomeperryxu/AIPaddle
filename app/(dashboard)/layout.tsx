@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getRequestContext } from '@/lib/context'
+import { can } from '@/lib/auth/permissions'
+import { getTenantDefaultModel } from '@/lib/data/tenant'
 import { DashboardShell } from '@/components/dashboard-shell'
 
 // 登录后系统外壳（侧边栏 + 视图路由）。服务端 auth 守卫；proxy 中间件已做首层拦截，这里兜底。
@@ -18,6 +20,8 @@ export default async function DashboardGroupLayout({
   // 真实租户名（RLS 只允许读本租户，天然隔离；替换侧边栏原硬编码占位名"示范科技"）
   let orgName = '—'
   let userRole = '成员'
+  let defaultModel = 'qwen-plus'
+  let canManageTenant = false
   const ctx = await getRequestContext()
   if (ctx) {
     const { data: tenant } = await supabase
@@ -30,7 +34,22 @@ export default async function DashboardGroupLayout({
     const ROLE_LABEL: Record<string, string> = { Admin: '管理员', Developer: '开发者', User: '用户', Auditor: '审计员' }
     const top = ['Admin', 'Developer', 'Auditor', 'User'].find((r) => ctx.roles.includes(r as never))
     userRole = (top && ROLE_LABEL[top]) ?? '成员'
+    // 租户默认模型 + 管理权限（供左侧栏「模型选择」用；tenant:manage=Admin 可改）
+    canManageTenant = can(ctx, 'tenant:manage')
+    if (can(ctx, 'tenant:read')) {
+      defaultModel = await getTenantDefaultModel(ctx)
+    }
   }
 
-  return <DashboardShell userName={userName} userRole={userRole} orgName={orgName}>{children}</DashboardShell>
+  return (
+    <DashboardShell
+      userName={userName}
+      userRole={userRole}
+      orgName={orgName}
+      defaultModel={defaultModel}
+      canManageTenant={canManageTenant}
+    >
+      {children}
+    </DashboardShell>
+  )
 }
