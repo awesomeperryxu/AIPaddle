@@ -176,6 +176,41 @@ export function KnowledgeAdminView({
     } finally { setBusy(false); }
   }
 
+  // 4.2.9：知识库卡片下拉菜单——真实动作（不再是占位）
+  function handleUploadFromMenu(kb: KbView) {
+    selectKb(kb);
+    setTimeout(() => fileRef.current?.click(), 120);
+  }
+
+  async function handleReindex(kb: KbView) {
+    if (busy) return;
+    const docs = documents.filter(d => d.kbId === kb.id);
+    if (docs.length === 0) { window.alert('该知识库暂无文档'); return; }
+    if (!window.confirm(`对「${kb.name}」的 ${docs.length} 个文档重新向量化？`)) return;
+    setBusy(true); setMsg('重新向量化中…');
+    try {
+      for (const d of docs) {
+        await apiFetch(`/api/documents/${d.id}/process`, { method: 'POST' });
+      }
+      setMsg('已完成'); router.refresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '重新向量化失败');
+    } finally { setBusy(false); setTimeout(() => setMsg(null), 2500); }
+  }
+
+  async function handleDeleteKb(kb: KbView) {
+    if (busy) return;
+    if (!window.confirm(`确定删除知识库「${kb.name}」？其文档与向量将一并移除。`)) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/api/knowledge-bases/${kb.id}`, { method: 'DELETE' });
+      if (selectedKB?.id === kb.id) setSelectedKB(null);
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '删除失败');
+    } finally { setBusy(false); }
+  }
+
   async function handleCreateKb() {
     const name = window.prompt('知识库名称？');
     if (!name?.trim() || busy) return;
@@ -316,22 +351,36 @@ export function KnowledgeAdminView({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-popover border-border">
-                        <DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={!canManage || busy}
+                          onClick={(e) => { e.stopPropagation(); handleUploadFromMenu(kb); }}
+                        >
                           <Upload className="h-4 w-4 mr-2" />
                           上传文档
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={!canManage || busy}
+                          onClick={(e) => { e.stopPropagation(); handleReindex(kb); }}
+                        >
                           <RefreshCw className="h-4 w-4 mr-2" />
                           重新向量化
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); selectKb(kb); }}>
                           <Settings className="h-4 w-4 mr-2" />
                           设置
                         </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">
-                          删除知识库
-                        </DropdownMenuItem>
+                        {canManage && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              disabled={busy}
+                              onClick={(e) => { e.stopPropagation(); handleDeleteKb(kb); }}
+                            >
+                              删除知识库
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -370,23 +419,39 @@ export function KnowledgeAdminView({
                 </div>
               </div>
 
-              {/* Vector Status */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium text-foreground">向量化状态</h4>
-                  <Badge className={statusConfig[selectedKB.vectorStatus].className}>
-                    {statusConfig[selectedKB.vectorStatus].label}
-                  </Badge>
-                </div>
-                {selectedKB.vectorStatus === 'processing' ? (
+              {/* Vector Status（4.2.9：由文档真实状态聚合，不再写死进度）*/}
+              {(() => {
+                const total = kbDocs.length;
+                const done = kbDocs.filter(d => d.status === 'active' || d.status === 'completed').length;
+                const failed = kbDocs.filter(d => d.status === 'error' || d.status === 'failed').length;
+                const processing = total - done - failed;
+                const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+                return (
                   <div className="space-y-2">
-                    <Progress value={65} className="h-2" />
-                    <p className="text-xs text-muted-foreground">正在处理: 技术架构文档.pdf (65%)</p>
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-medium text-foreground">向量化状态</h4>
+                      <span className="text-xs text-muted-foreground">{done}/{total} 完成</span>
+                    </div>
+                    {total === 0 ? (
+                      <p className="text-sm text-muted-foreground">暂无文档</p>
+                    ) : processing > 0 ? (
+                      <div className="space-y-2">
+                        <Progress value={pct} className="h-2" />
+                        <p className="text-xs text-muted-foreground">
+                          处理中 {processing} 个{failed > 0 ? `，失败 ${failed} 个` : ''}
+                        </p>
+                      </div>
+                    ) : failed > 0 ? (
+                      <div className="space-y-2">
+                        <Progress value={pct} className="h-2" />
+                        <p className="text-xs text-destructive">{failed} 个文档向量化失败，可在下拉菜单「重新向量化」重试</p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">所有文档已完成向量化处理（{done}）</p>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">所有文档已完成向量化处理</p>
-                )}
-              </div>
+                );
+              })()}
 
               {/* Documents */}
               <div className="space-y-3">
