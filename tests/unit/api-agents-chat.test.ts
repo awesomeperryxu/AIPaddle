@@ -15,6 +15,10 @@ vi.mock('@/lib/data/call-logs', () => ({ recordCall: vi.fn() }))
 vi.mock('@/lib/ai', () => ({ chatWithUsage: vi.fn() }))
 // 4.8.2 配额强制：默认放行，配额逻辑单测在 quota-ratelimit.test.ts。
 vi.mock('@/lib/data/quota', () => ({ enforceLlmQuota: vi.fn().mockResolvedValue({ ok: true }) }))
+// 4.8.5 运行时解析：默认平台客户端，解析逻辑单测在 resolve-model-client.test.ts。
+vi.mock('@/lib/ai/resolve', () => ({
+  resolveModelClient: vi.fn().mockResolvedValue({ baseURL: 'https://platform/v1', apiKey: 'plat-key', model: 'qwen-plus', source: 'platform' }),
+}))
 
 import { getRequestContext } from '@/lib/context'
 import { getAgentForChat } from '@/lib/data/agents'

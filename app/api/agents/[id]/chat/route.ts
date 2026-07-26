@@ -11,6 +11,7 @@ import { substitutePromptVariables } from '@/lib/agents/prompt'
 import { recordCall } from '@/lib/data/call-logs'
 import { enforceLlmQuota } from '@/lib/data/quota'
 import { chatWithUsage, chatWithTools, type ChatMessage, type FunctionTool } from '@/lib/ai'
+import { resolveModelClient } from '@/lib/ai/resolve'
 import { getAgentResources } from '@/lib/data/agent-resources'
 import { createClient } from '@/lib/supabase/server'
 import { listMcpTools, callMcpTool } from '@/lib/mcp/client'
@@ -48,6 +49,8 @@ export async function POST(req: Request, { params }: Ctx) {
   if (!agent) {
     return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
   }
+  // 4.8.5：按租户解析 LLM 客户端（配了用租户供应商/Key，未配回退平台 env）。model 仍以 Agent 选择为准。
+  const llmClient = await resolveModelClient(ctx, 'llm')
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
   const raw: unknown[] = Array.isArray(body?.messages) ? (body.messages as unknown[]) : []
@@ -190,7 +193,7 @@ export async function POST(req: Request, { params }: Ctx) {
           [{ role: 'system', content: systemPrompt }, ...history],
           tools,
           handler,
-          { model: agent.model, temperature: agent.temperature, maxIterations: 5 },
+          { model: agent.model, temperature: agent.temperature, maxIterations: 5, client: llmClient },
         )
         await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, success: true })
         return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model, brain: 'mcp_direct' } })
@@ -206,7 +209,7 @@ export async function POST(req: Request, { params }: Ctx) {
   try {
     const { content, tokensIn, tokensOut, model } = await chatWithUsage(
       [{ role: 'system', content: systemPrompt }, ...history],
-      { model: agent.model, temperature: agent.temperature },
+      { model: agent.model, temperature: agent.temperature, client: llmClient },
     )
     await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, success: true })
     return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model } })
