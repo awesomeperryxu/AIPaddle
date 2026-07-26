@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import type { KnowledgeBase } from '@/lib/mock-data';
 import { apiFetch } from '@/lib/api/client';
 import { Progress } from '@/components/ui/progress';
@@ -36,6 +37,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
 
 const statusConfig = {
@@ -233,20 +236,112 @@ export function KnowledgeAdminView({
     } finally { setBusy(false); }
   }
 
-  async function handleCreateKb() {
-    const name = window.prompt('知识库名称？');
-    if (!name?.trim() || busy) return;
-    setBusy(true);
+  // 4.2.11 创建向导（替换 window.prompt）
+  const [createOpen, setCreateOpen] = useState(false);
+  const [cName, setCName] = useState('');
+  const [cDesc, setCDesc] = useState('');
+  const [cChunk, setCChunk] = useState<{ chunkSize: number; chunkOverlap: number; separator: string }>(
+    { chunkSize: 800, chunkOverlap: 100, separator: '\n\n' }
+  );
+  const [cErr, setCErr] = useState<string | null>(null);
+
+  function openCreate() {
+    setCName(''); setCDesc(''); setCChunk({ chunkSize: 800, chunkOverlap: 100, separator: '\n\n' });
+    setCErr(null); setCreateOpen(true);
+  }
+
+  async function submitCreate() {
+    const name = cName.trim();
+    if (!name) { setCErr('请填写知识库名称'); return; }
+    if (busy) return;
+    setBusy(true); setCErr(null);
     try {
-      await apiFetch('/api/knowledge-bases', { method: 'POST', body: JSON.stringify({ name: name.trim() }) });
+      const r = await apiFetch<{ knowledgeBase: { id: string } }>('/api/knowledge-bases', {
+        method: 'POST',
+        body: JSON.stringify({ name, description: cDesc.trim() || undefined }),
+      });
+      // 切块参数非默认 → 落库（下次向量化生效）
+      const isDefault = cChunk.chunkSize === 800 && cChunk.chunkOverlap === 100 && cChunk.separator === '\n\n';
+      if (!isDefault && r.knowledgeBase?.id) {
+        await apiFetch(`/api/knowledge-bases/${r.knowledgeBase.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ chunkConfig: cChunk }),
+        });
+      }
+      setCreateOpen(false);
       router.refresh();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : '创建失败');
+      setCErr(e instanceof Error ? e.message : '创建失败');
     } finally { setBusy(false); }
   }
 
   return (
     <div className="flex h-full gap-6">
+      {/* 创建向导（4.2.11） */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg" data-testid="kb-create-dialog">
+          <DialogHeader>
+            <DialogTitle>创建知识库</DialogTitle>
+            <DialogDescription>填写基本信息与切块参数，创建后可上传文档并向量化。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <label className="space-y-1 block">
+              <span className="text-xs text-muted-foreground">名称 <span className="text-destructive">*</span></span>
+              <Input
+                value={cName}
+                onChange={(e) => setCName(e.target.value)}
+                placeholder="如：产品技术文档库"
+                data-testid="kb-create-name"
+                autoFocus
+              />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-xs text-muted-foreground">描述（可选）</span>
+              <Textarea
+                value={cDesc}
+                onChange={(e) => setCDesc(e.target.value)}
+                placeholder="简述知识库用途"
+                rows={2}
+              />
+            </label>
+            <div className="space-y-2 rounded-lg border border-border p-3">
+              <p className="text-xs font-medium text-foreground">切块参数（可后续在设置中修改）</p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <span className="text-xs text-muted-foreground">最大长度</span>
+                  <Input type="number" min={50} max={4000} value={cChunk.chunkSize}
+                    onChange={(e) => setCChunk(c => ({ ...c, chunkSize: Number(e.target.value) }))} />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-muted-foreground">重叠</span>
+                  <Input type="number" min={0} max={2000} value={cChunk.chunkOverlap}
+                    onChange={(e) => setCChunk(c => ({ ...c, chunkOverlap: Number(e.target.value) }))} />
+                </label>
+              </div>
+              <label className="space-y-1 block">
+                <span className="text-xs text-muted-foreground">分段分隔符</span>
+                <select
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={cChunk.separator}
+                  onChange={(e) => setCChunk(c => ({ ...c, separator: e.target.value }))}
+                >
+                  <option value={'\n\n'}>空行（段落）</option>
+                  <option value={'\n'}>换行</option>
+                  <option value={''}>不分段（仅按长度）</option>
+                </select>
+              </label>
+            </div>
+            {cErr && <p className="text-xs text-destructive" data-testid="kb-create-err">{cErr}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={busy}>取消</Button>
+            <Button onClick={submitCreate} disabled={busy} data-testid="kb-create-submit">
+              {busy ? '创建中…' : '创建'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className={`flex-1 space-y-6 ${selectedKB ? 'max-w-2xl' : ''}`}>
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -255,7 +350,7 @@ export function KnowledgeAdminView({
             <p className="text-muted-foreground">管理企业知识文档</p>
           </div>
           {canManage && (
-            <Button className="gap-2" onClick={handleCreateKb} disabled={busy}>
+            <Button className="gap-2" onClick={openCreate} disabled={busy}>
               <Plus className="h-4 w-4" />
               创建知识库
             </Button>
