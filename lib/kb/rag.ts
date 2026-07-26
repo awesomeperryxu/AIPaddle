@@ -3,11 +3,11 @@ import type { RequestContext } from '@/lib/context'
 import { embedOne, chat } from '@/lib/ai'
 import { searchChunks } from '@/lib/data/chunks'
 import { getDocumentFilenames } from '@/lib/data/documents'
-import { listAccessibleKbIds } from '@/lib/data/knowledge'
+import { getKbRetrievalConfig, listAccessibleKbIds, DEFAULT_KB_RETRIEVAL_CONFIG } from '@/lib/data/knowledge'
 
-// 相似度阈值：低于此值视为"检索不到"，触发拒答（金标准里有必须拒答的问题）。
-const MIN_SIMILARITY = 0.28
-const TOP_K = 5
+// 相似度阈值/topK 默认值（原硬编码；4.2.8 起改为按 KB 配置，缺省回落这里）。
+const MIN_SIMILARITY = DEFAULT_KB_RETRIEVAL_CONFIG.scoreThreshold
+const TOP_K = DEFAULT_KB_RETRIEVAL_CONFIG.topK
 
 export type Citation = {
   documentId: string
@@ -35,7 +35,7 @@ export type RetrievedSegment = {
 export async function retrieveSegments(
   ctx: RequestContext,
   question: string,
-  opts?: { kbId?: string; topK?: number; agentId?: string },
+  opts?: { kbId?: string; topK?: number; scoreThreshold?: number; agentId?: string },
 ): Promise<RetrievedSegment[]> {
   const q = question.trim()
   if (!q) return []
@@ -46,14 +46,19 @@ export async function retrieveSegments(
       ? await listAccessibleKbIds(ctx, { agentId: opts.agentId })
       : await listAccessibleKbIds(ctx)
   if (kbIds.length === 0) return []
+  // 4.2.8：单库时读该库检索配置；显式 opts 覆盖（命中测试调参用）。多库回落默认。
+  const kbConfig = opts?.kbId ? await getKbRetrievalConfig(ctx, opts.kbId) : null
+  const topK = opts?.topK ?? kbConfig?.topK ?? TOP_K
+  const threshold = opts?.scoreThreshold ?? kbConfig?.scoreThreshold ?? MIN_SIMILARITY
   const qEmbedding = await embedOne(q)
-  const matches = await searchChunks(ctx, qEmbedding, opts?.topK ?? TOP_K, kbIds)
-  if (matches.length === 0) return []
+  const matches = await searchChunks(ctx, qEmbedding, topK, kbIds)
+  const passed = matches.filter((m) => m.similarity >= threshold)
+  if (passed.length === 0) return []
   const filenames = await getDocumentFilenames(
     ctx,
-    [...new Set(matches.map((m) => m.documentId))],
+    [...new Set(passed.map((m) => m.documentId))],
   )
-  return matches
+  return passed
     .map((m) => ({
       documentId: m.documentId,
       filename: filenames[m.documentId] ?? '文档',
@@ -83,9 +88,14 @@ export async function answerQuestion(
   if (!q) return { answer: '请输入问题。', citations: [], refused: true }
 
   const kbIds = await listAccessibleKbIds(ctx, { agentId: opts?.agentId })
+  if (kbIds.length === 0) return { answer: '未找到相关信息。', citations: [], refused: true }
+  // 4.2.8：单库时按其检索配置；多库回落默认。
+  const cfg = kbIds.length === 1 ? await getKbRetrievalConfig(ctx, kbIds[0]) : null
+  const topK = cfg?.topK ?? TOP_K
+  const threshold = cfg?.scoreThreshold ?? MIN_SIMILARITY
   const qEmbedding = await embedOne(q)
-  const matches = await searchChunks(ctx, qEmbedding, TOP_K, kbIds)
-  const relevant = matches.filter((m) => m.similarity >= MIN_SIMILARITY)
+  const matches = await searchChunks(ctx, qEmbedding, topK, kbIds)
+  const relevant = matches.filter((m) => m.similarity >= threshold)
 
   if (relevant.length === 0) {
     return { answer: '未找到相关信息。', citations: [], refused: true }

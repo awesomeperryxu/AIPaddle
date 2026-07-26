@@ -3,9 +3,12 @@ import { can } from '@/lib/auth/permissions'
 import {
   deleteKnowledgeBase,
   getKbChunkConfig,
+  getKbRetrievalConfig,
   listKbAgents,
+  normalizeRetrievalConfig,
   setKbAgents,
   setKbChunkConfig,
+  setKbRetrievalConfig,
   setKbVisibility,
   type KbVisibility,
 } from '@/lib/data/knowledge'
@@ -16,11 +19,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const ctx = await getRequestContext()
   if (!ctx) return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
   const { id } = await params
-  const [agents, chunkConfig] = await Promise.all([
+  const [agents, chunkConfig, retrievalConfig] = await Promise.all([
     listKbAgents(ctx, id),
     getKbChunkConfig(ctx, id),
+    getKbRetrievalConfig(ctx, id),
   ])
-  return Response.json({ agents, chunkConfig })
+  return Response.json({ agents, chunkConfig, retrievalConfig })
 }
 
 // PATCH /api/knowledge-bases/[id] —— 设置可见性 / 覆盖关联 Agent（4.2.8）
@@ -54,6 +58,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return Response.json({ error: { code: 'invalid', message: 'chunkConfig 非法' } }, { status: 400 })
     }
     await setKbChunkConfig(ctx, id, normalizeChunkConfig(body.chunkConfig as Record<string, unknown>))
+  }
+
+  // 4.2.8：检索参数
+  if (body?.retrievalConfig !== undefined && body.retrievalConfig !== null) {
+    if (typeof body.retrievalConfig !== 'object') {
+      return Response.json({ error: { code: 'invalid', message: 'retrievalConfig 非法' } }, { status: 400 })
+    }
+    await setKbRetrievalConfig(ctx, id, normalizeRetrievalConfig(body.retrievalConfig as Record<string, unknown>))
   }
 
   return Response.json({ ok: true })
