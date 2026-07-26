@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { apiFetch } from '@/lib/api/client';
 import {
   ChevronLeft,
@@ -15,6 +16,9 @@ import {
   Zap,
   Settings2,
   BookOpen,
+  Upload,
+  FileText,
+  X,
 } from 'lucide-react';
 
 type ChunkConfig = { chunkSize: number; chunkOverlap: number; separator: string };
@@ -27,6 +31,14 @@ const SAMPLE_TEXT = `AIPaddle 是面向企业的 AI 业务赋能平台，统一�
 企业可通过 AIPaddle 快速部署 AI 助手，提升业务效率，降低人力成本。
 
 知识库支持多格式文档（PDF、Word、Excel、TXT、Markdown），自动向量化并提供语义检索。`;
+
+const ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.html,.htm';
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 function chunkSample(text: string, cfg: ChunkConfig): string[] {
   const step = cfg.chunkSize - cfg.chunkOverlap;
@@ -52,13 +64,16 @@ const STEPS = [
 
 export function KnowledgeAdminNewView() {
   const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
 
   // Step 1
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
 
   // Step 2
   const [chunkCfg, setChunkCfg] = useState<ChunkConfig>({
@@ -68,7 +83,7 @@ export function KnowledgeAdminNewView() {
   });
 
   // Step 3
-  const [indexMethod, setIndexMethod] = useState<'high' | 'economical'>('high');
+  const [indexMethod] = useState<'high'>('high');
   const [retrCfg, setRetrCfg] = useState<RetrievalConfig>({
     topK: 5,
     scoreThreshold: 0.28,
@@ -76,6 +91,19 @@ export function KnowledgeAdminNewView() {
   });
 
   const previewChunks = chunkSample(SAMPLE_TEXT, chunkCfg);
+
+  function addFiles(newFiles: FileList | null) {
+    if (!newFiles) return;
+    const arr = Array.from(newFiles);
+    setFiles(prev => {
+      const existing = new Set(prev.map(f => f.name));
+      return [...prev, ...arr.filter(f => !existing.has(f.name))];
+    });
+  }
+
+  function removeFile(name: string) {
+    setFiles(prev => prev.filter(f => f.name !== name));
+  }
 
   function validateStep(): string | null {
     if (step === 0 && !name.trim()) return '请填写知识库名称';
@@ -96,31 +124,49 @@ export function KnowledgeAdminNewView() {
     if (busy) return;
     setBusy(true); setErr(null);
     try {
+      // 1. 创建知识库
+      setUploadProgress('创建知识库…');
       const r = await apiFetch<{ knowledgeBase: { id: string } }>('/api/knowledge-bases', {
         method: 'POST',
         body: JSON.stringify({ name: name.trim(), description: desc.trim() || undefined }),
       });
       const kbId = r.knowledgeBase?.id;
-      if (kbId) {
-        const isDefaultChunk = chunkCfg.chunkSize === 800 && chunkCfg.chunkOverlap === 100 && chunkCfg.separator === '\n\n';
-        const isDefaultRetr = retrCfg.topK === 5 && retrCfg.scoreThreshold === 0.28 && retrCfg.searchMethod === 'vector';
-        await Promise.all([
-          !isDefaultChunk && apiFetch(`/api/knowledge-bases/${kbId}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ chunkConfig: chunkCfg }),
-          }),
-          !isDefaultRetr && apiFetch(`/api/knowledge-bases/${kbId}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ retrievalConfig: retrCfg }),
-          }),
-        ].filter(Boolean));
-        router.push(`/knowledge-admin/${kbId}`);
-      } else {
-        router.push('/knowledge-admin');
+      if (!kbId) throw new Error('创建知识库失败');
+
+      // 2. 保存非默认配置
+      const isDefaultChunk = chunkCfg.chunkSize === 800 && chunkCfg.chunkOverlap === 100 && chunkCfg.separator === '\n\n';
+      const isDefaultRetr = retrCfg.topK === 5 && retrCfg.scoreThreshold === 0.28 && retrCfg.searchMethod === 'vector';
+      await Promise.all([
+        !isDefaultChunk && apiFetch(`/api/knowledge-bases/${kbId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ chunkConfig: chunkCfg }),
+        }),
+        !isDefaultRetr && apiFetch(`/api/knowledge-bases/${kbId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ retrievalConfig: retrCfg }),
+        }),
+      ].filter(Boolean));
+
+      // 3. 上传并向量化文件（逐个顺序，方便进度提示）
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadProgress(`上传文件 ${i + 1}/${files.length}：${file.name}`);
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('kbId', kbId);
+        const upRes = await fetch('/api/documents', { method: 'POST', body: fd });
+        const up = await upRes.json();
+        if (!upRes.ok) throw new Error(up?.error?.message ?? `上传失败：${file.name}`);
+        // 触发向量化（异步，不阻塞跳转）
+        apiFetch(`/api/documents/${up.document.id}/process`, { method: 'POST' }).catch(() => {});
       }
+
+      setUploadProgress('完成，跳转中…');
+      router.push(`/knowledge-admin/${kbId}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : '创建失败');
       setBusy(false);
+      setUploadProgress(null);
     }
   }
 
@@ -177,13 +223,13 @@ export function KnowledgeAdminNewView() {
       <div className="flex-1 flex justify-center">
         <div className="w-full max-w-2xl">
 
-          {/* Step 1: 基本信息 */}
+          {/* Step 1: 基本信息 + 文件上传 */}
           {step === 0 && (
-            <div className="space-y-6">
+            <div className="space-y-5">
               <div className="rounded-xl border border-border bg-card p-6 space-y-5">
                 <div>
                   <h2 className="text-base font-semibold text-foreground mb-1">知识库基本信息</h2>
-                  <p className="text-sm text-muted-foreground">知识库名称将显示在 Agent 的知识范围中。</p>
+                  <p className="text-sm text-muted-foreground">填写名称，然后上传文档文件。</p>
                 </div>
                 <label className="space-y-1.5 block">
                   <span className="text-sm font-medium text-foreground">
@@ -203,21 +249,73 @@ export function KnowledgeAdminNewView() {
                   <Textarea
                     value={desc}
                     onChange={e => setDesc(e.target.value)}
-                    placeholder="简述知识库的用途，帮助 Agent 更好地决策何时调用该知识库"
-                    rows={3}
+                    placeholder="简述知识库用途，帮助 Agent 决策何时调用"
+                    rows={2}
                     className="resize-none"
                   />
                 </label>
               </div>
 
-              <div className="rounded-xl border border-border bg-card p-6">
-                <h2 className="text-base font-semibold text-foreground mb-3">支持的文件格式</h2>
-                <div className="flex flex-wrap gap-2">
-                  {['PDF', 'Word (.docx)', 'Excel (.xlsx)', 'PPT (.pptx)', 'TXT', 'Markdown', 'HTML'].map(f => (
-                    <Badge key={f} variant="outline" className="text-xs">{f}</Badge>
-                  ))}
+              {/* 文件上传区 */}
+              <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+                <div>
+                  <h2 className="text-base font-semibold text-foreground mb-1">上传文档</h2>
+                  <p className="text-sm text-muted-foreground">
+                    支持 PDF、Word、Excel、PPT、TXT、Markdown。可跳过，创建后在详情页补传。
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-3">文件上传在知识库创建完成后进行，支持批量拖拽上传。</p>
+
+                {/* Drop zone */}
+                <div
+                  className="rounded-lg border-2 border-dashed border-border bg-muted/20 hover:bg-muted/40 hover:border-primary/50 transition-colors p-8 text-center cursor-pointer"
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files); }}
+                >
+                  <Upload className="h-7 w-7 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm font-medium text-foreground">拖拽文件到此处，或点击选择</p>
+                  <p className="text-xs text-muted-foreground mt-1">可多选，单文件不超过 50MB</p>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    className="hidden"
+                    accept={ACCEPT}
+                    multiple
+                    onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+                  />
+                </div>
+
+                {/* 已选文件列表 */}
+                {files.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-foreground">已选 {files.length} 个文件</span>
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-destructive"
+                        onClick={() => setFiles([])}
+                      >
+                        全部清除
+                      </button>
+                    </div>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {files.map(f => (
+                        <div key={f.name} className="flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2">
+                          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="flex-1 text-sm text-foreground truncate">{f.name}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">{formatSize(f.size)}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeFile(f.name)}
+                            className="text-muted-foreground hover:text-destructive shrink-0"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -249,9 +347,7 @@ export function KnowledgeAdminNewView() {
                   <span className="text-sm font-medium text-foreground">最大块长度（字符）</span>
                   <div className="flex items-center gap-3">
                     <Input
-                      type="number"
-                      min={50}
-                      max={4000}
+                      type="number" min={50} max={4000}
                       value={chunkCfg.chunkSize}
                       onChange={e => setChunkCfg(c => ({ ...c, chunkSize: Number(e.target.value) }))}
                       className="h-10"
@@ -264,9 +360,7 @@ export function KnowledgeAdminNewView() {
                   <span className="text-sm font-medium text-foreground">块重叠长度（字符）</span>
                   <div className="flex items-center gap-3">
                     <Input
-                      type="number"
-                      min={0}
-                      max={2000}
+                      type="number" min={0} max={2000}
                       value={chunkCfg.chunkOverlap}
                       onChange={e => setChunkCfg(c => ({ ...c, chunkOverlap: Number(e.target.value) }))}
                       className="h-10"
@@ -310,16 +404,8 @@ export function KnowledgeAdminNewView() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  {/* 高质量 */}
-                  <button
-                    type="button"
-                    onClick={() => setIndexMethod('high')}
-                    className={`rounded-xl border-2 p-4 text-left transition-all ${
-                      indexMethod === 'high'
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border bg-muted/20 hover:border-border/80'
-                    }`}
-                  >
+                  {/* 高质量（已选中，不可切换） */}
+                  <div className="rounded-xl border-2 border-primary bg-primary/5 p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                         <Zap className="h-4 w-4 text-primary" />
@@ -332,14 +418,10 @@ export function KnowledgeAdminNewView() {
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       使用嵌入模型（DashScope text-embedding-v4）生成语义向量，支持自然语言语义检索，准确度更高。
                     </p>
-                  </button>
+                  </div>
 
-                  {/* 经济 */}
-                  <button
-                    type="button"
-                    disabled
-                    className="rounded-xl border-2 border-border bg-muted/10 p-4 text-left opacity-50 cursor-not-allowed"
-                  >
+                  {/* 经济（不可用） */}
+                  <div className="rounded-xl border-2 border-border bg-muted/10 p-4 opacity-50 cursor-not-allowed">
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
                         <Database className="h-4 w-4 text-muted-foreground" />
@@ -352,7 +434,7 @@ export function KnowledgeAdminNewView() {
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       倒排全文关键词检索，无需嵌入模型，成本更低，适合精确词匹配场景。
                     </p>
-                  </button>
+                  </div>
                 </div>
               </div>
 
@@ -395,6 +477,31 @@ export function KnowledgeAdminNewView() {
                   </select>
                 </label>
               </div>
+
+              {/* 文件摘要 */}
+              {files.length > 0 && (
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <p className="text-sm font-medium text-foreground mb-2">
+                    将同时上传 {files.length} 个文件并向量化
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {files.map(f => (
+                      <Badge key={f.name} variant="outline" className="text-xs gap-1">
+                        <FileText className="h-3 w-3" />
+                        {f.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 上传进度 */}
+              {uploadProgress && (
+                <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2">
+                  <p className="text-sm text-foreground">{uploadProgress}</p>
+                  <Progress className="h-1.5" value={undefined} />
+                </div>
+              )}
             </div>
           )}
 
@@ -407,19 +514,20 @@ export function KnowledgeAdminNewView() {
           <div className="flex items-center justify-between mt-8 pb-8">
             <Button
               variant="outline"
+              disabled={busy}
               onClick={() => step === 0 ? router.push('/knowledge-admin') : setStep(s => s - 1)}
             >
               <ChevronLeft className="h-4 w-4 mr-1.5" />
               {step === 0 ? '取消' : '上一步'}
             </Button>
             {step < STEPS.length - 1 ? (
-              <Button onClick={next}>
+              <Button onClick={next} disabled={busy}>
                 下一步
                 <ChevronRight className="h-4 w-4 ml-1.5" />
               </Button>
             ) : (
               <Button onClick={submit} disabled={busy} data-testid="kb-create-submit">
-                {busy ? '创建中…' : '完成创建'}
+                {busy ? '创建中…' : `完成创建${files.length > 0 ? `（含 ${files.length} 个文件）` : ''}`}
               </Button>
             )}
           </div>
