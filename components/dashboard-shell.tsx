@@ -36,11 +36,15 @@ export function DashboardShell({
   userName,
   userRole = '成员',
   orgName = '—',
+  defaultModel,
+  canManageTenant,
   children,
 }: {
   userName: string
   userRole?: string
   orgName?: string
+  defaultModel?: string
+  canManageTenant?: boolean
   children: React.ReactNode
 }) {
   const pathname = usePathname()
@@ -87,7 +91,7 @@ export function DashboardShell({
 
   return (
     <div className="flex h-screen bg-background text-foreground">
-      <AppSidebar activeView={activeView} orgName={orgName} userName={userName} userRole={userRole} onViewChange={openView} />
+      <AppSidebar activeView={activeView} orgName={orgName} userName={userName} userRole={userRole} defaultModel={defaultModel} canManageTenant={canManageTenant} onViewChange={openView} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* 顶部标签条（多窗口）：无顶端边框、无右上角账号菜单（账号操作在左下角侧栏） */}

@@ -24,7 +24,8 @@ import {
   Moon,
   Sun,
   Server,
-  LayoutTemplate
+  LayoutTemplate,
+  Cpu
 } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from 'next-themes';
@@ -33,9 +34,17 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import { AGENT_MODELS } from '@/lib/agents/config';
+import { apiFetch } from '@/lib/api/client';
 
 interface NavItem {
   title: string;
@@ -118,9 +127,11 @@ interface AppSidebarProps {
   orgName?: string;
   userName?: string;
   userRole?: string;
+  defaultModel?: string;
+  canManageTenant?: boolean;
 }
 
-export function AppSidebar({ activeView, onViewChange, orgName = '—', userName = '用户', userRole = '成员' }: AppSidebarProps) {
+export function AppSidebar({ activeView, onViewChange, orgName = '—', userName = '用户', userRole = '成员', defaultModel = 'qwen-plus', canManageTenant = false }: AppSidebarProps) {
   // 默认全部展开（需求：左侧菜单默认全展开）
   const [openSections, setOpenSections] = useState<string[]>(
     navSections.map(s => s.title)
@@ -129,6 +140,24 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—', userName
   // 初始 SSR 不渲染 → 无水合不一致，直接用 resolvedTheme。
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme !== 'light';
+
+  // 租户默认模型：初值来自服务端 prop；管理员切换时乐观更新 + 失败回滚。
+  const [model, setModel] = useState(defaultModel);
+  const [modelHint, setModelHint] = useState<string | null>(null);
+  const currentModelLabel = AGENT_MODELS.find((m) => m.value === model)?.label ?? model;
+
+  const handleSelectModel = (value: string) => {
+    if (value === model) return;
+    const prev = model;
+    setModel(value);
+    setModelHint(null);
+    apiFetch('/api/tenant/model', { method: 'PATCH', body: JSON.stringify({ model: value }) })
+      .then(() => setModelHint('已更新'))
+      .catch((e) => {
+        setModel(prev);
+        setModelHint(e instanceof Error ? e.message : '更新失败');
+      });
+  };
 
   const toggleSection = (title: string) => {
     setOpenSections(prev => 
@@ -176,6 +205,39 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—', userName
               <Building2 className="h-4 w-4 mr-2" />
               {orgName}
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {/* 模型选择（以租户为单位）：Admin 可切换，其他角色只读展示 */}
+            {canManageTenant ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Cpu className="h-4 w-4 mr-2" />
+                  <span className="flex-1">模型选择</span>
+                  <span className="ml-2 text-[11px] text-muted-foreground truncate max-w-[80px]">{currentModelLabel}</span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
+                  <DropdownMenuRadioGroup value={model} onValueChange={handleSelectModel}>
+                    {AGENT_MODELS.map((m) => (
+                      <DropdownMenuRadioItem key={m.value} value={m.value}>
+                        {m.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                  {modelHint && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="py-1 text-[11px] font-normal text-muted-foreground">
+                        {modelHint}
+                      </DropdownMenuLabel>
+                    </>
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : (
+              <DropdownMenuLabel className="flex items-center gap-2 font-normal text-xs text-muted-foreground">
+                <Cpu className="h-4 w-4 shrink-0" />
+                <span className="truncate">默认模型：{currentModelLabel}</span>
+              </DropdownMenuLabel>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem>
               <Settings className="h-4 w-4 mr-2" />
