@@ -786,7 +786,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
               <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
                 placeholder="和 Agent 聊天…"
                 className="min-h-[40px] max-h-32 text-sm"
               />
@@ -826,7 +826,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                 <Textarea
                   value={copilotInput}
                   onChange={(e) => setCopilotInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void runCopilot(); } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void runCopilot(); } }}
                   disabled={!canEdit || copilotLoading}
                   placeholder="描述需求，让 Copilot 生成配置…（Enter 提交）"
                   className="min-h-[44px] max-h-40 text-sm"

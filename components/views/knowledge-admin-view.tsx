@@ -539,7 +539,7 @@ export function KnowledgeAdminView({
                 placeholder="输入查询，查看召回分段与相关性评分"
                 value={rQuery}
                 onChange={(e) => setRQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && runRetrieve()}
+                onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }} /* 回车不提交，须点按钮 */
               />
               <Button onClick={runRetrieve} disabled={rLoading || !rQuery.trim()}>
                 {rLoading ? '检索中…' : '检索'}

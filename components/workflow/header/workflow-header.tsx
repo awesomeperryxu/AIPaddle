@@ -120,7 +120,7 @@ export function WorkflowHeader({
 
   const handleTitleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      handleTitleBlur();
+      e.preventDefault(); /* 回车不提交，失焦（点击外部）保存 */
     } else if (e.key === 'Escape') {
       setEditedTitle(title);
       setIsEditingTitle(false);

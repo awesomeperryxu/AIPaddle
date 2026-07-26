@@ -498,7 +498,7 @@ function UseTemplateDialog({
             <Input
               value={name}
               onChange={e => setName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !loading && handleCreate()}
+              onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }} /* 回车不提交，须点按钮 */
               placeholder="为应用取个名字"
               autoFocus
             />
