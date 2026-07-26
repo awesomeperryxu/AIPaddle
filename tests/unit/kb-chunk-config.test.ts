@@ -4,7 +4,7 @@ import { chunkText, normalizeChunkConfig, DEFAULT_CHUNK_CONFIG } from '@/lib/kb/
 // 4.2.7：切块参数可配。纯函数（不触发 supabase/嵌入）。
 
 describe('normalizeChunkConfig 规整', () => {
-  it('缺省回落默认 800/100', () => {
+  it('缺省回落默认 1024/50', () => {
     expect(normalizeChunkConfig(undefined)).toEqual(DEFAULT_CHUNK_CONFIG)
     expect(normalizeChunkConfig(null)).toEqual(DEFAULT_CHUNK_CONFIG)
   })
@@ -41,10 +41,10 @@ describe('chunkText 按参数切块', () => {
     expect(parts[1]).toContain('第二段')
   })
 
-  it('默认参数（不传 config）与历史 800/100 一致产出', () => {
+  it('默认参数（不传 config）按 1024 切窗口', () => {
     const text = '字'.repeat(2000)
     const parts = chunkText(text)
-    expect(parts[0].length).toBe(800)
+    expect(parts[0].length).toBe(1024)
   })
 
   it('空文本 → 空数组', () => {

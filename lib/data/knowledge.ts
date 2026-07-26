@@ -129,8 +129,8 @@ export async function ensureDefaultKb(ctx: RequestContext): Promise<string> {
 
 // ── 4.2.7 切块参数 ─────────────────────────────────────────
 
-export type KbChunkConfig = { chunkSize: number; chunkOverlap: number; separator: string }
-export const DEFAULT_KB_CHUNK_CONFIG: KbChunkConfig = { chunkSize: 800, chunkOverlap: 100, separator: '\n\n' }
+export type KbChunkConfig = { chunkSize: number; chunkOverlap: number; separator: string; removeUrls?: boolean }
+export const DEFAULT_KB_CHUNK_CONFIG: KbChunkConfig = { chunkSize: 1024, chunkOverlap: 50, separator: '\n\n' }
 
 /** 读取知识库切块参数；缺列/异常回落默认（向后兼容旧库）。 */
 export async function getKbChunkConfig(_ctx: RequestContext, kbId: string): Promise<KbChunkConfig> {
