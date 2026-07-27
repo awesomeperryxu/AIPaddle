@@ -71,6 +71,10 @@ export async function provisionTenant(input: ProvisionInput): Promise<TenantSumm
   const { data: dup } = await admin.from('tenants').select('id').eq('code', code).is('deleted_at', null).maybeSingle()
   if (dup) throw new Error('企业编码已存在')
 
+  // BUG-81 前置校验：一个邮箱只能属于一个租户（public.users.id 主键引用 auth.users + email 全局唯一）。
+  // 必须在建租户「之前」拦下，否则会走到「建完再撞库回滚」，把 Postgres 原文报错甩给用户。
+  await assertEmailAvailable(admin, input.contactEmail.trim())
+
   const { data, error } = await admin
     .from('tenants')
     .insert({
@@ -93,14 +97,52 @@ export async function provisionTenant(input: ProvisionInput): Promise<TenantSumm
     })
   } catch (e) {
     await admin.from('tenants').update({ deleted_at: new Date().toISOString() }).eq('id', tenant.id)
-    throw new Error(`租户已创建但首个管理员开通失败，已回滚：${e instanceof Error ? e.message : '未知错误'}`)
+    throw new Error(`企业开通失败，已回滚：${e instanceof Error ? e.message : '未知错误'}`)
   }
   return tenant
 }
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
-/** 为新租户创建首个 Admin：Auth 邀请 + users 预建 + user_roles=Admin。返回 authUserId。 */
+// 新建 auth 账号与「复用已存在账号」的判定窗口：invite 对已注册但未确认的邮箱会静默返回原账号，
+// 那种账号不属于本次开通，回滚时绝不能删（会误删他人账号）。
+const FRESH_USER_WINDOW_MS = 60_000
+
+/**
+ * BUG-81：联系邮箱占用前置校验。
+ * 数据模型上一个邮箱只能属于一个租户，这里把冲突转成人话，并指出被谁占用。
+ */
+export async function assertEmailAvailable(admin: AdminClient, email: string): Promise<void> {
+  // 不过滤 deleted_at：软删的成员行仍占着 email 唯一约束，照样会让插入失败
+  const { data: occupied, error } = await admin
+    .from('users')
+    .select('id,org_id,deleted_at')
+    .eq('email', email)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!occupied) return
+
+  const row = occupied as { id: string; org_id: string; deleted_at: string | null }
+  const { data: org } = await admin.from('tenants').select('name').eq('id', row.org_id).maybeSingle()
+  const orgName = (org as { name: string } | null)?.name ?? '其他企业'
+
+  throw row.deleted_at
+    ? new Error(`该邮箱曾是「${orgName}」的成员且已被移除，仍占用唯一约束，请更换联系邮箱`)
+    : new Error(`该邮箱已是「${orgName}」的成员，请更换联系邮箱`)
+}
+
+// 把 Postgres 唯一约束原文转成用户能看懂的中文
+function friendlyUserInsertError(message: string, code?: string): string {
+  const text = `${code ?? ''} ${message}`
+  if (text.includes('users_pkey')) return '该邮箱在系统中已有账号且归属其他企业，请更换联系邮箱'
+  if (text.includes('users_email_key') || text.includes('email')) return '该邮箱已被占用，请更换联系邮箱'
+  return message
+}
+
+/**
+ * 为新租户创建首个 Admin：Auth 邀请 + users 预建 + user_roles=Admin。返回 authUserId。
+ * BUG-81：任一步失败都要把本次已建的痕迹清干净，否则残骸会让同邮箱重试永久失败。
+ */
 export async function createFirstAdmin(
   admin: AdminClient,
   input: { orgId: string; name: string; email: string },
@@ -111,16 +153,26 @@ export async function createFirstAdmin(
   )
   if (invErr) throw new Error(invErr.message)
   const uid = invited.user.id
+  const createdAt = invited.user.created_at ? new Date(invited.user.created_at).getTime() : 0
+  const isFreshAuthUser = Date.now() - createdAt < FRESH_USER_WINDOW_MS
 
-  const { error: uErr } = await admin
-    .from('users')
-    .insert({ id: uid, org_id: input.orgId, name: input.name, email: input.email, status: 'active' })
-  if (uErr) throw new Error(uErr.message)
+  try {
+    const { error: uErr } = await admin
+      .from('users')
+      .insert({ id: uid, org_id: input.orgId, name: input.name, email: input.email, status: 'active' })
+    if (uErr) throw new Error(friendlyUserInsertError(uErr.message, uErr.code))
 
-  const { error: rErr } = await admin
-    .from('user_roles')
-    .insert({ user_id: uid, org_id: input.orgId, role: 'Admin' })
-  if (rErr) throw new Error(rErr.message)
+    const { error: rErr } = await admin
+      .from('user_roles')
+      .insert({ user_id: uid, org_id: input.orgId, role: 'Admin' })
+    if (rErr) throw new Error(rErr.message)
+  } catch (e) {
+    // 补偿清理：只删本租户下的痕迹；auth 账号仅在确认是本次新建时才删
+    await admin.from('user_roles').delete().eq('user_id', uid).eq('org_id', input.orgId)
+    await admin.from('users').delete().eq('id', uid).eq('org_id', input.orgId)
+    if (isFreshAuthUser) await admin.auth.admin.deleteUser(uid)
+    throw e
+  }
 
   return uid
 }
