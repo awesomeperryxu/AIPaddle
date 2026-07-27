@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Sheet,
   SheetContent,
@@ -263,7 +264,7 @@ function TemplateCard({
 // ── 使用模板弹窗 ─────────────────────────────────────────────────────────────
 
 type DepStatus = 'pending' | 'installing' | 'done' | 'error'
-type DepItem = RequiredSkill & { status: DepStatus }
+type DepItem = RequiredSkill & { status: DepStatus; selected: boolean }
 
 const TARGET_LABEL: Record<TemplateType, string> = {
   agent:            'Agent',
@@ -343,7 +344,7 @@ function UseTemplateDialog({
       // 统一：有依赖工具 → 进入安装阶段；无依赖 → 直接跳转
       setRedirectUrl(nextUrl)
       if (requiredSkills.length > 0) {
-        setDeps(requiredSkills.map(s => ({ ...s, status: 'pending' as const })))
+        setDeps(requiredSkills.map(s => ({ ...s, status: 'pending' as const, selected: true })))
         setPhase('deps')
       } else {
         onOpenChange(false)
@@ -356,11 +357,17 @@ function UseTemplateDialog({
     }
   }
 
-  // ── 一键安装依赖工具 ──
+  // ── 勾选/取消某依赖工具（BUG-78：右侧改真 checkbox，逐项可选）──
+  function toggleDep(key: string) {
+    setDeps(prev => prev.map(d => (d.key === key ? { ...d, selected: !d.selected } : d)))
+  }
+
+  // ── 安装勾选的依赖工具（只装 selected；未勾选保持 pending，不安装）──
   async function handleInstall() {
     setInstalling(true)
     const items = deps.map(d => ({ ...d }))
     for (let i = 0; i < items.length; i++) {
+      if (!items[i].selected) continue // 未勾选 → 跳过，不创建
       items[i].status = 'installing'
       setDeps([...items])
       try {
@@ -385,8 +392,9 @@ function UseTemplateDialog({
 
   // ── 依赖安装阶段 ──
   if (phase === 'deps') {
-    const doneCount  = deps.filter(d => d.status === 'done').length
-    const errorCount = deps.filter(d => d.status === 'error').length
+    const doneCount     = deps.filter(d => d.status === 'done').length
+    const errorCount    = deps.filter(d => d.status === 'error').length
+    const selectedCount = deps.filter(d => d.selected).length
 
     return (
       <Dialog open={open} onOpenChange={o => { if (!o && !installing) handleFinish() }}>
@@ -401,24 +409,42 @@ function UseTemplateDialog({
             </DialogDescription>
           </DialogHeader>
 
+          <p className="text-xs text-muted-foreground px-1">勾选需要安装的工具（默认全选），点击下方「安装工具」创建到工具库。</p>
           <div className="space-y-2 py-2">
-            {deps.map(dep => (
-              <div key={dep.key} className="flex items-center gap-3 bg-muted/40 rounded-xl px-4 py-3">
-                <span className="text-xl shrink-0">{dep.icon ?? '🔧'}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">{dep.name}</p>
-                  {dep.description && (
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{dep.description}</p>
+            {deps.map(dep => {
+              // 选择阶段（未安装、非安装中）：右侧为可勾选 checkbox，整行可点切换。
+              const selecting = dep.status === 'pending' && !installing && !installDone
+              return (
+                <div key={dep.key}
+                  className={cn(
+                    'flex items-center gap-3 bg-muted/40 rounded-xl px-4 py-3',
+                    selecting && 'cursor-pointer hover:bg-muted/60',
+                    dep.status === 'pending' && !dep.selected && 'opacity-50',
                   )}
+                  onClick={selecting ? () => toggleDep(dep.key) : undefined}
+                >
+                  <span className="text-xl shrink-0">{dep.icon ?? '🔧'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">{dep.name}</p>
+                    {dep.description && (
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{dep.description}</p>
+                    )}
+                  </div>
+                  <span className="shrink-0 flex items-center">
+                    {selecting && (
+                      <Checkbox checked={dep.selected} onCheckedChange={() => toggleDep(dep.key)}
+                        aria-label={`选择 ${dep.name}`} onClick={e => e.stopPropagation()} />
+                    )}
+                    {dep.status === 'pending' && !selecting && !dep.selected && (
+                      <span className="text-xs text-muted-foreground">已跳过</span>
+                    )}
+                    {dep.status === 'installing' && <Loader2 className="h-5 w-5 text-primary animate-spin" />}
+                    {dep.status === 'done'       && <CheckCircle2 className="h-5 w-5 text-green-500" />}
+                    {dep.status === 'error'      && <AlertCircle className="h-5 w-5 text-destructive" />}
+                  </span>
                 </div>
-                <span className="shrink-0">
-                  {dep.status === 'pending'    && <span className="w-5 h-5 rounded-full border-2 border-muted-foreground/30 inline-block" />}
-                  {dep.status === 'installing' && <Loader2 className="h-5 w-5 text-primary animate-spin" />}
-                  {dep.status === 'done'       && <CheckCircle2 className="h-5 w-5 text-green-500" />}
-                  {dep.status === 'error'      && <AlertCircle className="h-5 w-5 text-destructive" />}
-                </span>
-              </div>
-            ))}
+              )
+            })}
 
             {installDone && (
               <p className="text-xs text-center text-muted-foreground pt-1">
@@ -435,10 +461,10 @@ function UseTemplateDialog({
                 <Button variant="outline" onClick={handleFinish} disabled={installing}>
                   跳过
                 </Button>
-                <Button onClick={handleInstall} disabled={installing}>
+                <Button onClick={handleInstall} disabled={installing || selectedCount === 0}>
                   {installing
                     ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />安装中…</>
-                    : '安装工具'}
+                    : selectedCount > 0 ? `安装 ${selectedCount} 个工具` : '请勾选工具'}
                 </Button>
               </>
             ) : (
