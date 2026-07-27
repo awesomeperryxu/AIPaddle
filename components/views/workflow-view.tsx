@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Plus,
   Search,
@@ -20,11 +20,11 @@ import {
   Bot,
   FileText,
   Upload,
-  Copy,
-  Trash2,
+  Download,
   MoreHorizontal,
   ChevronRight
 } from 'lucide-react';
+import { apiFetch } from '@/lib/api/client';
 
 // App types following Dify's structure
 type AppType = 'all' | 'workflow' | 'chatflow' | 'agent' | 'text-generation';
@@ -35,11 +35,11 @@ interface WorkflowApp {
   description: string;
   type: 'workflow' | 'chatflow' | 'agent' | 'text-generation';
   tags: string[];
-  lastEditedBy: string;
   lastEditedAt: string;
   status: 'draft' | 'published' | 'offline';
   executions: number;
   successRate: number;
+  hasRuns: boolean;
 }
 
 const appTypeConfig = {
@@ -77,24 +77,29 @@ export function WorkflowView() {
   const [apps, setApps] = useState<WorkflowApp[]>([]);
   const [appsLoaded, setAppsLoaded] = useState(false);
 
+  // GX-5：卡片统计取自真实运行聚合（/api/workflows/stats），非硬编码 0。
+  type RunStats = { executions: number; successRate: number; lastRunAt: string | null };
   const mapItemToApp = useCallback((w: {
     id: string; name: string; type: 'workflow' | 'chatflow'; status: 'draft' | 'published'; updatedAt?: string;
-  }): WorkflowApp => ({
+  }, stats?: RunStats): WorkflowApp => ({
     id: w.id, name: w.name, description: '', type: w.type, tags: [],
-    lastEditedBy: '', lastEditedAt: w.updatedAt ?? '', status: w.status, executions: 0, successRate: 0,
+    lastEditedAt: w.updatedAt ?? '', status: w.status,
+    executions: stats?.executions ?? 0,
+    successRate: stats?.successRate ?? 0,
+    hasRuns: (stats?.executions ?? 0) > 0,
   }), []);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      try {
-        const res = await fetch('/api/workflows');
-        if (res.ok && active) {
-          const { workflows } = await res.json();
-          setApps((workflows ?? []).map(mapItemToApp));
-        }
-      } catch { /* 忽略：保持已有列表 */ }
-      if (active) setAppsLoaded(true);
+      type ListItem = { id: string; name: string; type: 'workflow' | 'chatflow'; status: 'draft' | 'published'; updatedAt?: string };
+      const [list, statsRes] = await Promise.all([
+        apiFetch<{ workflows: ListItem[] }>('/api/workflows').catch(() => ({ workflows: [] as ListItem[] })),
+        apiFetch<{ stats: Record<string, RunStats> }>('/api/workflows/stats').catch(() => ({ stats: {} as Record<string, RunStats> })),
+      ]);
+      if (!active) return;
+      setApps((list.workflows ?? []).map((w) => mapItemToApp(w, statsRes.stats?.[w.id])));
+      setAppsLoaded(true);
     })();
     return () => { active = false; };
   }, [mapItemToApp]);
@@ -109,6 +114,16 @@ export function WorkflowView() {
   // W1-a：编辑改为跳转到全屏编排编辑器（React Flow 画布接后端），不再用页内 SVG 编辑器。
   const handleEditWorkflow = (app: WorkflowApp) => {
     router.push(`/workflows/${app.id}`);
+  };
+
+  // GX-5：导出 DSL —— 走真实端点 GET /api/workflows/[id]/dsl（Content-Disposition 触发下载）。
+  const handleExportDsl = (app: WorkflowApp) => {
+    const a = document.createElement('a');
+    a.href = `/api/workflows/${app.id}/dsl`;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   // 创建空白应用（Workflow / Chatflow）：真实创建后跳转到编排编辑器。
@@ -310,22 +325,13 @@ export function WorkflowView() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEditWorkflow(app); }}>
                             <Settings className="h-4 w-4 mr-2" />
                             设置
                           </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Copy className="h-4 w-4 mr-2" />
-                            复制
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Upload className="h-4 w-4 mr-2" />
-                            导出
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive">
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            删除
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportDsl(app); }}>
+                            <Download className="h-4 w-4 mr-2" />
+                            导出 DSL
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -351,28 +357,24 @@ export function WorkflowView() {
                     {/* Footer */}
                     <div className="flex items-center justify-between pt-3 border-t border-border">
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <span>{app.lastEditedBy}</span>
-                        <span>·</span>
-                        <span>编辑于 {app.lastEditedAt}</span>
+                        {app.lastEditedAt && <span>编辑于 {app.lastEditedAt}</span>}
                       </div>
                       <Badge className={statusConfig[app.status].className}>
                         {statusConfig[app.status].label}
                       </Badge>
                     </div>
 
-                    {/* Stats */}
-                    {app.executions > 0 && (
-                      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Play className="h-3 w-3" />
-                          {app.executions.toLocaleString()} 次执行
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <CheckCircle className="h-3 w-3" />
-                          {app.successRate}% 成功率
-                        </span>
-                      </div>
-                    )}
+                    {/* Stats（GX-5：真实运行聚合；从未运行显示 0 / — 成功率） */}
+                    <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Play className="h-3 w-3" />
+                        {app.executions.toLocaleString()} 次执行
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <CheckCircle className="h-3 w-3" />
+                        {app.hasRuns ? `${app.successRate}% 成功率` : '— 成功率'}
+                      </span>
+                    </div>
                   </CardContent>
                 </Card>
               );
