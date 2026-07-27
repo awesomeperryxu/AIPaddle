@@ -162,27 +162,53 @@ export function KnowledgeAdminNewView() {
   }
 
   async function next() {
+    if (busy) return;
     const e = validateStep();
     if (e) { setErr(e); return; }
     setErr(null);
 
-    // Step 0 → Step 1：尝试读取第一个文本文件内容作为真实预览
+    // Step 0 → Step 1：读取第一个文件内容作为真实预览
     if (step === 0) {
+      const first = files[0];
       const textFile = files.find(f => TEXT_EXTS.has(getExt(f.name)));
       if (textFile) {
+        // 纯文本：客户端直接读，快
         try {
           const content = await readFileAsText(textFile);
-          setPreviewText(content.slice(0, 8000)); // 最多取 8000 字用于预览
+          setPreviewText(content.slice(0, 8000));
           setPreviewFilename(textFile.name);
           setPreviewIsReal(true);
         } catch {
           setPreviewText(null);
           setPreviewIsReal(false);
         }
+      } else if (first) {
+        // BUG-78：PDF/Office 走服务端抽取真实文本（客户端无法解析）
+        setPreviewFilename(first.name);
+        setBusy(true);
+        setUploadProgress(`正在解析「${first.name}」用于预览…`);
+        try {
+          const fd = new FormData();
+          fd.append('file', first);
+          const res = await fetch('/api/knowledge-bases/preview', { method: 'POST', body: fd });
+          const data = await res.json();
+          if (res.ok && typeof data.text === 'string' && data.text.trim()) {
+            setPreviewText(data.text.slice(0, 8000));
+            setPreviewIsReal(true);
+          } else {
+            setPreviewText(null);
+            setPreviewIsReal(false);
+          }
+        } catch {
+          setPreviewText(null);
+          setPreviewIsReal(false);
+        } finally {
+          setBusy(false);
+          setUploadProgress(null);
+        }
       } else {
-        // PDF/Office 文件需服务端解析，无法客户端预览
         setPreviewText(null);
-        setPreviewFilename(files[0]?.name ?? null);
+        setPreviewFilename(null);
         setPreviewIsReal(false);
       }
     }
@@ -485,9 +511,9 @@ export function KnowledgeAdminNewView() {
                   <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-400">
                     <span className="font-medium">注意：</span>
                     {previewFilename
-                      ? `「${previewFilename}」为 PDF/Office 格式，需服务端解析，`
-                      : '上传的文件需服务端解析，'}
-                    以下预览使用示例文本。实际分段将在文件处理后生效。
+                      ? `「${previewFilename}」暂无法解析出预览文本（可能为扫描件/加密/空文档），`
+                      : '上传的文件暂无法解析出预览文本，'}
+                    以下为示例文本的分块效果。实际分段将在文件处理后按真实内容生效。
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">未上传文件，以下为示例文本的分块效果</p>
