@@ -55,14 +55,21 @@ jobs:
         run: pnpm build
 
       # ── ROADMAP 0.9b：单元/集成测试（L2/L3）──
+      # DATABASE_URL 供 tests/integration/ 的约束契约测试连真实 Postgres（只读 pg_constraint /
+      # pg_indexes 等系统表，不写业务数据）。未配 secret 时这组用例自动跳过，其余照跑。
       - name: Unit & integration tests
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: pnpm test
 
-  # ── ROADMAP 0.9c：带登录集成冒烟（只读，仅 PR 时跑）──
+  # ── ROADMAP 0.9c：带登录集成冒烟（只读）──
   # 登录种子账号遍历主页面渲染，连线上 Supabase 但不写数据。
   # secrets 缺失时 seed/冒烟步骤自动跳过（job 仍绿），可安全先合入再配 secrets。
+  #
+  # BUG-85（2026-07-27 修）：原先带 `if: github.event_name == 'pull_request'`，
+  # 导致**合并到 main 后的 push 事件整个 job 被跳过**——main 上的 e2e 门禁形同虚设，
+  # 页面级回归要等下一个 PR 才暴露。现改为 PR 与 push 都跑。
   e2e-smoke:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
