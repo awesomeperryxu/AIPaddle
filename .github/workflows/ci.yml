@@ -67,9 +67,20 @@ jobs:
   # secrets 缺失时 seed/冒烟步骤自动跳过（job 仍绿），可安全先合入再配 secrets。
   #
   # BUG-85（2026-07-27 修）：原先带 `if: github.event_name == 'pull_request'`，
-  # 导致**合并到 main 后的 push 事件整个 job 被跳过**——main 上的 e2e 门禁形同虚设，
-  # 页面级回归要等下一个 PR 才暴露。现改为 PR 与 push 都跑。
+  # 导致**合并到 main 后的 push 事件整个 job 被跳过**——main 上的 e2e 门禁形同虚设。
+  #
+  # 但不能简单放开成"所有事件都跑"：本仓库 `on.push.branches: ["**"]` + `on.pull_request`，
+  # PR 分支每次 push 会同时触发 push 与 pull_request **两个 run**，两个 e2e job 并发跑、
+  # 抢同一套 seed 测试账号（seed:e2e 会重置密码/角色），必然互相打挂——PR #120 实测重现：
+  # 同一 commit 的两个 run，一个全绿、另一个 8 条用例全红。
+  #
+  # 故：① 只在 PR 事件、或 push 到 main 时跑（PR 分支自身的 push 不跑）；
+  #     ② 再加全局 concurrency 让跨 PR 的 e2e **排队而非并行**（seed 账号是共享资源）。
   e2e-smoke:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    concurrency:
+      group: e2e-smoke-shared-seed
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
