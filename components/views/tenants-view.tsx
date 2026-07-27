@@ -22,18 +22,24 @@ import {
   Coins,
   Wallet,
   Ban,
-  Trash2
+  Trash2,
+  Eye,
+  Loader2
 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
+} from '@/components/ui/sheet';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api/client';
 
@@ -64,6 +70,12 @@ type PlatformTenant = {
 
 // 每租户真实用量（来自 /api/platform/tenant-usage 聚合，ADR-008 只经 apiFetch）
 type TenantUsage = { members: number; agents: number; tokens30d: number; estCost30d: number };
+
+// 4.8.15a：租户详情（GET /api/tenants/[id]，含用量统计）
+type TenantDetail = PlatformTenant & {
+  storageQuota: number; memberCount: number; agentCount: number;
+  tokensUsed30d: number; storageUsed: number;
+};
 type RevenuePoint = { label: string; cost: number };
 type UsageResp = { usage: Record<string, TenantUsage>; revenueTrend: RevenuePoint[] };
 
@@ -89,6 +101,67 @@ export function TenantsView({
   // 真实用量聚合（客户端拉取，ADR-008 只经 apiFetch）
   const [usage, setUsage] = useState<Record<string, TenantUsage>>({});
   const [revenueTrend, setRevenueTrend] = useState<RevenuePoint[]>([]);
+
+  // 4.8.15a/b：租户详情抽屉（承载查看详情 / 编辑信息 / 配额管理三项）
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<TenantDetail | null>(null);
+  const [dLoading, setDLoading] = useState(false);
+  const [dErr, setDErr] = useState<string | null>(null);
+  const [dSaving, setDSaving] = useState(false);
+  const [fName, setFName] = useState('');
+  const [fContact, setFContact] = useState('');
+  const [fEmail, setFEmail] = useState('');
+  const [fToken, setFToken] = useState('');
+  const [fStorage, setFStorage] = useState('');
+  const [fQps, setFQps] = useState('');
+
+  // 打开抽屉：重置态在触发处做，effect 内不同步 setState（React 编译器
+  // react-hooks/set-state-in-effect 会报级联渲染，项目 4.6.2 已踩过同一条）
+  function openDetail(id: string) {
+    setDetail(null); setDErr(null); setDLoading(true);
+    setDetailId(id);
+  }
+
+  useEffect(() => {
+    if (!detailId) return;
+    let alive = true;
+    apiFetch<{ tenant: TenantDetail }>(`/api/tenants/${detailId}`)
+      .then((d) => {
+        if (!alive) return;
+        setDetail(d.tenant);
+        setFName(d.tenant.name);
+        setFContact(d.tenant.contactName ?? '');
+        setFEmail(d.tenant.contactEmail ?? '');
+        setFToken(String(d.tenant.tokenQuota ?? 0));
+        setFStorage(String(d.tenant.storageQuota ?? 0));
+        setFQps(String(d.tenant.qpsLimit ?? 0));
+      })
+      .catch((e) => { if (alive) setDErr(e instanceof Error ? e.message : '加载失败'); })
+      .finally(() => { if (alive) setDLoading(false); });
+    return () => { alive = false; };
+  }, [detailId]);
+
+  async function handleSaveDetail() {
+    if (!detailId || dSaving) return;
+    setDSaving(true); setDErr(null);
+    try {
+      await apiFetch(`/api/tenants/${detailId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: fName.trim(),
+          contactName: fContact.trim() || null,
+          contactEmail: fEmail.trim(),
+          tokenQuota: Number(fToken),
+          storageQuota: Number(fStorage),
+          qpsLimit: Number(fQps),
+        }),
+      });
+      setDetailId(null);
+      router.refresh();
+    } catch (e) {
+      setDErr(e instanceof Error ? e.message : '保存失败');
+    } finally { setDSaving(false); }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -301,6 +374,15 @@ export function TenantsView({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-popover border-border">
+                        {/* 4.8.15a/b：详情抽屉承接「查看详情 / 编辑信息 / 配额管理」。
+                            BUG-82 的 6 个空菜单此前由 PR #118 直接移除；本次把其中三项以
+                            真实可用的形式加回（另三项账单/模型配置/MCP 审批仍无按租户维度的
+                            后端能力，见 4.8.15c / 4.8.10，做完再放）。 */}
+                        <DropdownMenuItem onClick={() => openDetail(tenant.id)}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          {canManage ? '详情与配额' : '查看详情'}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         {canManage && (
                           tenant.status === 'suspended' ? (
                             <DropdownMenuItem onClick={() => handleSetStatus(tenant.id, 'active')} disabled={busy}>
@@ -404,6 +486,93 @@ export function TenantsView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 4.8.15a/b：租户详情与配额抽屉。非管理员只读展示，Admin 可改基本信息与配额。 */}
+      <Sheet open={detailId !== null} onOpenChange={(o) => { if (!o) setDetailId(null); }}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>{detail?.name ?? '租户详情'}</SheetTitle>
+            <SheetDescription>
+              {detail ? `企业编码 ${detail.code} · 开通于 ${detail.createdAt}` : '加载中…'}
+            </SheetDescription>
+          </SheetHeader>
+
+          {dLoading && (
+            <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />加载中…
+            </div>
+          )}
+
+          {detail && (
+            <div className="px-4 space-y-6 pb-4">
+              {/* 用量统计（只读） */}
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: '成员数', value: detail.memberCount.toLocaleString() },
+                  { label: 'Agent 数', value: detail.agentCount.toLocaleString() },
+                  { label: '30 天 Token', value: detail.tokensUsed30d.toLocaleString() },
+                  { label: '已用存储', value: `${(detail.storageUsed / 1024 / 1024).toFixed(1)} MB` },
+                ].map((s) => (
+                  <div key={s.label} className="p-3 rounded-lg bg-muted/30 border border-border">
+                    <p className="text-xs text-muted-foreground">{s.label}</p>
+                    <p className="text-lg font-semibold text-foreground mt-0.5">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-foreground">基本信息</h4>
+                <div className="space-y-1.5">
+                  <Label htmlFor="d-name">企业名称</Label>
+                  <Input id="d-name" value={fName} onChange={e => setFName(e.target.value)} disabled={!canManage} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="d-contact">联系人</Label>
+                    <Input id="d-contact" value={fContact} onChange={e => setFContact(e.target.value)} disabled={!canManage} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="d-email">联系邮箱</Label>
+                    <Input id="d-email" type="email" value={fEmail} onChange={e => setFEmail(e.target.value)} disabled={!canManage} />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">企业编码 {detail.code} 不可修改（对外标识）</p>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-foreground">配额（0 表示不限制，改动立即生效）</h4>
+                <div className="space-y-1.5">
+                  <Label htmlFor="d-token">Token 配额（每 30 天）</Label>
+                  <Input id="d-token" type="number" min={0} value={fToken} onChange={e => setFToken(e.target.value)} disabled={!canManage} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="d-storage">存储配额（字节）</Label>
+                    <Input id="d-storage" type="number" min={0} value={fStorage} onChange={e => setFStorage(e.target.value)} disabled={!canManage} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="d-qps">QPS 上限</Label>
+                    <Input id="d-qps" type="number" min={0} value={fQps} onChange={e => setFQps(e.target.value)} disabled={!canManage} />
+                  </div>
+                </div>
+              </div>
+
+              {dErr && <p className="text-xs text-destructive">{dErr}</p>}
+            </div>
+          )}
+
+          {!dLoading && dErr && !detail && <p className="px-4 text-sm text-destructive">{dErr}</p>}
+
+          <SheetFooter>
+            <Button variant="outline" onClick={() => setDetailId(null)} disabled={dSaving}>关闭</Button>
+            {canManage && detail && (
+              <Button onClick={handleSaveDetail} disabled={dSaving}>
+                {dSaving ? '保存中…' : '保存'}
+              </Button>
+            )}
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

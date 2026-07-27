@@ -234,6 +234,104 @@ export async function createFirstAdmin(
   return uid
 }
 
+export type TenantDetail = TenantSummary & {
+  storageQuota: number
+  memberCount: number
+  agentCount: number
+  tokensUsed30d: number
+  storageUsed: number
+}
+
+/**
+ * 4.8.15a：平台视角的单租户详情（含用量统计）。
+ * ⚠️ 与 lib/data/tenant.ts 的 getTenant 不同——那个是「本租户设置」走请求级 RLS，
+ * 只能读自己；这里是平台超管跨租户读，入口必须 isPlatformAdmin 兜住。
+ */
+export async function getTenantDetail(id: string): Promise<TenantDetail | null> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('tenants')
+    .select(`${COLS},storage_quota`)
+    .eq('id', id).is('deleted_at', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return null
+
+  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+  const [members, agents, logs, docs] = await Promise.all([
+    admin.from('users').select('id', { count: 'exact', head: true }).eq('org_id', id).is('deleted_at', null),
+    admin.from('agents').select('id', { count: 'exact', head: true }).eq('org_id', id).is('deleted_at', null),
+    admin.from('call_logs').select('tokens_in,tokens_out').eq('org_id', id).is('deleted_at', null).gte('created_at', since),
+    admin.from('documents').select('size_bytes').eq('org_id', id).is('deleted_at', null),
+  ])
+
+  const tokensUsed30d = ((logs.data as { tokens_in: number | null; tokens_out: number | null }[] | null) ?? [])
+    .reduce((s, l) => s + (l.tokens_in ?? 0) + (l.tokens_out ?? 0), 0)
+  const storageUsed = ((docs.data as { size_bytes: number | null }[] | null) ?? [])
+    .reduce((s, d) => s + (d.size_bytes ?? 0), 0)
+
+  const row = data as Row & { storage_quota: number | null }
+  return {
+    ...map(row),
+    storageQuota: row.storage_quota ?? 0,
+    memberCount: members.count ?? 0,
+    agentCount: agents.count ?? 0,
+    tokensUsed30d,
+    storageUsed,
+  }
+}
+
+export type TenantPatch = {
+  name?: string
+  contactName?: string | null
+  contactEmail?: string
+  tokenQuota?: number
+  storageQuota?: number
+  qpsLimit?: number
+}
+
+/**
+ * 4.8.15a/b：平台级更新租户基本信息与配额。
+ * 配额改动即时对 4.8.2 的配额强制生效（那边每次请求实时读 tenants 的额度列）。
+ * code 不可改——它是租户对外标识，且被 e2e/seed 与外部集成引用。
+ */
+export async function updateTenantByPlatform(id: string, patch: TenantPatch): Promise<void> {
+  const row: Record<string, unknown> = {}
+
+  if (patch.name !== undefined) {
+    const name = patch.name.trim()
+    if (!name) throw new Error('企业名称不能为空')
+    if (name.length > 80) throw new Error('企业名称不能超过 80 字')
+    row.name = name
+  }
+  if (patch.contactName !== undefined) row.contact_name = patch.contactName?.trim() || null
+  if (patch.contactEmail !== undefined) {
+    const email = patch.contactEmail.trim()
+    if (!EMAIL_RE.test(email)) throw new Error('联系邮箱格式非法')
+    row.contact_email = email
+  }
+  for (const [key, col, label] of [
+    ['tokenQuota', 'token_quota', 'Token 配额'],
+    ['storageQuota', 'storage_quota', '存储配额'],
+    ['qpsLimit', 'qps_limit', 'QPS 上限'],
+  ] as const) {
+    const v = patch[key]
+    if (v === undefined) continue
+    // 0 = 不限制（与 4.8.2 decideQuota 的既有语义一致），负数与非整数拒绝
+    if (!Number.isInteger(v) || v < 0) throw new Error(`${label}必须为非负整数（0 表示不限制）`)
+    row[col] = v
+  }
+
+  if (Object.keys(row).length === 0) return
+
+  row.updated_at = new Date().toISOString()
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('tenants').update(row).eq('id', id).is('deleted_at', null).select('id')
+  if (error) throw new Error(error.message)
+  if (!((data as { id: string }[] | null) ?? []).length) throw new Error('租户不存在或已注销')
+}
+
 /** 停用 / 启用租户。 */
 export async function setTenantStatus(id: string, status: TenantStatus): Promise<void> {
   const admin = createAdminClient()
