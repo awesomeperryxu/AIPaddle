@@ -1,6 +1,6 @@
 import { getRequestContext } from '@/lib/context'
 import { isPlatformAdmin } from '@/lib/auth/platform'
-import { listAllTenants, provisionTenant, type PlanType } from '@/lib/data/tenants'
+import { listAllTenants, provisionTenant } from '@/lib/data/tenants'
 
 // GET /api/tenants —— 平台全部租户（仅平台超管，ADR-010）
 export async function GET() {
@@ -25,7 +25,6 @@ export async function POST(request: Request) {
       code: String(b?.code ?? ''),
       contactName: String(b?.contactName ?? ''),
       contactEmail: String(b?.contactEmail ?? ''),
-      planType: b?.planType as PlanType,
       tokenQuota: Number(b?.tokenQuota),
     })
     return Response.json({ tenant }, { status: 201 })

@@ -18,7 +18,6 @@ import {
   ChevronRight,
   Building2,
   Key,
-  CreditCard,
   BarChart3,
   LogOut,
   Moon,
@@ -116,7 +115,6 @@ const navSections: NavSection[] = [
       { title: '运营看板', icon: <BarChart3 className="h-4 w-4" />, href: 'saas-dashboard' },
       { title: '租户管理', icon: <Building2 className="h-4 w-4" />, href: 'tenants' },
       { title: 'Key 管理', icon: <Key className="h-4 w-4" />, href: 'keys' },
-      { title: '账单管理', icon: <CreditCard className="h-4 w-4" />, href: 'billing' },
     ]
   },
 ];

@@ -35,7 +35,7 @@ describe('平台租户 API 授权门（ADR-010）', () => {
   it('非平台超管 POST 开通 → 403', async () => {
     mockCtx.mockResolvedValue(ctx as never)
     mockIsPlat.mockResolvedValue(false)
-    const res = await POST(req({ name: 'X', code: 'x1', contactEmail: 'a@b.com', planType: 'standard', tokenQuota: 1000 }))
+    const res = await POST(req({ name: 'X', code: 'x1', contactEmail: 'a@b.com', tokenQuota: 1000 }))
     expect(res.status).toBe(403)
   })
 

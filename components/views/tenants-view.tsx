@@ -48,7 +48,6 @@ interface Tenant {
   id: string;
   name: string;
   adminEmail: string;
-  package: 'trial' | 'basic' | 'pro' | 'enterprise';
   status: 'active' | 'suspended' | 'overdue';
   members: number;
   agents: number;
@@ -59,19 +58,12 @@ interface Tenant {
 }
 
 const mockTenants: Tenant[] = [
-  { id: 't-001', name: '示范科技有限公司', adminEmail: 'admin@demo.com', package: 'enterprise', status: 'active', members: 1245, agents: 6, tokenUsage: 8450000, tokenQuota: 10000000, monthlyBill: 2890, createdAt: '2024-01-15' },
-  { id: 't-002', name: '创新金融集团', adminEmail: 'admin@finance.com', package: 'pro', status: 'active', members: 856, agents: 4, tokenUsage: 5230000, tokenQuota: 8000000, monthlyBill: 1560, createdAt: '2024-02-01' },
-  { id: 't-003', name: '未来科技公司', adminEmail: 'admin@future.com', package: 'basic', status: 'active', members: 234, agents: 2, tokenUsage: 1890000, tokenQuota: 3000000, monthlyBill: 450, createdAt: '2024-02-20' },
-  { id: 't-004', name: '智慧零售有限公司', adminEmail: 'admin@retail.com', package: 'pro', status: 'overdue', members: 567, agents: 3, tokenUsage: 4120000, tokenQuota: 5000000, monthlyBill: 1230, createdAt: '2024-01-28' },
-  { id: 't-005', name: '测试企业', adminEmail: 'test@test.com', package: 'trial', status: 'active', members: 15, agents: 1, tokenUsage: 45000, tokenQuota: 100000, monthlyBill: 0, createdAt: '2024-03-10' },
+  { id: 't-001', name: '示范科技有限公司', adminEmail: 'admin@demo.com', status: 'active', members: 1245, agents: 6, tokenUsage: 8450000, tokenQuota: 10000000, monthlyBill: 2890, createdAt: '2024-01-15' },
+  { id: 't-002', name: '创新金融集团', adminEmail: 'admin@finance.com', status: 'active', members: 856, agents: 4, tokenUsage: 5230000, tokenQuota: 8000000, monthlyBill: 1560, createdAt: '2024-02-01' },
+  { id: 't-003', name: '未来科技公司', adminEmail: 'admin@future.com', status: 'active', members: 234, agents: 2, tokenUsage: 1890000, tokenQuota: 3000000, monthlyBill: 450, createdAt: '2024-02-20' },
+  { id: 't-004', name: '智慧零售有限公司', adminEmail: 'admin@retail.com', status: 'overdue', members: 567, agents: 3, tokenUsage: 4120000, tokenQuota: 5000000, monthlyBill: 1230, createdAt: '2024-01-28' },
+  { id: 't-005', name: '测试企业', adminEmail: 'test@test.com', status: 'active', members: 15, agents: 1, tokenUsage: 45000, tokenQuota: 100000, monthlyBill: 0, createdAt: '2024-03-10' },
 ];
-
-const packageConfig = {
-  trial: { label: '试用版', className: 'bg-muted text-muted-foreground' },
-  basic: { label: '基础版', className: 'bg-blue-500/10 text-blue-500' },
-  pro: { label: '专业版', className: 'bg-primary/10 text-primary' },
-  enterprise: { label: '企业版', className: 'bg-green-500/10 text-green-500' }
-};
 
 const statusConfig = {
   active: { label: '正常', className: 'bg-green-500/10 text-green-500' },
@@ -79,13 +71,10 @@ const statusConfig = {
   overdue: { label: '欠费', className: 'bg-yellow-500/10 text-yellow-500' }
 };
 
-// 平台真实租户（ADR-010）
+// 平台真实租户（ADR-010）。ADR-017：取消套餐分级，不再携带/展示 planType。
 type PlatformTenant = {
-  id: string; name: string; code: string; planType: 'free' | 'standard' | 'pro' | 'enterprise';
+  id: string; name: string; code: string;
   tokenQuota: number; qpsLimit: number; status: 'active' | 'suspended'; contactName: string; contactEmail: string; createdAt: string;
-};
-const PLAN_TO_PACKAGE: Record<PlatformTenant['planType'], Tenant['package']> = {
-  free: 'trial', standard: 'basic', pro: 'pro', enterprise: 'enterprise',
 };
 
 export function TenantsView({
@@ -104,14 +93,13 @@ export function TenantsView({
   const [pCode, setPCode] = useState('');
   const [pContact, setPContact] = useState('');
   const [pEmail, setPEmail] = useState('');
-  const [pPlan, setPPlan] = useState<PlatformTenant['planType']>('standard');
   const [pQuota, setPQuota] = useState('1000000');
   const [pErr, setPErr] = useState<string | null>(null);
 
   // 真实租户映射到表格展示 shape（用量/账单等分析字段暂缺，置 0）
   const displayTenants: Tenant[] = tenants.map((t) => ({
     id: t.id, name: t.name, adminEmail: t.contactEmail || t.code,
-    package: PLAN_TO_PACKAGE[t.planType], status: t.status,
+    status: t.status,
     members: 0, agents: 0, tokenUsage: 0, tokenQuota: t.tokenQuota, monthlyBill: 0,
     createdAt: t.createdAt,
   }));
@@ -129,11 +117,11 @@ export function TenantsView({
         method: 'POST',
         body: JSON.stringify({
           name: pName.trim(), code: pCode.trim(), contactName: pContact.trim(),
-          contactEmail: pEmail.trim(), planType: pPlan, tokenQuota: Number(pQuota),
+          contactEmail: pEmail.trim(), tokenQuota: Number(pQuota),
         }),
       });
       setProvOpen(false);
-      setPName(''); setPCode(''); setPContact(''); setPEmail(''); setPPlan('standard'); setPQuota('1000000');
+      setPName(''); setPCode(''); setPContact(''); setPEmail(''); setPQuota('1000000');
       router.refresh();
     } catch (e) {
       setPErr(e instanceof Error ? e.message : '开通失败');
@@ -247,7 +235,6 @@ export function TenantsView({
             <TableHeader>
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead className="text-muted-foreground">企业</TableHead>
-                <TableHead className="text-muted-foreground">套餐</TableHead>
                 <TableHead className="text-muted-foreground">状态</TableHead>
                 <TableHead className="text-muted-foreground">成员数</TableHead>
                 <TableHead className="text-muted-foreground">Agent 数</TableHead>
@@ -269,11 +256,6 @@ export function TenantsView({
                         <p className="text-xs text-muted-foreground">{tenant.adminEmail}</p>
                       </div>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={packageConfig[tenant.package].className}>
-                      {packageConfig[tenant.package].label}
-                    </Badge>
                   </TableCell>
                   <TableCell>
                     <Badge className={statusConfig[tenant.status].className}>
@@ -355,62 +337,30 @@ export function TenantsView({
       </Card>
 
       {/* Revenue Chart Placeholder */}
-      <div className="grid grid-cols-2 gap-6">
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle className="text-foreground">收入趋势</CardTitle>
-            <CardDescription>过去 6 个月收入变化</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48 flex items-end justify-between gap-2 px-4">
-              {[45, 62, 78, 85, 92, 100].map((height, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-2">
+      <Card className="bg-card border-border">
+        <CardHeader>
+          <CardTitle className="text-foreground">收入趋势</CardTitle>
+          <CardDescription>过去 6 个月收入变化</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-48 flex items-end justify-between gap-2 px-4">
+            {[45, 62, 78, 85, 92, 100].map((height, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-2">
+                <div
+                  className="w-full bg-primary/20 rounded-t-sm"
+                  style={{ height: `${height}%` }}
+                >
                   <div
-                    className="w-full bg-primary/20 rounded-t-sm"
-                    style={{ height: `${height}%` }}
-                  >
-                    <div
-                      className="w-full bg-primary rounded-t-sm"
-                      style={{ height: `${height * 0.8}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground">{['10月', '11月', '12月', '1月', '2月', '3月'][i]}</span>
+                    className="w-full bg-primary rounded-t-sm"
+                    style={{ height: `${height * 0.8}%` }}
+                  />
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle className="text-foreground">套餐分布</CardTitle>
-            <CardDescription>企业套餐类型统计</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {[
-                { name: '企业版', count: 1, percentage: 20, color: 'bg-green-500' },
-                { name: '专业版', count: 2, percentage: 40, color: 'bg-primary' },
-                { name: '基础版', count: 1, percentage: 20, color: 'bg-blue-500' },
-                { name: '试用版', count: 1, percentage: 20, color: 'bg-muted-foreground' },
-              ].map((item) => (
-                <div key={item.name} className="space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-foreground">{item.name}</span>
-                    <span className="text-muted-foreground">{item.count} 家</span>
-                  </div>
-                  <div className="w-full h-2 bg-muted rounded-full">
-                    <div
-                      className={`h-full rounded-full ${item.color}`}
-                      style={{ width: `${item.percentage}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                <span className="text-xs text-muted-foreground">{['10月', '11月', '12月', '1月', '2月', '3月'][i]}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 开通企业（ADR-010 / PRD 2.9.8）*/}
       <Dialog open={provOpen} onOpenChange={setProvOpen}>
@@ -439,24 +389,9 @@ export function TenantsView({
                 <Input id="t-email" type="email" value={pEmail} onChange={e => setPEmail(e.target.value)} placeholder="admin@demo.com" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="t-plan">套餐</Label>
-                <select
-                  id="t-plan" value={pPlan}
-                  onChange={e => setPPlan(e.target.value as PlatformTenant['planType'])}
-                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
-                >
-                  <option value="free">免费版</option>
-                  <option value="standard">标准版</option>
-                  <option value="pro">专业版</option>
-                  <option value="enterprise">企业版</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="t-quota">Token 配额</Label>
-                <Input id="t-quota" type="number" value={pQuota} onChange={e => setPQuota(e.target.value)} placeholder="1000000" />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="t-quota">Token 配额</Label>
+              <Input id="t-quota" type="number" value={pQuota} onChange={e => setPQuota(e.target.value)} placeholder="1000000" />
             </div>
             {pErr && <p className="text-xs text-destructive">{pErr}</p>}
           </div>

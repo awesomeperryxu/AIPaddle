@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { provisionTenant } from '@/lib/data/tenants'
 
 // ADR-010：开通租户校验（这些校验在触库前抛出，故无需 mock supabase）。
+// ADR-017：取消套餐分级，provisionTenant 不再收 planType。
 const base = {
   name: '新奇点智能有限公司', code: 'XQD-AI', contactName: '周新',
-  contactEmail: 'zhou.xin@aipaddle-test.local', planType: 'standard' as const, tokenQuota: 1_000_000,
+  contactEmail: 'zhou.xin@aipaddle-test.local', tokenQuota: 1_000_000,
 }
 
 describe('provisionTenant 校验（S5-04）', () => {
