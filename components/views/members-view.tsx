@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/table';
 import {
   Plus, Search, Upload, Settings, MoreHorizontal,
-  Users, Shield, Zap, UserCheck, Loader2,
+  Users, Shield, Zap, UserCheck, Loader2, Trash2,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -21,6 +21,10 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 
 // 显示标签对齐原型（员工/AI 工程师/安全人员/管理员）；后端角色键保持 ADR-007 体系不变
@@ -34,6 +38,14 @@ const roleConfig: Record<Member['role'], { label: string; className: string }> =
 const statusConfig: Record<'active' | 'disabled', { label: string; className: string }> = {
   active:   { label: '正常',   className: 'bg-green-500/10 text-green-500' },
   disabled: { label: '已禁用', className: 'bg-destructive/10 text-destructive' },
+};
+
+// ADR-007 为角色制鉴权：权限由角色决定，故"权限设置"= 改角色。此处给出各角色的权限边界说明。
+const roleDesc: Record<Member['role'], string> = {
+  User:      '使用已发布的 Agent / Skill / 知识库问答，不能创建或管理资源',
+  Developer: '创建与编辑 Agent、Skill、工作流、知识库，提交审核（仅限本人资源）',
+  Auditor:   '审核 Agent / Skill / MCP 上架申请，查看审计日志，不参与开发',
+  Admin:     '本租户全部权限：成员与角色管理、审核、租户设置与配额',
 };
 
 export function MembersView() {
@@ -50,6 +62,17 @@ export function MembersView() {
   const [invDept, setInvDept] = useState('');
   const [invBusy, setInvBusy] = useState(false);
   const [invError, setInvError] = useState<string | null>(null);
+  // 编辑成员（4.8.12）
+  const [editing, setEditing] = useState<Member | null>(null);
+  const [edName, setEdName] = useState('');
+  const [edDept, setEdDept] = useState('');
+  const [edRole, setEdRole] = useState<Member['role']>('User');
+  const [edBusy, setEdBusy] = useState(false);
+  const [edError, setEdError] = useState<string | null>(null);
+  // 移除成员（4.8.12）
+  const [removing, setRemoving] = useState<Member | null>(null);
+  const [rmBusy, setRmBusy] = useState(false);
+  const [rmError, setRmError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false
@@ -73,6 +96,45 @@ export function MembersView() {
     } finally {
       setActionLoading(null)
     }
+  }
+
+  function openEdit(member: Member) {
+    setEditing(member);
+    setEdName(member.name);
+    setEdDept(member.department);
+    setEdRole(member.role);
+    setEdError(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!editing || edBusy) return;
+    if (!edName.trim()) { setEdError('姓名不能为空'); return; }
+    setEdBusy(true); setEdError(null);
+    try {
+      const payload: Record<string, string> = { name: edName.trim(), department: edDept.trim() };
+      // 角色未变则不提交，避免无谓的角色改写与审计噪音
+      if (edRole !== editing.role) payload.role = edRole;
+      await apiFetch(`/api/members/${editing.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      setEditing(null);
+      setTick(t => t + 1);
+    } catch (e) {
+      setEdError(e instanceof Error ? e.message : '保存失败');
+    } finally { setEdBusy(false); }
+  }
+
+  async function handleRemove() {
+    if (!removing || rmBusy) return;
+    setRmBusy(true); setRmError(null);
+    try {
+      await apiFetch(`/api/members/${removing.id}`, { method: 'DELETE' });
+      setRemoving(null);
+      setTick(t => t + 1);
+    } catch (e) {
+      setRmError(e instanceof Error ? e.message : '移除失败');
+    } finally { setRmBusy(false); }
   }
 
   async function handleInvite() {
@@ -112,9 +174,15 @@ export function MembersView() {
           <p className="text-sm text-muted-foreground mt-0.5">管理组织成员和权限</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="gap-2" disabled>
+          {/* 4.8.13 尚未实现：明确标注即将上线，不留无提示的死按钮 */}
+          <Button
+            variant="outline"
+            className="gap-2"
+            disabled
+            title="批量导入（Excel 模板）将在后续版本提供，当前请用「添加成员」逐个邀请"
+          >
             <Upload className="h-4 w-4" />
-            批量导入
+            批量导入（即将上线）
           </Button>
           <Button className="gap-2 shadow-sm" onClick={() => { setInvError(null); setInviteOpen(true); }}>
             <Plus className="h-4 w-4" />
@@ -257,13 +325,10 @@ export function MembersView() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="bg-popover border-border">
-                          <DropdownMenuItem disabled>
+                          {/* 4.8.12：ADR-007 为角色制，"权限设置"即改角色，已并入编辑对话框，不再单列死菜单 */}
+                          <DropdownMenuItem onClick={() => openEdit(member)}>
                             <Settings className="h-4 w-4 mr-2" />
-                            编辑
-                          </DropdownMenuItem>
-                          <DropdownMenuItem disabled>
-                            <Shield className="h-4 w-4 mr-2" />
-                            权限设置
+                            编辑成员
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {member.status === 'active' ? (
@@ -281,6 +346,14 @@ export function MembersView() {
                               启用账号
                             </DropdownMenuItem>
                           )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => { setRmError(null); setRemoving(member); }}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            移除成员
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -331,6 +404,73 @@ export function MembersView() {
           </CardContent>
         </Card>
       )}
+
+      {/* 编辑成员对话框（4.8.12）：姓名/部门/角色三合一，角色即权限（ADR-007）*/}
+      <Dialog open={editing !== null} onOpenChange={(o) => { if (!o) setEditing(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>编辑成员</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="ed-name">姓名</Label>
+              <Input id="ed-name" value={edName} onChange={e => setEdName(e.target.value)} placeholder="成员姓名" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ed-dept">部门</Label>
+              <Input id="ed-dept" value={edDept} onChange={e => setEdDept(e.target.value)} placeholder="所属部门" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ed-role">角色（决定该成员的权限）</Label>
+              <select
+                id="ed-role"
+                value={edRole}
+                onChange={e => setEdRole(e.target.value as Member['role'])}
+                className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+              >
+                {(Object.keys(roleConfig) as Member['role'][]).map(r => (
+                  <option key={r} value={r}>{roleConfig[r].label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground flex items-start gap-1.5 pt-0.5">
+                <Shield className="h-3.5 w-3.5 mt-px shrink-0" />
+                {roleDesc[edRole]}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">邮箱 {editing?.email} 不可修改</p>
+            {edError && <p className="text-xs text-destructive">{edError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)} disabled={edBusy}>取消</Button>
+            <Button onClick={handleSaveEdit} disabled={edBusy}>
+              {edBusy ? '保存中…' : '保存'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 移除成员确认（4.8.12）：软删 + 撤角色 + 封禁登录，服务端另有"最后一名管理员"护栏 */}
+      <AlertDialog open={removing !== null} onOpenChange={(o) => { if (!o) setRemoving(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除成员 {removing?.name}？</AlertDialogTitle>
+            <AlertDialogDescription>
+              移除后该成员将无法登录，其角色权限一并回收。历史数据保留，可联系管理员恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {rmError && <p className="text-xs text-destructive">{rmError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={rmBusy}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleRemove(); }}
+              disabled={rmBusy}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {rmBusy ? '移除中…' : '确认移除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* 邀请成员对话框（4.5.1）*/}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
