@@ -110,3 +110,72 @@ export async function getPlatformDashboard(): Promise<PlatformDashboard> {
 
   return { tenants: { total: tenants.length, active, suspended }, usage30d, tokenTrend, tenantRanking, modelCost, risks, billingEnabled: false }
 }
+
+// ============ 4.8.x 租户管理：每租户真实用量聚合（去 mock） ============
+// 同属平台超管视图，与 getPlatformDashboard 一致用 admin client 跨租户只读聚合；
+// 入口 API 必须 isPlatformAdmin 兜住。此层不做 RLS 隔离、只读、无跨租户写。
+
+export type TenantUsage = {
+  members: number       // 该租户成员数（users，未软删）
+  agents: number        // 该租户 Agent 数（agents，未软删）
+  tokens30d: number     // 近 30 天 Token 消耗
+  estCost30d: number    // 近 30 天估算成本（元，按固定单价推算，非真实账单）
+}
+
+/**
+ * 每租户用量聚合（按 org_id）。一次拉取 users/agents/call_logs 于 JS 内聚合。
+ * 返回 Record<orgId, TenantUsage>；没有任何用量记录的租户不出现在 map 中（前端回落 0）。
+ * 仅平台超管可调用（入口已 isPlatformAdmin）。
+ */
+export async function getTenantUsage(): Promise<Record<string, TenantUsage>> {
+  const admin = createAdminClient()
+  const since30 = new Date(Date.now() - 30 * DAY).toISOString()
+
+  const [usersRes, agentsRes, logsRes] = await Promise.all([
+    admin.from('users').select('org_id').is('deleted_at', null),
+    admin.from('agents').select('org_id').is('deleted_at', null),
+    admin.from('call_logs').select('org_id,tokens_in,tokens_out').is('deleted_at', null).gte('created_at', since30),
+  ])
+  if (usersRes.error) throw new Error(usersRes.error.message)
+  if (agentsRes.error) throw new Error(agentsRes.error.message)
+  if (logsRes.error) throw new Error(logsRes.error.message)
+
+  const usage: Record<string, TenantUsage> = {}
+  const ensure = (org: string) => (usage[org] ??= { members: 0, agents: 0, tokens30d: 0, estCost30d: 0 })
+
+  for (const u of (usersRes.data as { org_id: string }[] | null) ?? []) ensure(u.org_id).members++
+  for (const a of (agentsRes.data as { org_id: string }[] | null) ?? []) ensure(a.org_id).agents++
+  for (const l of (logsRes.data as { org_id: string; tokens_in: number | null; tokens_out: number | null }[] | null) ?? []) {
+    const e = ensure(l.org_id)
+    e.tokens30d += (l.tokens_in ?? 0) + (l.tokens_out ?? 0)
+    e.estCost30d += estimateCost(l.tokens_in ?? 0, l.tokens_out ?? 0)
+  }
+  return usage
+}
+
+export type RevenuePoint = { label: string; cost: number }   // cost=估算成本（元）
+
+/**
+ * 近 6 个月估算收入趋势（按 call_logs.token 数 × 固定单价推算，非真实账单）。
+ * 替代前端写死的柱高数组；仅平台超管可调用。
+ */
+export async function getPlatformRevenueTrend(): Promise<RevenuePoint[]> {
+  const admin = createAdminClient()
+  const now = Date.now()
+  const since180 = new Date(now - 180 * DAY).toISOString()
+
+  const { data, error } = await admin
+    .from('call_logs').select('tokens_in,tokens_out,created_at')
+    .is('deleted_at', null).gte('created_at', since180)
+  if (error) throw new Error(error.message)
+
+  const months: string[] = []
+  for (let i = 5; i >= 0; i--) months.push(ymKey(new Date(now - i * 30 * DAY)))
+  const map = new Map(months.map((m) => [m, 0]))
+  for (const l of (data as { tokens_in: number | null; tokens_out: number | null; created_at: string | null }[] | null) ?? []) {
+    if (!l.created_at) continue
+    const k = ymKey(new Date(l.created_at))
+    if (map.has(k)) map.set(k, map.get(k)! + estimateCost(l.tokens_in ?? 0, l.tokens_out ?? 0))
+  }
+  return months.map((m) => ({ label: m.slice(5) + '月', cost: Math.round((map.get(m) ?? 0) * 100) / 100 }))
+}
