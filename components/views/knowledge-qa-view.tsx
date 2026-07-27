@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,43 +16,29 @@ import {
   Send,
   Sparkles,
   MessageSquare,
-  FolderOpen,
   Loader2,
 } from 'lucide-react'
 
 type Citation = { documentId: string; filename: string; snippet: string; similarity: number }
 type RagAnswer = { answer: string; citations: Citation[]; refused: boolean }
 
-// 结果附带的客户端可观测元信息（耗时为真实测量，模型/模式来自检索设置）
-type AskResult = RagAnswer & { latencyMs: number; model: string; mode: string }
+// 结果附带的客户端可观测元信息（耗时为真实测量）
+type AskResult = RagAnswer & { latencyMs: number }
+
+type KnowledgeBaseItem = { id: string; name: string; documentCount: number }
+type RetrievalConfig = { topK: number; scoreThreshold: number }
+
+// 检索参数默认值：与后端 DEFAULT_KB_RETRIEVAL_CONFIG 对齐（topK=5、阈值=0.28）
+const DEFAULT_TOP_K = '5'
+const DEFAULT_THRESHOLD = '0.28'
+
+// 「全部知识库」哨兵值（Radix Select 不允许空字符串 value，内部用哨兵、对外 kbId 用 ''）
+const ALL_KB = '__all__'
 
 // 模块级 helper：规避 React Compiler purity 规则对 render 作用域内直接调用 Date.now 的限制
 const nowMs = () => Date.now()
 
-// 知识库列表（暂无后端，UI mock；选中项作为提问上下文占位）
-const KNOWLEDGE_BASES = [
-  { id: 'kb-001', name: '企业规章制度库', documents: 12, size: '4.2 MB' },
-  { id: 'kb-002', name: '产品技术文档', documents: 28, size: '11.6 MB' },
-  { id: 'kb-003', name: '客服知识库', documents: 45, size: '8.1 MB' },
-]
-
-// 最近提问历史（暂无后端，UI mock）
-const RECENT_HISTORY = [
-  { q: '公司的年假政策是怎样的？', kb: '企业规章制度库', time: '10 分钟前' },
-  { q: '差旅报销需要哪些票据？', kb: '企业规章制度库', time: '1 小时前' },
-  { q: 'X1 的保修期多久？', kb: '产品技术文档', time: '昨天' },
-]
-
 const SUGGESTIONS = ['公司的年假政策是怎样的？', '差旅报销需要哪些票据？']
-
-const RETRIEVAL_MODES = [
-  { value: 'hybrid', label: '混合检索' },
-  { value: 'vector', label: '向量检索' },
-  { value: 'keyword', label: '关键词检索' },
-]
-const TOP_K_OPTIONS = ['3', '5', '10']
-const THRESHOLD_OPTIONS = ['0.50', '0.60', '0.70', '0.80']
-const MODEL_OPTIONS = ['GPT-4-Turbo', 'GPT-4o', 'Qwen-Max']
 
 // 依据相关性评分返回徽章与进度条配色
 function scoreTone(similarity: number) {
@@ -62,23 +48,42 @@ function scoreTone(similarity: number) {
 }
 
 export function KnowledgeQaView() {
-  const [kbId, setKbId] = useState(KNOWLEDGE_BASES[0].id)
+  const [kbList, setKbList] = useState<KnowledgeBaseItem[]>([])
+  const [kbLoading, setKbLoading] = useState(true)
+  const [kbId, setKbId] = useState('') // 空 = 全部知识库
   const [question, setQuestion] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<AskResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // 检索设置（暂无后端，仅 UI）
-  const [mode, setMode] = useState('hybrid')
-  const [topK, setTopK] = useState('3')
-  const [threshold, setThreshold] = useState('0.60')
-  const [model, setModel] = useState('GPT-4-Turbo')
+  // 检索设置（真正接线：召回数量 topK + 相似度阈值）
+  const [topK, setTopK] = useState(DEFAULT_TOP_K)
+  const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD)
 
-  const activeKb = useMemo(
-    () => KNOWLEDGE_BASES.find((k) => k.id === kbId) ?? KNOWLEDGE_BASES[0],
-    [kbId],
+  // 拉取真实知识库列表
+  useEffect(() => {
+    let alive = true
+    apiFetch<{ knowledgeBases: KnowledgeBaseItem[] }>('/api/knowledge-bases')
+      .then((r) => { if (alive) setKbList(r.knowledgeBases ?? []) })
+      .catch(() => { if (alive) setKbList([]) })
+      .finally(() => { if (alive) setKbLoading(false) })
+    return () => { alive = false }
+  }, [])
+
+  // topK / 阈值下拉选项：合并当前值，保证预填的任意配置也能正确回显
+  const topKOptions = useMemo(
+    () => Array.from(new Set(['3', '5', '10', topK])).sort((a, b) => Number(a) - Number(b)),
+    [topK],
   )
-  const modeLabel = RETRIEVAL_MODES.find((m) => m.value === mode)?.label ?? '混合检索'
+  const thresholdOptions = useMemo(
+    () => Array.from(new Set(['0.20', '0.28', '0.50', '0.70', threshold])).sort((a, b) => Number(a) - Number(b)),
+    [threshold],
+  )
+
+  const activeKbName = useMemo(
+    () => kbList.find((k) => k.id === kbId)?.name ?? '全部知识库',
+    [kbList, kbId],
+  )
 
   async function ask(q?: string) {
     const query = (q ?? question).trim()
@@ -91,9 +96,14 @@ export function KnowledgeQaView() {
     try {
       const r = await apiFetch<RagAnswer>('/api/knowledge/ask', {
         method: 'POST',
-        body: JSON.stringify({ question: query }),
+        body: JSON.stringify({
+          question: query,
+          kbId: kbId || undefined,
+          topK: Number(topK),
+          scoreThreshold: Number(threshold),
+        }),
       })
-      setResult({ ...r, latencyMs: nowMs() - startedAt, model, mode: modeLabel })
+      setResult({ ...r, latencyMs: nowMs() - startedAt })
     } catch (e) {
       setError(e instanceof Error ? e.message : '问答失败')
     } finally {
@@ -101,10 +111,24 @@ export function KnowledgeQaView() {
     }
   }
 
+  // 选中知识库：清空上次结果；选中具体库时预填其检索配置（与创建库一致，用户仍可覆盖）
   function selectKb(id: string) {
     setKbId(id)
     setResult(null)
     setError(null)
+    if (!id) {
+      setTopK(DEFAULT_TOP_K)
+      setThreshold(DEFAULT_THRESHOLD)
+      return
+    }
+    apiFetch<{ retrievalConfig?: RetrievalConfig }>(`/api/knowledge-bases/${id}`)
+      .then((r) => {
+        if (r.retrievalConfig) {
+          setTopK(String(r.retrievalConfig.topK))
+          setThreshold(String(r.retrievalConfig.scoreThreshold))
+        }
+      })
+      .catch(() => { /* 预填失败沿用当前值 */ })
   }
 
   const hasResult = !!result && !result.refused && result.citations.length >= 0
@@ -121,30 +145,29 @@ export function KnowledgeQaView() {
         {/* 选择知识库 */}
         <div>
           <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">选择知识库</p>
-          <div className="flex flex-col gap-2">
-            {KNOWLEDGE_BASES.map((kb) => {
-              const active = kb.id === kbId
-              return (
-                <button
-                  key={kb.id}
-                  onClick={() => selectKb(kb.id)}
-                  className={`rounded-lg border px-3 py-2.5 text-left transition ${
-                    active
-                      ? 'border-primary bg-primary/8'
-                      : 'border-border bg-card hover:border-foreground/20'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <FolderOpen className="h-[15px] w-[15px] text-primary shrink-0" />
-                    <span className="text-sm font-medium text-foreground">{kb.name}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {kb.documents} 文档 · {kb.size}
-                  </p>
-                </button>
-              )
-            })}
-          </div>
+          {kbLoading ? (
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-muted-foreground">
+              <Loader2 className="h-[15px] w-[15px] animate-spin" /> 加载中
+            </div>
+          ) : kbList.length === 0 ? (
+            <p className="rounded-lg border border-border bg-card px-3 py-2.5 text-[13px] text-muted-foreground">
+              暂无知识库，请先在「知识库管理」创建
+            </p>
+          ) : (
+            <Select value={kbId || ALL_KB} onValueChange={(v) => selectKb(v === ALL_KB ? '' : v)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_KB}>全部知识库</SelectItem>
+                {kbList.map((kb) => (
+                  <SelectItem key={kb.id} value={kb.id}>
+                    {kb.name}（{kb.documentCount} 文档）
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* 检索设置 */}
@@ -152,28 +175,13 @@ export function KnowledgeQaView() {
           <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">检索设置</p>
           <div className="rounded-lg border border-border bg-card p-3 flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground shrink-0">检索模式</span>
-              <Select value={mode} onValueChange={setMode}>
-                <SelectTrigger size="sm" className="h-7 w-[120px] text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RETRIEVAL_MODES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground shrink-0">Top K</span>
+              <span className="text-[13px] text-muted-foreground shrink-0">召回数量</span>
               <Select value={topK} onValueChange={setTopK}>
                 <SelectTrigger size="sm" className="h-7 w-[120px] text-[13px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TOP_K_OPTIONS.map((v) => (
+                  {topKOptions.map((v) => (
                     <SelectItem key={v} value={v}>
                       {v}
                     </SelectItem>
@@ -182,13 +190,13 @@ export function KnowledgeQaView() {
               </Select>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground shrink-0">相关性阈值</span>
+              <span className="text-[13px] text-muted-foreground shrink-0">相似度阈值</span>
               <Select value={threshold} onValueChange={setThreshold}>
                 <SelectTrigger size="sm" className="h-7 w-[120px] text-[13px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {THRESHOLD_OPTIONS.map((v) => (
+                  {thresholdOptions.map((v) => (
                     <SelectItem key={v} value={v}>
                       {v}
                     </SelectItem>
@@ -196,40 +204,6 @@ export function KnowledgeQaView() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[13px] text-muted-foreground shrink-0">生成模型</span>
-              <Select value={model} onValueChange={setModel}>
-                <SelectTrigger size="sm" className="h-7 w-[120px] text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODEL_OPTIONS.map((v) => (
-                    <SelectItem key={v} value={v}>
-                      {v}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-
-        {/* 最近提问 */}
-        <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">最近提问</p>
-          <div className="flex flex-col gap-1.5">
-            {RECENT_HISTORY.map((h, i) => (
-              <button
-                key={i}
-                onClick={() => ask(h.q)}
-                className="rounded-md bg-muted/30 px-2.5 py-2 text-left hover:bg-muted transition"
-              >
-                <span className="block truncate text-[13px] text-foreground">{h.q}</span>
-                <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                  {h.kb} · {h.time}
-                </span>
-              </button>
-            ))}
           </div>
         </div>
       </aside>
@@ -246,7 +220,7 @@ export function KnowledgeQaView() {
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }} /* 回车不提交，须点按钮 */
-                  placeholder={`向「${activeKb.name}」提问，例如：公司的年假政策是怎样的？`}
+                  placeholder={`向「${activeKbName}」提问，例如：公司的年假政策是怎样的？`}
                   className="h-[42px] w-full rounded-lg border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary/60"
                 />
               </div>
@@ -300,7 +274,7 @@ export function KnowledgeQaView() {
                     生成回答
                   </h3>
                   <span className="text-xs text-muted-foreground">
-                    耗时 {(result.latencyMs / 1000).toFixed(1)}s · {result.model} · {result.mode}
+                    耗时 {(result.latencyMs / 1000).toFixed(1)}s · 向量检索
                   </span>
                 </div>
                 <p className="text-sm text-foreground whitespace-pre-wrap leading-[1.8]">{result.answer}</p>
@@ -351,7 +325,7 @@ export function KnowledgeQaView() {
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-teal-500/20">
                 <Database className="h-7 w-7 text-primary" />
               </div>
-              <h2 className="text-[17px] font-semibold text-foreground">基于「{activeKb.name}」提问</h2>
+              <h2 className="text-[17px] font-semibold text-foreground">基于「{activeKbName}」提问</h2>
               <p className="mt-1.5 text-[13px] text-muted-foreground">
                 回答将附带召回分段与相关性评分，便于验证检索质量
               </p>
