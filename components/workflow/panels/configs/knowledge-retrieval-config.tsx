@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Trash2, ChevronDown, Database, Search, Filter } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Plus, ChevronDown, Database, Filter, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,13 +35,11 @@ interface KnowledgeRetrievalConfigPanelProps {
   appType?: 'workflow' | 'chatflow';
 }
 
-// Mock knowledge bases - in real app, this would come from API
-const mockKnowledgeBases = [
-  { id: 'kb-1', name: '产品文档', documentCount: 156, status: 'ready' },
-  { id: 'kb-2', name: '技术手册', documentCount: 89, status: 'ready' },
-  { id: 'kb-3', name: '常见问题', documentCount: 234, status: 'ready' },
-  { id: 'kb-4', name: '用户指南', documentCount: 67, status: 'indexing' },
-];
+interface KnowledgeBaseOption {
+  id: string;
+  name: string;
+  documentCount: number;
+}
 
 // Reranking models
 const rerankingModels = [
@@ -67,6 +66,19 @@ export function KnowledgeRetrievalConfigPanel({
 
   const [showReranking, setShowReranking] = useState(!!multipleConfig.reranking_model);
   const [showFiltering, setShowFiltering] = useState(!!metadataFiltering);
+
+  // 真实知识库列表（ADR-008：客户端只经 apiFetch）
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseOption[]>([]);
+  const [kbLoading, setKbLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{ knowledgeBases: KnowledgeBaseOption[] }>('/api/knowledge-bases')
+      .then(res => { if (!cancelled) setKnowledgeBases(res.knowledgeBases ?? []); })
+      .catch(() => { if (!cancelled) setKnowledgeBases([]); })
+      .finally(() => { if (!cancelled) setKbLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const updateQueryVariable = (selector: ValueSelector) => {
     onUpdate({ query_variable: selector });
@@ -154,43 +166,46 @@ export function KnowledgeRetrievalConfigPanel({
         </div>
 
         <div className="space-y-2">
-          {mockKnowledgeBases.map((kb) => {
-            const isSelected = datasetIds.includes(kb.id);
-            const isReady = kb.status === 'ready';
+          {kbLoading ? (
+            <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              加载知识库…
+            </div>
+          ) : knowledgeBases.length === 0 ? (
+            <div className="p-3 rounded-lg border border-dashed text-center text-xs text-muted-foreground">
+              暂无知识库，请先在知识库模块创建
+            </div>
+          ) : (
+            knowledgeBases.map((kb) => {
+              const isSelected = datasetIds.includes(kb.id);
 
-            return (
-              <div
-                key={kb.id}
-                className={cn(
-                  'flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer',
-                  isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
-                  !isReady && 'opacity-50 cursor-not-allowed'
-                )}
-                onClick={() => isReady && toggleDataset(kb.id)}
-              >
-                <Checkbox
-                  checked={isSelected}
-                  disabled={!isReady}
-                  onCheckedChange={() => isReady && toggleDataset(kb.id)}
-                />
-                <Database className="h-4 w-4 text-muted-foreground" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{kb.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {kb.documentCount} 个文档
-                  </p>
+              return (
+                <div
+                  key={kb.id}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer',
+                    isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                  )}
+                  onClick={() => toggleDataset(kb.id)}
+                >
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={() => toggleDataset(kb.id)}
+                  />
+                  <Database className="h-4 w-4 text-muted-foreground" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{kb.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {kb.documentCount} 个文档
+                    </p>
+                  </div>
                 </div>
-                {!isReady && (
-                  <Badge variant="outline" className="text-[10px]">
-                    索引中
-                  </Badge>
-                )}
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
 
-        {datasetIds.length === 0 && (
+        {!kbLoading && knowledgeBases.length > 0 && datasetIds.length === 0 && (
           <p className="text-xs text-amber-600 dark:text-amber-400">
             请至少选择一个知识库
           </p>
