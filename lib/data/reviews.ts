@@ -88,6 +88,7 @@ export async function listReviews(_ctx: RequestContext): Promise<SecurityReview[
   return rows.map(r => ({
     id: r.id,
     resourceType: r.type === 'skill' ? 'skill' : r.type === 'workflow' ? 'workflow' : 'agent',
+    resourceId: r.resource_id,
     resourceName: nameById.get(r.resource_id) ?? r.resource_id.slice(0, 8),
     submitter: r.submitter?.name ?? '—',
     riskLevel: r.risk_level,

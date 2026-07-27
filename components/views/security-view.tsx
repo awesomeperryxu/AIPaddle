@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { mockSecurityReviews, SecurityReview } from '@/lib/mock-data';
+import type { SecurityReview } from '@/lib/mock-data';
+import { apiFetch } from '@/lib/api/client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Shield,
@@ -40,13 +41,74 @@ const statusConfig = {
   rejected: { label: '已驳回', className: 'bg-destructive/10 text-destructive' }
 };
 
+// 审计日志（/api/audit 返回形状，规格化后一条记录）
+type AuditLog = {
+  id: string;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  detail: Record<string, unknown>;
+  actorId: string | null;
+  actorName: string | null;
+  ip: string | null;
+  createdAt: string | null;
+};
+
 export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
   const [selectedReview, setSelectedReview] = useState<SecurityReview | null>(null);
+  // 真实审批记录（4.1.3）——本地副本，裁决后就地更新
+  const [allReviews, setAllReviews] = useState<SecurityReview[]>(reviews ?? []);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  // 真实审批记录（4.1.3）；为空时回落 mock 以保持演示连续性
-  const allReviews = reviews && reviews.length > 0 ? reviews : mockSecurityReviews;
+  // 审计日志真实拉取
+  const [logs, setLogs] = useState<AuditLog[] | null>(null);
+  const [logsError, setLogsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch<{ logs: AuditLog[] }>('/api/audit')
+      .then(res => setLogs(res.logs))
+      .catch(err => { setLogsError(err instanceof Error ? err.message : '加载失败'); setLogs([]); });
+  }, []);
+
   const pendingReviews = allReviews.filter(r => r.status === 'pending');
   const completedReviews = allReviews.filter(r => r.status !== 'pending');
+
+  // 今日审计事件数（真实指标，取自已加载的审计日志）
+  const today = new Date().toDateString();
+  const todayAuditCount = (logs ?? []).filter(
+    l => l.createdAt && new Date(l.createdAt).toDateString() === today,
+  ).length;
+
+  async function handleDecision(decision: 'approved' | 'rejected') {
+    if (!selectedReview || submitting) return;
+    if (!selectedReview.resourceId) {
+      setActionError('该审批记录缺少资源标识，无法裁决');
+      return;
+    }
+    setSubmitting(true);
+    setActionError(null);
+    try {
+      await apiFetch('/api/reviews/decision', {
+        method: 'POST',
+        body: JSON.stringify({
+          resourceId: selectedReview.resourceId,
+          resourceType: selectedReview.resourceType,
+          decision,
+          comments: comment || undefined,
+        }),
+      });
+      const decidedId = selectedReview.id;
+      setAllReviews(prev => prev.map(r => (r.id === decidedId ? { ...r, status: decision } : r)));
+      setSelectedReview(null);
+      setComment('');
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '裁决失败');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="flex h-full gap-6">
@@ -105,8 +167,8 @@ export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
                   <Shield className="h-4 w-4 text-primary" />
                 </div>
                 <div>
-                  <p className="text-lg font-semibold text-foreground">23</p>
-                  <p className="text-xs text-muted-foreground">今日拦截</p>
+                  <p className="text-lg font-semibold text-foreground">{todayAuditCount}</p>
+                  <p className="text-xs text-muted-foreground">今日审计事件</p>
                 </div>
               </div>
             </CardContent>
@@ -127,6 +189,9 @@ export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
           </TabsList>
 
           <TabsContent value="pending" className="space-y-4">
+            {pendingReviews.length === 0 && (
+              <div className="py-12 text-center text-sm text-muted-foreground">暂无待审内容</div>
+            )}
             {pendingReviews.map((review) => {
               const RiskIcon = riskConfig[review.riskLevel].icon;
               const ResourceIcon = resourceTypeConfig[review.resourceType].icon;
@@ -191,6 +256,9 @@ export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
           </TabsContent>
 
           <TabsContent value="completed" className="space-y-4">
+            {completedReviews.length === 0 && (
+              <div className="py-12 text-center text-sm text-muted-foreground">暂无已处理记录</div>
+            )}
             {completedReviews.map((review) => {
               const RiskIcon = riskConfig[review.riskLevel].icon;
               const ResourceIcon = resourceTypeConfig[review.resourceType].icon;
@@ -239,36 +307,50 @@ export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
           <TabsContent value="logs" className="space-y-4">
             <Card className="bg-card border-border">
               <CardContent className="p-4">
-                <div className="space-y-3">
-                  {[
-                    { action: '拦截非法指令', user: '系统', target: '用户输入检测', time: '16:30:45', type: 'block' },
-                    { action: '审核通过', user: '赵强', target: '合同审批流程', time: '14:00:12', type: 'approve' },
-                    { action: '敏感信息检测', user: '系统', target: 'Agent 输出', time: '13:45:30', type: 'detect' },
-                    { action: '拦截越权调用', user: '系统', target: 'DB 查询', time: '12:20:15', type: 'block' },
-                    { action: '风险标记', user: '系统', target: 'API 调用', time: '11:05:00', type: 'warn' },
-                  ].map((log, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          log.type === 'block' ? 'bg-destructive/10' :
-                          log.type === 'approve' ? 'bg-green-500/10' :
-                          log.type === 'detect' ? 'bg-yellow-500/10' :
-                          'bg-muted'
-                        }`}>
-                          {log.type === 'block' ? <XCircle className="h-4 w-4 text-destructive" /> :
-                           log.type === 'approve' ? <CheckCircle2 className="h-4 w-4 text-green-500" /> :
-                           log.type === 'detect' ? <Eye className="h-4 w-4 text-yellow-500" /> :
-                           <AlertTriangle className="h-4 w-4 text-muted-foreground" />}
+                {logs === null ? (
+                  <div className="py-12 text-center text-sm text-muted-foreground">加载中…</div>
+                ) : logsError ? (
+                  <div className="py-12 text-center text-sm text-muted-foreground">{logsError}</div>
+                ) : logs.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-muted-foreground">暂无审计日志</div>
+                ) : (
+                  <div className="space-y-3">
+                    {logs.map((log) => {
+                      const kind = log.action.includes('approve')
+                        ? 'approve'
+                        : log.action.includes('reject') || log.action.includes('delete') || log.action.includes('block')
+                        ? 'block'
+                        : 'info';
+                      const target = [log.targetType, log.targetId ? log.targetId.slice(0, 8) : null]
+                        .filter(Boolean)
+                        .join(' · ');
+                      return (
+                        <div key={log.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                              kind === 'block' ? 'bg-destructive/10' :
+                              kind === 'approve' ? 'bg-green-500/10' :
+                              'bg-muted'
+                            }`}>
+                              {kind === 'block' ? <XCircle className="h-4 w-4 text-destructive" /> :
+                               kind === 'approve' ? <CheckCircle2 className="h-4 w-4 text-green-500" /> :
+                               <Eye className="h-4 w-4 text-muted-foreground" />}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{log.action}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {[target, log.actorName].filter(Boolean).join(' · ') || '—'}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {log.createdAt ? new Date(log.createdAt).toLocaleString() : '—'}
+                          </span>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{log.action}</p>
-                          <p className="text-xs text-muted-foreground">{log.target} · {log.user}</p>
-                        </div>
-                      </div>
-                      <span className="text-xs text-muted-foreground">{log.time}</span>
-                    </div>
-                  ))}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -356,17 +438,32 @@ export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
                 <h4 className="text-sm font-medium text-foreground">审核意见</h4>
                 <Textarea
                   placeholder="请输入审核意见..."
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
                   className="bg-muted/30 border-border min-h-[100px]"
                 />
               </div>
 
+              {actionError && (
+                <p className="text-sm text-destructive">{actionError}</p>
+              )}
+
               {/* Actions */}
               <div className="flex gap-2">
-                <Button className="flex-1 bg-green-600 hover:bg-green-700">
+                <Button
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  disabled={submitting}
+                  onClick={() => handleDecision('approved')}
+                >
                   <CheckCircle2 className="h-4 w-4 mr-2" />
                   审核通过
                 </Button>
-                <Button variant="destructive" className="flex-1">
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={submitting}
+                  onClick={() => handleDecision('rejected')}
+                >
                   <XCircle className="h-4 w-4 mr-2" />
                   驳回
                 </Button>
