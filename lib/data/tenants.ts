@@ -134,3 +134,15 @@ export async function setTenantStatus(id: string, status: TenantStatus): Promise
     .eq('id', id).is('deleted_at', null)
   if (error) throw new Error(error.message)
 }
+
+/** 注销租户（软删，置 deleted_at）。4.8.9：替代前端死按钮。返回是否命中在册租户。 */
+export async function deleteTenant(id: string): Promise<boolean> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('tenants')
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('id', id).is('deleted_at', null)
+    .select('id')
+  if (error) throw new Error(error.message)
+  return ((data as { id: string }[] | null) ?? []).length > 0
+}

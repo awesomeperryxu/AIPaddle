@@ -18,8 +18,6 @@ import {
   Search,
   Building2,
   Users,
-  Zap,
-  DollarSign,
   MoreHorizontal,
   Settings,
   Gauge,
@@ -56,14 +54,6 @@ interface Tenant {
   monthlyBill: number;
   createdAt: string;
 }
-
-const mockTenants: Tenant[] = [
-  { id: 't-001', name: '示范科技有限公司', adminEmail: 'admin@demo.com', status: 'active', members: 1245, agents: 6, tokenUsage: 8450000, tokenQuota: 10000000, monthlyBill: 2890, createdAt: '2024-01-15' },
-  { id: 't-002', name: '创新金融集团', adminEmail: 'admin@finance.com', status: 'active', members: 856, agents: 4, tokenUsage: 5230000, tokenQuota: 8000000, monthlyBill: 1560, createdAt: '2024-02-01' },
-  { id: 't-003', name: '未来科技公司', adminEmail: 'admin@future.com', status: 'active', members: 234, agents: 2, tokenUsage: 1890000, tokenQuota: 3000000, monthlyBill: 450, createdAt: '2024-02-20' },
-  { id: 't-004', name: '智慧零售有限公司', adminEmail: 'admin@retail.com', status: 'overdue', members: 567, agents: 3, tokenUsage: 4120000, tokenQuota: 5000000, monthlyBill: 1230, createdAt: '2024-01-28' },
-  { id: 't-005', name: '测试企业', adminEmail: 'test@test.com', status: 'active', members: 15, agents: 1, tokenUsage: 45000, tokenQuota: 100000, monthlyBill: 0, createdAt: '2024-03-10' },
-];
 
 const statusConfig = {
   active: { label: '正常', className: 'bg-green-500/10 text-green-500' },
@@ -141,9 +131,22 @@ export function TenantsView({
     } finally { setBusy(false); }
   }
 
-  const totalRevenue = mockTenants.reduce((acc, t) => acc + t.monthlyBill, 0);
-  const totalMembers = mockTenants.reduce((acc, t) => acc + t.members, 0);
-  const totalTokens = mockTenants.reduce((acc, t) => acc + t.tokenUsage, 0);
+  // 4.8.9：注销租户（软删）。替代原死按钮。
+  async function handleDelete(id: string, name: string) {
+    if (busy) return;
+    if (!window.confirm(`确认注销租户「${name}」？此操作为软删除，租户及其成员将立即不可用。`)) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/api/tenants/${id}`, { method: 'DELETE' });
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '注销失败');
+    } finally { setBusy(false); }
+  }
+
+  // 平台真实计数（跨租户用量/收入需另接聚合，此处只展示租户数量态）
+  const nActive = tenants.filter((t) => t.status === 'active').length;
+  const nSuspended = tenants.filter((t) => t.status === 'suspended').length;
 
   return (
     <div className="space-y-6">
@@ -161,8 +164,8 @@ export function TenantsView({
         )}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* Stats（真实计数） */}
+      <div className="grid grid-cols-3 gap-4">
         <Card className="bg-card border-border">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -179,38 +182,25 @@ export function TenantsView({
         <Card className="bg-card border-border">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-chart-2/10 flex items-center justify-center">
-                <Users className="h-5 w-5 text-chart-2" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-foreground">{totalMembers.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">总用户数</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-chart-3/10 flex items-center justify-center">
-                <Zap className="h-5 w-5 text-chart-3" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-foreground">{(totalTokens / 1000000).toFixed(1)}M</p>
-                <p className="text-xs text-muted-foreground">本月 Token</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                <DollarSign className="h-5 w-5 text-green-500" />
+                <Users className="h-5 w-5 text-green-500" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">¥{totalRevenue.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">本月收入</p>
+                <p className="text-lg font-semibold text-foreground">{nActive}</p>
+                <p className="text-xs text-muted-foreground">活跃</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center">
+                <Ban className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-foreground">{nSuspended}</p>
+                <p className="text-xs text-muted-foreground">已停用</p>
               </div>
             </div>
           </CardContent>
@@ -322,10 +312,13 @@ export function TenantsView({
                             </DropdownMenuItem>
                           )
                         )}
-                        <DropdownMenuItem className="text-destructive">
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          删除租户
-                        </DropdownMenuItem>
+                        {canManage && (
+                          <DropdownMenuItem className="text-destructive" disabled={busy}
+                            onClick={() => handleDelete(tenant.id, tenant.name)}>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            注销租户
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
