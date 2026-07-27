@@ -153,6 +153,46 @@ export async function listRuns(_ctx: RequestContext, workflowId: string): Promis
   }))
 }
 
+// ── GX-5：每工作流运行统计（列表页卡片用真实运行数据，非硬编码）──────────
+export type WorkflowRunStats = {
+  executions: number      // 总运行次数
+  successRate: number     // 成功率百分比（0-100，四舍五入整数）；无运行时为 0
+  lastRunAt: string | null // 最近一次运行时间（ISO），无运行为 null
+}
+
+type StatRow = { workflow_id: string; status: string; created_at: string | null }
+
+/** 本租户各工作流的运行聚合（workflow_runs，RLS 按 org 隔离）。
+ *  成功判定 = status='succeeded'（见 0001 迁移 workflow_runs.status 枚举）。
+ *  返回以 workflowId 为键；从未运行的工作流不出现在结果里（前端按缺省 0 处理）。 */
+export async function getWorkflowRunStats(_ctx: RequestContext): Promise<Record<string, WorkflowRunStats>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('workflow_runs')
+    .select('workflow_id,status,created_at')
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+  const rows = (data as StatRow[] | null) ?? []
+
+  const acc: Record<string, { total: number; succeeded: number; lastRunAt: string | null }> = {}
+  for (const r of rows) {
+    const a = acc[r.workflow_id] ?? (acc[r.workflow_id] = { total: 0, succeeded: 0, lastRunAt: null })
+    a.total += 1
+    if (r.status === 'succeeded') a.succeeded += 1
+    if (r.created_at && (a.lastRunAt === null || r.created_at > a.lastRunAt)) a.lastRunAt = r.created_at
+  }
+
+  const out: Record<string, WorkflowRunStats> = {}
+  for (const [id, a] of Object.entries(acc)) {
+    out[id] = {
+      executions: a.total,
+      successRate: a.total > 0 ? Math.round((a.succeeded / a.total) * 100) : 0,
+      lastRunAt: a.lastRunAt,
+    }
+  }
+  return out
+}
+
 /** 发布工作流：置 published，published_version=当前 version，version 自增（供草稿继续编辑）。
  *  图合法性由调用方（API）先校验；此处只做状态推进。RLS 兜底租户隔离。 */
 export async function publishWorkflow(ctx: RequestContext, id: string): Promise<WorkflowDetail | null> {
