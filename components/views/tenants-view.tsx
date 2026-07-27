@@ -141,6 +141,19 @@ export function TenantsView({
     } finally { setBusy(false); }
   }
 
+  // 4.8.9：注销租户（软删）。替代原死按钮。
+  async function handleDelete(id: string, name: string) {
+    if (busy) return;
+    if (!window.confirm(`确认注销租户「${name}」？此操作为软删除，租户及其成员将立即不可用。`)) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/api/tenants/${id}`, { method: 'DELETE' });
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : '注销失败');
+    } finally { setBusy(false); }
+  }
+
   const totalRevenue = mockTenants.reduce((acc, t) => acc + t.monthlyBill, 0);
   const totalMembers = mockTenants.reduce((acc, t) => acc + t.members, 0);
   const totalTokens = mockTenants.reduce((acc, t) => acc + t.tokenUsage, 0);
@@ -322,10 +335,13 @@ export function TenantsView({
                             </DropdownMenuItem>
                           )
                         )}
-                        <DropdownMenuItem className="text-destructive">
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          删除租户
-                        </DropdownMenuItem>
+                        {canManage && (
+                          <DropdownMenuItem className="text-destructive" disabled={busy}
+                            onClick={() => handleDelete(tenant.id, tenant.name)}>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            注销租户
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
