@@ -2,7 +2,7 @@
  * L2 单元测试 · BUG-83 企业编码唯一约束语义对齐
  * 背景：0001 的 `code text not null unique` 是全表唯一（不认软删），而 provisionTenant 查重
  * 带 `.is('deleted_at', null)`——认为软删的不占。两者打架 → 应用层放行、DB 拦下、甩 PG 原文。
- * 迁移 0023 把 DB 改为部分唯一索引（仅约束在册租户）；本测试锁住「冲突必须报人话」的兜底。
+ * 迁移 0024 把 DB 改为部分唯一索引（仅约束在册租户）；本测试锁住「冲突必须报人话」的兜底。
  */
 import { describe, it, expect } from 'vitest'
 import { provisionTenant } from '@/lib/data/tenants'
@@ -46,7 +46,7 @@ describe('provisionTenant 编码冲突报人话（BUG-83）', () => {
       .rejects.toThrow('该企业编码已被占用（可能属于一个已注销的租户，编码仍被旧约束保留），请更换编码')
   })
 
-  it('撞迁移 0023 后的部分唯一索引 → 直说编码已存在', async () => {
+  it('撞迁移 0024 后的部分唯一索引 → 直说编码已存在', async () => {
     const admin = stubAdmin({
       insertError: {
         message: 'duplicate key value violates unique constraint "uq_tenants_code_active"',

@@ -61,7 +61,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 /**
  * BUG-83：把 tenants 插入的唯一约束冲突转成人话。
  * `tenants_code_key` 是 0001 的全表唯一约束（不认软删），`uq_tenants_code_active` 是
- * 迁移 0023 对齐后的部分唯一索引；两者都可能命中，故一并识别。
+ * 迁移 0024 对齐后的部分唯一索引；两者都可能命中，故一并识别。
  */
 function friendlyTenantInsertError(message: string, code?: string): string {
   const text = `${code ?? ''} ${message}`
@@ -102,7 +102,7 @@ export async function provisionTenant(
       token_quota: input.tokenQuota, status: 'active',
     })
     .select(COLS).single()
-  // BUG-83 兜底：迁移 0023 之前，DB 的 code 唯一约束是全表的（不认软删），与上面的查重语义
+  // BUG-83 兜底：迁移 0024 之前，DB 的 code 唯一约束是全表的（不认软删），与上面的查重语义
   // 不一致；且即使对齐后仍可能有并发抢同一编码。这里把唯一冲突转人话，不再甩 Postgres 原文。
   if (error) throw new Error(friendlyTenantInsertError(error.message, error.code))
   const tenant = map(data as Row)
