@@ -101,6 +101,11 @@ export async function updateTenant(
 }
 
 /** 读当前租户的默认 LLM 模型（RLS 只允许读本租户那行）。 */
+/**
+ * @deprecated 4.8.11：默认模型单一事实源改为 `model_settings`（5 槽，见 lib/data/model-providers）。
+ * 运行时由 `resolveModelClient(ctx)` 消费 model_settings，不再读 `default_model`。
+ * 本函数仅历史兼容保留（侧栏轻量选择器），勿新增运行时依赖。
+ */
 export async function getTenantDefaultModel(ctx: RequestContext): Promise<string> {
   const supabase = await createClient()
 
