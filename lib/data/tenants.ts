@@ -58,8 +58,27 @@ export type ProvisionInput = {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+/**
+ * BUG-83：把 tenants 插入的唯一约束冲突转成人话。
+ * `tenants_code_key` 是 0001 的全表唯一约束（不认软删），`uq_tenants_code_active` 是
+ * 迁移 0023 对齐后的部分唯一索引；两者都可能命中，故一并识别。
+ */
+function friendlyTenantInsertError(message: string, code?: string): string {
+  const text = `${code ?? ''} ${message}`
+  if (text.includes('tenants_code_key')) {
+    return '该企业编码已被占用（可能属于一个已注销的租户，编码仍被旧约束保留），请更换编码'
+  }
+  if (text.includes('uq_tenants_code_active')) return '该企业编码已存在，请更换编码'
+  return message
+}
+
 /** 开通新租户（校验 code 唯一 / email 合法 / 配额>0）。 */
-export async function provisionTenant(input: ProvisionInput): Promise<TenantSummary> {
+// adminOverride 仅供测试注入假客户端（与 createFirstAdmin 接受 admin 参数的既有风格一致）；
+// 生产路径始终走 createAdminClient()。
+export async function provisionTenant(
+  input: ProvisionInput,
+  adminOverride?: AdminClient,
+): Promise<TenantSummary> {
   const name = input.name?.trim()
   const code = input.code?.trim()
   if (!name) throw new Error('企业名称不能为空')
@@ -67,7 +86,7 @@ export async function provisionTenant(input: ProvisionInput): Promise<TenantSumm
   if (!EMAIL_RE.test(input.contactEmail?.trim() ?? '')) throw new Error('联系邮箱格式非法')
   if (!Number.isFinite(input.tokenQuota) || input.tokenQuota <= 0) throw new Error('Token 配额必须为正数')
 
-  const admin = createAdminClient()
+  const admin = adminOverride ?? createAdminClient()
   const { data: dup } = await admin.from('tenants').select('id').eq('code', code).is('deleted_at', null).maybeSingle()
   if (dup) throw new Error('企业编码已存在')
 
@@ -83,7 +102,9 @@ export async function provisionTenant(input: ProvisionInput): Promise<TenantSumm
       token_quota: input.tokenQuota, status: 'active',
     })
     .select(COLS).single()
-  if (error) throw new Error(error.message)
+  // BUG-83 兜底：迁移 0023 之前，DB 的 code 唯一约束是全表的（不认软删），与上面的查重语义
+  // 不一致；且即使对齐后仍可能有并发抢同一编码。这里把唯一冲突转人话，不再甩 Postgres 原文。
+  if (error) throw new Error(friendlyTenantInsertError(error.message, error.code))
   const tenant = map(data as Row)
 
   // 4.8.3 开户闭环：开通即建首个 Admin（联系邮箱），发 Auth 邀请邮件让其设密登录。
