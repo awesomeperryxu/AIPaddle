@@ -14,8 +14,13 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./tests/unit/setup.ts'],
-    // 只收单元/集成用例；E2E 目录交给 Playwright
-    include: ['tests/unit/**/*.{test,spec}.{ts,tsx}', 'lib/**/*.{test,spec}.{ts,tsx}'],
+    // 只收单元/集成用例；E2E 目录交给 Playwright。
+    // tests/integration/** = 连真实 Postgres 的契约测试（无 DATABASE_URL 时自动跳过）
+    include: [
+      'tests/unit/**/*.{test,spec}.{ts,tsx}',
+      'tests/integration/**/*.{test,spec}.{ts,tsx}',
+      'lib/**/*.{test,spec}.{ts,tsx}',
+    ],
     exclude: ['tests/e2e/**', 'node_modules/**'],
   },
   resolve: {

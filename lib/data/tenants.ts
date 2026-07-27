@@ -134,7 +134,6 @@ const FRESH_USER_WINDOW_MS = 60_000
  * 数据模型上一个邮箱只能属于一个租户，这里把冲突转成人话，并指出被谁占用。
  */
 export async function assertEmailAvailable(admin: AdminClient, email: string): Promise<void> {
-  // 不过滤 deleted_at：软删的成员行仍占着 email 唯一约束，照样会让插入失败
   const { data: occupied, error } = await admin
     .from('users')
     .select('id,org_id,deleted_at')
@@ -144,12 +143,14 @@ export async function assertEmailAvailable(admin: AdminClient, email: string): P
   if (!occupied) return
 
   const row = occupied as { id: string; org_id: string; deleted_at: string | null }
+
+  // BUG-86：已被移除（软删）的成员**不再算永久占用**——createFirstAdmin 会复活那一行。
+  // 只有仍在册的成员才拒绝：一个邮箱同时只能属于一个租户。
+  if (row.deleted_at) return
+
   const { data: org } = await admin.from('tenants').select('name').eq('id', row.org_id).maybeSingle()
   const orgName = (org as { name: string } | null)?.name ?? '其他企业'
-
-  throw row.deleted_at
-    ? new Error(`该邮箱曾是「${orgName}」的成员且已被移除，仍占用唯一约束，请更换联系邮箱`)
-    : new Error(`该邮箱已是「${orgName}」的成员，请更换联系邮箱`)
+  throw new Error(`该邮箱已是「${orgName}」的成员，请更换联系邮箱`)
 }
 
 // 把 Postgres 唯一约束原文转成用户能看懂的中文
@@ -177,21 +178,56 @@ export async function createFirstAdmin(
   const createdAt = invited.user.created_at ? new Date(invited.user.created_at).getTime() : 0
   const isFreshAuthUser = Date.now() - createdAt < FRESH_USER_WINDOW_MS
 
+  // BUG-86：该邮箱可能留有一行**已软删**的成员（曾被移除）。users.id 是主键且 = auth uid，
+  // 而 invite 对已注册邮箱会复用同一 uid，此时 INSERT 必撞 users_pkey——改为复活那一行。
+  const { data: soft } = await admin
+    .from('users').select('id,org_id').eq('email', input.email).not('deleted_at', 'is', null).maybeSingle()
+  const revived = soft as { id: string; org_id: string } | null
+
   try {
-    const { error: uErr } = await admin
-      .from('users')
-      .insert({ id: uid, org_id: input.orgId, name: input.name, email: input.email, status: 'active' })
+    const { error: uErr } = revived
+      ? await admin
+          .from('users')
+          .update({
+            org_id: input.orgId, name: input.name, status: 'active',
+            deleted_at: null, updated_at: new Date().toISOString(),
+          })
+          .eq('id', revived.id)
+      : await admin
+          .from('users')
+          .insert({ id: uid, org_id: input.orgId, name: input.name, email: input.email, status: 'active' })
     if (uErr) throw new Error(friendlyUserInsertError(uErr.message, uErr.code))
+
+    // 复活的账号在移除时被封了 100 年，不解封则设完密码也登不进来
+    if (revived) {
+      const { error: unbanErr } = await admin.auth.admin.updateUserById(uid, { ban_duration: 'none' })
+      if (unbanErr) throw new Error(unbanErr.message)
+      await admin.from('audit_logs').insert({
+        org_id: input.orgId, actor_id: uid,
+        action: revived.org_id === input.orgId ? 'member.revived' : 'member.transferred',
+        target_type: 'user', target_id: uid,
+        detail: { email: input.email, from_org_id: revived.org_id, to_org_id: input.orgId, via: 'provisionTenant' },
+      })
+    }
 
     const { error: rErr } = await admin
       .from('user_roles')
       .insert({ user_id: uid, org_id: input.orgId, role: 'Admin' })
     if (rErr) throw new Error(rErr.message)
   } catch (e) {
-    // 补偿清理：只删本租户下的痕迹；auth 账号仅在确认是本次新建时才删
     await admin.from('user_roles').delete().eq('user_id', uid).eq('org_id', input.orgId)
-    await admin.from('users').delete().eq('id', uid).eq('org_id', input.orgId)
-    if (isFreshAuthUser) await admin.auth.admin.deleteUser(uid)
+    if (revived) {
+      // 🔴 复活路径失败：绝不能 DELETE——那是别的租户的历史成员行。改为还原成软删态并放回原租户
+      await admin.from('users').update({
+        org_id: revived.org_id, status: 'inactive',
+        deleted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      }).eq('id', revived.id)
+      await admin.auth.admin.updateUserById(uid, { ban_duration: '876600h' }) // 恢复封禁
+    } else {
+      // 新建路径：只删本租户下的痕迹；auth 账号仅在确认是本次新建时才删
+      await admin.from('users').delete().eq('id', uid).eq('org_id', input.orgId)
+      if (isFreshAuthUser) await admin.auth.admin.deleteUser(uid)
+    }
     throw e
   }
 

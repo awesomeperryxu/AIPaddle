@@ -226,7 +226,13 @@ export async function inviteMember(
     .maybeSingle()
   if (dup) throw new Error('该邮箱已邀请或已是成员')
 
-  // 1. 通过 Supabase Auth 发邀请邮件（创建 auth.users）
+  // 0b. BUG-86：该邮箱可能存在一行**已软删**的成员记录（曾被移除，可能属本租户或他租户）。
+  // users.id 是主键且引用 auth.users(id)，而 invite 对已注册邮箱会复用同一 auth uid，
+  // 所以此时若走 INSERT 必撞 users_pkey/users_email_key——改为**复活那一行**（UPDATE），
+  // id 与 auth 账号天然一致，零冲突，也不违反全表软删铁律（C6）。
+  const softDeleted = await findSoftDeletedByEmail(admin, input.email)
+
+  // 1. 通过 Supabase Auth 发邀请邮件（创建 auth.users；已存在则复用并重发邀请）
   const { data: invited, error: invErr } = await admin.auth.admin.inviteUserByEmail(
     input.email,
     { data: { org_id: ctx.orgId, name: input.name } },
@@ -234,27 +240,43 @@ export async function inviteMember(
   if (invErr) throw new Error(invErr.message)
   const authUserId = invited.user.id
 
-  // 2. 在 users 表预建记录
   const supabase = await createClient()
-  const { data: newUser, error: userErr } = await supabase
-    .from('users')
-    .insert({
-      id: authUserId,
-      org_id: ctx.orgId,
+
+  if (softDeleted) {
+    // 2a. 复活：清软删标记 + 归属到当前租户 + 恢复启用；用 admin 客户端，因为该行
+    // 当前可能挂在别的 org 下，请求级客户端受 RLS 限制读不到、也改不动。
+    await reviveSoftDeletedMember(admin, {
+      userId: softDeleted.id,
+      orgId: ctx.orgId,
       name: input.name,
       email: input.email,
       department: input.department ?? null,
-      status: 'active',
+      fromOrgId: softDeleted.org_id,
+      actorId: ctx.userId,
     })
-    .select('id,name,email,department,status,last_active_at,created_at')
-    .single()
-  if (userErr) throw new Error(userErr.message)
+  } else {
+    // 2b. 全新成员：正常预建
+    const { error: userErr } = await supabase
+      .from('users')
+      .insert({
+        id: authUserId,
+        org_id: ctx.orgId,
+        name: input.name,
+        email: input.email,
+        department: input.department ?? null,
+        status: 'active',
+      })
+      .select('id')
+      .single()
+    if (userErr) throw new Error(friendlyMemberInsertError(userErr.message, userErr.code))
+  }
 
-  // 3. 分配角色
+  // 3. 分配角色。迁移 0025 后 user_roles 的唯一索引只约束在册行，
+  // 曾被撤销（软删）的同名角色不再挡路；仍用 upsert 语义兜住并发重复。
   const { error: roleErr } = await supabase
     .from('user_roles')
     .insert({ user_id: authUserId, org_id: ctx.orgId, role: input.role })
-  if (roleErr) throw new Error(roleErr.message)
+  if (roleErr) throw new Error(friendlyMemberInsertError(roleErr.message, roleErr.code))
 
   return {
     id: authUserId,
@@ -263,6 +285,71 @@ export async function inviteMember(
     department: input.department ?? '',
     role: input.role,
     status: 'active',
-    lastLogin: (newUser as { created_at: string }).created_at.slice(0, 10),
+    lastLogin: new Date().toISOString().slice(0, 10),
   }
+}
+
+type AdminClient = ReturnType<typeof createAdminClient>
+
+/** BUG-86：按邮箱找一行已软删的成员（跨租户，用 admin 客户端绕开 RLS）。 */
+export async function findSoftDeletedByEmail(
+  admin: AdminClient,
+  email: string,
+): Promise<{ id: string; org_id: string } | null> {
+  const { data, error } = await admin
+    .from('users')
+    .select('id,org_id,deleted_at')
+    .eq('email', email)
+    .not('deleted_at', 'is', null)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return data ? { id: (data as { id: string }).id, org_id: (data as { org_id: string }).org_id } : null
+}
+
+/**
+ * BUG-86：复活一行已软删的成员到目标租户。
+ * 跨租户复活会改变该 uid 的归属，故强制写审计（`member.revived`，含来源租户）以保留溯源。
+ * 同时解除 Auth 封禁——移除成员时封了 100 年，不解则复活后仍登录不了。
+ */
+export async function reviveSoftDeletedMember(
+  admin: AdminClient,
+  p: {
+    userId: string; orgId: string; name: string; email: string
+    department: string | null; fromOrgId: string; actorId: string
+  },
+): Promise<void> {
+  const now = new Date().toISOString()
+  const { error } = await admin
+    .from('users')
+    .update({
+      org_id: p.orgId, name: p.name, department: p.department,
+      status: 'active', deleted_at: null, updated_at: now,
+    })
+    .eq('id', p.userId)
+  if (error) throw new Error(friendlyMemberInsertError(error.message, error.code))
+
+  // 解除移除成员时施加的封禁
+  const { error: authErr } = await admin.auth.admin.updateUserById(p.userId, { ban_duration: 'none' })
+  if (authErr) throw new Error(authErr.message)
+
+  // 跨租户转移必须留痕：service_role 绕过了 RLS，审计是唯一溯源
+  await admin.from('audit_logs').insert({
+    org_id: p.orgId,
+    actor_id: p.actorId,
+    action: p.fromOrgId === p.orgId ? 'member.revived' : 'member.transferred',
+    target_type: 'user',
+    target_id: p.userId,
+    detail: { email: p.email, from_org_id: p.fromOrgId, to_org_id: p.orgId },
+  })
+}
+
+/** 把成员相关的唯一约束冲突转成人话，不再把 Postgres 原文甩给用户。 */
+export function friendlyMemberInsertError(message: string, code?: string): string {
+  const text = `${code ?? ''} ${message}`
+  if (text.includes('users_pkey')) return '该邮箱在系统中已有账号，请联系平台管理员处理'
+  if (text.includes('users_email_key')) return '该邮箱已被占用，请更换邮箱'
+  if (text.includes('user_roles_user_id_role_key') || text.includes('uq_user_roles_active')) {
+    return '该成员已拥有此角色'
+  }
+  return message
 }

@@ -276,13 +276,36 @@ export async function installSkill(
   if (!skill) return { ok: false, reason: 'not_found' }
   if (skill.status !== 'published') return { ok: false, reason: 'not_published' }
   const supabase = await createClient()
-  const { error } = await supabase
+
+  // 🔴 不能用 upsert(onConflict:'skill_id,user_id')：迁移 0025 起该唯一索引是**部分索引**
+  // （`where deleted_at is null`），而 PostgREST 的 onConflict 只能给列名、无法表达 WHERE 谓词，
+  // Postgres 会报 "no unique or exclusion constraint matching the ON CONFLICT specification"。
+  // 改为显式「先查后写」：有历史行（含已卸载）就复活它，没有才插入。
+  const { data: existing, error: qErr } = await supabase
     .from('skill_installs')
-    .upsert(
-      { org_id: ctx.orgId, skill_id: skillId, user_id: ctx.userId, deleted_at: null },
-      { onConflict: 'skill_id,user_id' },
-    )
-  if (error) throw new Error(error.message)
+    .select('id,deleted_at')
+    .eq('skill_id', skillId)
+    .eq('user_id', ctx.userId)
+    .maybeSingle()
+  if (qErr) throw new Error(qErr.message)
+
+  if (existing) {
+    const row = existing as { id: string; deleted_at: string | null }
+    if (row.deleted_at) {
+      const { error } = await supabase
+        .from('skill_installs')
+        .update({ deleted_at: null })
+        .eq('id', row.id)
+      if (error) throw new Error(error.message)
+    }
+    // 已在册则无需动作（幂等）
+  } else {
+    const { error } = await supabase
+      .from('skill_installs')
+      .insert({ org_id: ctx.orgId, skill_id: skillId, user_id: ctx.userId })
+    if (error) throw new Error(error.message)
+  }
+
   return { ok: true, installs: await recomputeInstalls(supabase, skillId) }
 }
 

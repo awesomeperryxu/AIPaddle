@@ -42,10 +42,18 @@ describe('assertEmailAvailable（BUG-81）', () => {
       .rejects.toThrow('该邮箱已是「北京市品器管理咨询有限公司」的成员，请更换联系邮箱')
   })
 
-  it('邮箱属于已被移除（软删）的成员 → 仍占唯一约束，给出区分提示', async () => {
+  // 契约变更（BUG-86，2026-07-27）：软删成员**不再算永久占用**。
+  // 旧行为是拒绝并提示「仍占用唯一约束」——那让「移除成员后用同邮箱开新租户」成为死路。
+  // 新行为放行，由 createFirstAdmin 复活那一行（UPDATE 而非 INSERT，避开 users_pkey）。
+  it('邮箱属于已被移除（软删）的成员 → 放行，交由 createFirstAdmin 复活', async () => {
     const { client } = fakeAdmin({ id: 'u1', org_id: 'org-demo', deleted_at: '2026-07-20T00:00:00Z' })
-    await expect(assertEmailAvailable(cast(client), 'gone@aipaddle-test.local'))
-      .rejects.toThrow(/曾是「AIPaddle Demo」的成员且已被移除，仍占用唯一约束/)
+    await expect(assertEmailAvailable(cast(client), 'gone@aipaddle-test.local')).resolves.toBeUndefined()
+  })
+
+  it('在册成员仍然拒绝（一个邮箱同时只能属于一个租户）', async () => {
+    const { client } = fakeAdmin({ id: 'u1', org_id: 'org-demo', deleted_at: null }, '某企业')
+    await expect(assertEmailAvailable(cast(client), 'active@aipaddle-test.local'))
+      .rejects.toThrow('该邮箱已是「某企业」的成员，请更换联系邮箱')
   })
 
   it('查不到占用方企业名 → 降级为「其他企业」，不泄露 org_id', async () => {

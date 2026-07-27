@@ -37,10 +37,31 @@ const USERS = [
   { email: 'admin-acme@acme.dev', name: 'Acme 管理员', role: 'Admin', org: 'orgB' },
 ]
 
+// 🔴 不能用 upsert(onConflict:'code')：迁移 0024 起 tenants 的 code 唯一索引是**部分索引**
+// （`where deleted_at is null`），PostgREST 的 onConflict 只能给列名、无法表达 WHERE 谓词，
+// Postgres 会报 "no unique or exclusion constraint matching the ON CONFLICT specification"。
+// 改为显式「先查在册行，有则更新、无则插入」。
 async function upsertTenant(t) {
+  const { data: found, error: qErr } = await admin
+    .from('tenants')
+    .select('id')
+    .eq('code', t.code)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (qErr) throw new Error(`tenant ${t.code}: ${qErr.message}`)
+
+  if (found) {
+    const { error } = await admin
+      .from('tenants')
+      .update({ name: t.name, plan_type: t.plan })
+      .eq('id', found.id)
+    if (error) throw new Error(`tenant ${t.code}: ${error.message}`)
+    return found.id
+  }
+
   const { data, error } = await admin
     .from('tenants')
-    .upsert({ name: t.name, code: t.code, plan_type: t.plan }, { onConflict: 'code' })
+    .insert({ name: t.name, code: t.code, plan_type: t.plan })
     .select('id')
     .single()
   if (error) throw new Error(`tenant ${t.code}: ${error.message}`)

@@ -12,6 +12,8 @@ type Opts = {
   roleError?: { message: string } | null
   /** 模拟 invite 复用了「已注册但未确认」的旧账号（BUG-81 现场） */
   reuseExistingAuthUser?: boolean
+  /** 同 email 的软删成员行；本组用例默认 null（走新建路径），复活路径见 member-revive.test.ts */
+  softDeleted?: { id: string; org_id: string } | null
 }
 
 function fakeAdmin(o: Opts = {}) {
@@ -20,6 +22,12 @@ function fakeAdmin(o: Opts = {}) {
   const client = {
     from(table: string) {
       return {
+        // BUG-86：createFirstAdmin 会先查「同 email 的软删行」决定复活还是新建。
+        // 本组用例覆盖的是「无软删行 → 新建」路径，故这里恒返回 null。
+        select() { return this },
+        eq() { return this },
+        not() { return this },
+        async maybeSingle() { return { data: o.softDeleted ?? null, error: null } },
         insert(row: unknown) {
           calls[table] = row
           if (table === 'users') return { error: o.userError ?? null }
