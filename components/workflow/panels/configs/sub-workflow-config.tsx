@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -21,7 +21,9 @@ import {
   ChevronDown,
   ArrowRight,
   Settings2,
+  Loader2,
 } from "lucide-react"
+import { apiFetch } from "@/lib/api/client"
 import {
   Collapsible,
   CollapsibleContent,
@@ -53,33 +55,10 @@ interface SubWorkflowData {
   retryCount?: number
 }
 
-// Mock workflows for demo
-const AVAILABLE_WORKFLOWS = [
-  {
-    id: "wf_email_sender",
-    name: "Email Notification Workflow",
-    description: "Send formatted email notifications",
-    inputs: ["recipient", "subject", "content"],
-    outputs: ["sent", "messageId"],
-    versions: ["1.0.0", "1.1.0", "2.0.0"],
-  },
-  {
-    id: "wf_data_enrichment",
-    name: "Data Enrichment Pipeline",
-    description: "Enrich data with external sources",
-    inputs: ["data", "enrichmentType"],
-    outputs: ["enrichedData", "metadata"],
-    versions: ["1.0.0"],
-  },
-  {
-    id: "wf_approval",
-    name: "Approval Workflow",
-    description: "Multi-step approval process",
-    inputs: ["requestId", "approvers", "content"],
-    outputs: ["approved", "approverComments"],
-    versions: ["1.0.0", "1.0.1"],
-  },
-]
+interface WorkflowOption {
+  id: string
+  name: string
+}
 
 export function SubWorkflowConfig({
   node,
@@ -93,6 +72,19 @@ export function SubWorkflowConfig({
   const [searchQuery, setSearchQuery] = useState("")
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
+  // 真实工作流列表（ADR-008：客户端只经 apiFetch）
+  const [workflows, setWorkflows] = useState<WorkflowOption[]>([])
+  const [wfLoading, setWfLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<{ workflows: WorkflowOption[] }>("/api/workflows")
+      .then((res) => { if (!cancelled) setWorkflows(res.workflows ?? []) })
+      .catch(() => { if (!cancelled) setWorkflows([]) })
+      .finally(() => { if (!cancelled) setWfLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
   const updateData = (updates: Partial<SubWorkflowData>) => {
     onUpdate({
       ...node,
@@ -100,35 +92,23 @@ export function SubWorkflowConfig({
     })
   }
 
-  const selectedWorkflow = AVAILABLE_WORKFLOWS.find(
-    (w) => w.id === data.workflowId
-  )
-  const filteredWorkflows = AVAILABLE_WORKFLOWS.filter(
-    (w) =>
-      w.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      w.description.toLowerCase().includes(searchQuery.toLowerCase())
+  const selectedWorkflow = workflows.find((w) => w.id === data.workflowId)
+  const filteredWorkflows = workflows.filter((w) =>
+    w.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const selectWorkflow = (workflowId: string) => {
-    const workflow = AVAILABLE_WORKFLOWS.find((w) => w.id === workflowId)
+    const workflow = workflows.find((w) => w.id === workflowId)
     if (!workflow) return
 
-    const inputMappings: InputMapping[] = workflow.inputs.map((input) => ({
-      targetParam: input,
-      sourceExpression: "",
-    }))
-
-    const outputMappings: OutputMapping[] = workflow.outputs.map((output) => ({
-      sourceOutput: output,
-      targetVariable: output,
-    }))
-
+    // 子工作流的输入/输出契约需解析其画布图（GX-2b），此处仅记录选择，
+    // 映射由用户在下方手动补全，不注入假 schema。
     updateData({
       workflowId,
       workflowName: workflow.name,
       workflowVersion: "latest",
-      inputMappings,
-      outputMappings,
+      inputMappings: [],
+      outputMappings: [],
     })
   }
 
@@ -160,28 +140,33 @@ export function SubWorkflowConfig({
             />
           </div>
           <div className="max-h-64 space-y-2 overflow-y-auto">
-            {filteredWorkflows.map((workflow) => (
-              <Card
-                key={workflow.id}
-                className="cursor-pointer transition-colors hover:bg-accent"
-                onClick={() => selectWorkflow(workflow.id)}
-              >
-                <CardContent className="flex items-center gap-3 p-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                    <GitBranch className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">{workflow.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {workflow.description}
-                    </p>
-                  </div>
-                  <Badge variant="outline">
-                    v{workflow.versions[workflow.versions.length - 1]}
-                  </Badge>
-                </CardContent>
-              </Card>
-            ))}
+            {wfLoading ? (
+              <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                加载工作流…
+              </div>
+            ) : filteredWorkflows.length === 0 ? (
+              <div className="p-3 rounded-lg border border-dashed text-center text-xs text-muted-foreground">
+                {searchQuery ? "没有匹配的工作流" : "暂无可用的工作流，请先创建工作流"}
+              </div>
+            ) : (
+              filteredWorkflows.map((workflow) => (
+                <Card
+                  key={workflow.id}
+                  className="cursor-pointer transition-colors hover:bg-accent"
+                  onClick={() => selectWorkflow(workflow.id)}
+                >
+                  <CardContent className="flex items-center gap-3 p-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                      <GitBranch className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium">{workflow.name}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </div>
         </div>
       ) : (
@@ -219,53 +204,10 @@ export function SubWorkflowConfig({
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                {selectedWorkflow?.description}
+                {selectedWorkflow?.name ?? data.workflowName}
               </p>
             </CardContent>
           </Card>
-
-          {/* Version Selection */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Version</Label>
-              <Select
-                value={data.workflowVersion || "latest"}
-                onValueChange={(workflowVersion: "latest" | "specific") =>
-                  updateData({ workflowVersion })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="latest">Latest</SelectItem>
-                  <SelectItem value="specific">Specific Version</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {data.workflowVersion === "specific" && selectedWorkflow && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Select Version</Label>
-                <Select
-                  value={data.specificVersion || selectedWorkflow.versions[0]}
-                  onValueChange={(specificVersion) =>
-                    updateData({ specificVersion })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {selectedWorkflow.versions.map((v) => (
-                      <SelectItem key={v} value={v}>
-                        v{v}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
 
           {/* Input Mappings */}
           <div className="space-y-3">

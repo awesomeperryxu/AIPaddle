@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { BookOpen, ChevronDown, ChevronRight, Plus, Trash2, Database } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BookOpen, ChevronDown, ChevronRight, Plus, Trash2, Database, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,13 +42,11 @@ const RERANKER_MODELS = [
   { value: 'jina-reranker-v2', label: 'Jina Reranker v2' },
 ] as const;
 
-// Mock knowledge bases
-const MOCK_KNOWLEDGE_BASES = [
-  { id: 'kb1', name: '产品文档库', docCount: 128 },
-  { id: 'kb2', name: '技术支持FAQ', docCount: 256 },
-  { id: 'kb3', name: '用户手册', docCount: 64 },
-  { id: 'kb4', name: '开发者文档', docCount: 512 },
-];
+interface KnowledgeBaseOption {
+  id: string;
+  name: string;
+  documentCount: number;
+}
 
 // Comparison operators for metadata filter
 const FILTER_OPERATORS = [
@@ -117,6 +116,19 @@ export function KnowledgeConfigPanelV2({
     config.metadata_filters?.map((f: { field: string; operator: string; value: string }, i: number) => ({ id: `f_${i}`, ...f })) || []
   );
   const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // 真实知识库列表（ADR-008：客户端只经 apiFetch）
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseOption[]>([]);
+  const [kbLoading, setKbLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{ knowledgeBases: KnowledgeBaseOption[] }>('/api/knowledge-bases')
+      .then(res => { if (!cancelled) setKnowledgeBases(res.knowledgeBases ?? []); })
+      .catch(() => { if (!cancelled) setKnowledgeBases([]); })
+      .finally(() => { if (!cancelled) setKbLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Output variables (read-only)
   const outputVariables: OutputVariable[] = [
@@ -193,23 +205,34 @@ export function KnowledgeConfigPanelV2({
           <div className="space-y-2">
             <Label className="text-sm font-medium">知识库（多选）</Label>
             <div className="space-y-2">
-              {MOCK_KNOWLEDGE_BASES.map(kb => (
-                <div
-                  key={kb.id}
-                  onClick={() => toggleKB(kb.id)}
-                  className={cn(
-                    'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
-                    selectedKBs.includes(kb.id)
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-muted-foreground/50'
-                  )}
-                >
-                  <Checkbox checked={selectedKBs.includes(kb.id)} />
-                  <Database className="h-4 w-4 text-muted-foreground" />
-                  <span className="flex-1 text-sm">{kb.name}</span>
-                  <span className="text-xs text-muted-foreground">{kb.docCount} 文档</span>
+              {kbLoading ? (
+                <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  加载知识库…
                 </div>
-              ))}
+              ) : knowledgeBases.length === 0 ? (
+                <div className="p-3 rounded-lg border border-dashed text-center text-xs text-muted-foreground">
+                  暂无知识库,请先在知识库模块创建
+                </div>
+              ) : (
+                knowledgeBases.map(kb => (
+                  <div
+                    key={kb.id}
+                    onClick={() => toggleKB(kb.id)}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                      selectedKBs.includes(kb.id)
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-muted-foreground/50'
+                    )}
+                  >
+                    <Checkbox checked={selectedKBs.includes(kb.id)} />
+                    <Database className="h-4 w-4 text-muted-foreground" />
+                    <span className="flex-1 text-sm">{kb.name}</span>
+                    <span className="text-xs text-muted-foreground">{kb.documentCount} 文档</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

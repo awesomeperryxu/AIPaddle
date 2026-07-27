@@ -13,7 +13,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { mockAgents, Agent } from '@/lib/mock-data';
+import { Agent } from '@/lib/mock-data';
 import { apiFetch } from '@/lib/api/client';
 import {
   Search,
@@ -24,7 +24,6 @@ import {
   MessagesSquare,
   Clock,
   ChevronRight,
-  Sparkles,
   Plus,
   Users,
   Bot,
@@ -96,7 +95,7 @@ export function AgentsView({
   const [teamSaving, setTeamSaving] = useState(false);
   const [teamError, setTeamError] = useState('');
 
-  const allAgents = agents && agents.length > 0 ? agents : mockAgents.filter(a => a.status === 'published');
+  const allAgents = agents ?? [];
   const deIdSet = new Set(digitalEmployeeIds);
 
   // 数字员工：已是 DE 的已发布 Agent
@@ -520,16 +519,6 @@ export function AgentsView({
                   >
                     <Send className="h-4 w-4" />
                   </Button>
-                </div>
-                <div className="flex items-center gap-2 mt-3">
-                  <Sparkles className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <div className="flex gap-1.5 overflow-x-auto">
-                    {['查询订单状态', '投诉处理', '产品咨询', '退款申请'].map((s) => (
-                      <Button key={s} variant="outline" size="sm" className="shrink-0 h-7 text-xs" disabled={sending} onClick={() => handleSend(s)}>
-                        {s}
-                      </Button>
-                    ))}
-                  </div>
                 </div>
               </div>
             </div>
