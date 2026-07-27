@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,20 +19,15 @@ import {
   Building2,
   Users,
   MoreHorizontal,
-  Settings,
-  Gauge,
-  Receipt,
-  Cpu,
-  ShieldCheck,
+  Coins,
+  Wallet,
   Ban,
-  Trash2,
-  Eye
+  Trash2
 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import {
@@ -67,6 +62,11 @@ type PlatformTenant = {
   tokenQuota: number; qpsLimit: number; status: 'active' | 'suspended'; contactName: string; contactEmail: string; createdAt: string;
 };
 
+// 每租户真实用量（来自 /api/platform/tenant-usage 聚合，ADR-008 只经 apiFetch）
+type TenantUsage = { members: number; agents: number; tokens30d: number; estCost30d: number };
+type RevenuePoint = { label: string; cost: number };
+type UsageResp = { usage: Record<string, TenantUsage>; revenueTrend: RevenuePoint[] };
+
 export function TenantsView({
   tenants = [],
   canManage = false,
@@ -86,13 +86,34 @@ export function TenantsView({
   const [pQuota, setPQuota] = useState('1000000');
   const [pErr, setPErr] = useState<string | null>(null);
 
-  // 真实租户映射到表格展示 shape（用量/账单等分析字段暂缺，置 0）
-  const displayTenants: Tenant[] = tenants.map((t) => ({
-    id: t.id, name: t.name, adminEmail: t.contactEmail || t.code,
-    status: t.status,
-    members: 0, agents: 0, tokenUsage: 0, tokenQuota: t.tokenQuota, monthlyBill: 0,
-    createdAt: t.createdAt,
-  }));
+  // 真实用量聚合（客户端拉取，ADR-008 只经 apiFetch）
+  const [usage, setUsage] = useState<Record<string, TenantUsage>>({});
+  const [revenueTrend, setRevenueTrend] = useState<RevenuePoint[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    apiFetch<UsageResp>('/api/platform/tenant-usage')
+      .then((d) => {
+        if (!alive) return;
+        setUsage(d.usage ?? {});
+        setRevenueTrend(d.revenueTrend ?? []);
+      })
+      .catch(() => { /* 拉取失败：用量列回落 0，不阻断列表 */ });
+    return () => { alive = false; };
+  }, []);
+
+  // 真实租户映射到表格展示 shape（用量/费用来自聚合，缺记录的租户回落真实 0）
+  const displayTenants: Tenant[] = tenants.map((t) => {
+    const u = usage[t.id];
+    return {
+      id: t.id, name: t.name, adminEmail: t.contactEmail || t.code,
+      status: t.status,
+      members: u?.members ?? 0, agents: u?.agents ?? 0,
+      tokenUsage: u?.tokens30d ?? 0, tokenQuota: t.tokenQuota,
+      monthlyBill: u?.estCost30d ?? 0,
+      createdAt: t.createdAt,
+    };
+  });
 
   const filteredTenants = displayTenants.filter(tenant =>
     tenant.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -144,9 +165,15 @@ export function TenantsView({
     } finally { setBusy(false); }
   }
 
-  // 平台真实计数（跨租户用量/收入需另接聚合，此处只展示租户数量态）
-  const nActive = tenants.filter((t) => t.status === 'active').length;
-  const nSuspended = tenants.filter((t) => t.status === 'suspended').length;
+  // 平台真实聚合：总用户 / 本月 Token / 本月收入（估算）
+  const totals = Object.values(usage).reduce(
+    (a, u) => ({
+      members: a.members + u.members,
+      tokens30d: a.tokens30d + u.tokens30d,
+      estCost30d: a.estCost30d + u.estCost30d,
+    }),
+    { members: 0, tokens30d: 0, estCost30d: 0 },
+  );
 
   return (
     <div className="space-y-6">
@@ -164,17 +191,17 @@ export function TenantsView({
         )}
       </div>
 
-      {/* Stats（真实计数） */}
+      {/* Stats（真实聚合：近 30 天用量） */}
       <div className="grid grid-cols-3 gap-4">
         <Card className="bg-card border-border">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Building2 className="h-5 w-5 text-primary" />
+                <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">{tenants.length}</p>
-                <p className="text-xs text-muted-foreground">企业租户</p>
+                <p className="text-lg font-semibold text-foreground">{totals.members.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">总用户</p>
               </div>
             </div>
           </CardContent>
@@ -183,11 +210,11 @@ export function TenantsView({
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                <Users className="h-5 w-5 text-green-500" />
+                <Coins className="h-5 w-5 text-green-500" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">{nActive}</p>
-                <p className="text-xs text-muted-foreground">活跃</p>
+                <p className="text-lg font-semibold text-foreground">{(totals.tokens30d / 1000000).toFixed(2)}M</p>
+                <p className="text-xs text-muted-foreground">本月 Token</p>
               </div>
             </div>
           </CardContent>
@@ -195,12 +222,12 @@ export function TenantsView({
         <Card className="bg-card border-border">
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center">
-                <Ban className="h-5 w-5 text-destructive" />
+              <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+                <Wallet className="h-5 w-5 text-accent-foreground" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">{nSuspended}</p>
-                <p className="text-xs text-muted-foreground">已停用</p>
+                <p className="text-lg font-semibold text-foreground">¥{totals.estCost30d.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">本月收入（估算）</p>
               </div>
             </div>
           </CardContent>
@@ -260,7 +287,7 @@ export function TenantsView({
                       <div className="w-24 h-1.5 bg-muted rounded-full">
                         <div
                           className="h-full bg-primary rounded-full"
-                          style={{ width: `${(tenant.tokenUsage / tenant.tokenQuota) * 100}%` }}
+                          style={{ width: `${tenant.tokenQuota > 0 ? Math.min(100, (tenant.tokenUsage / tenant.tokenQuota) * 100) : 0}%` }}
                         />
                       </div>
                     </div>
@@ -274,31 +301,6 @@ export function TenantsView({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-popover border-border">
-                        <DropdownMenuItem>
-                          <Eye className="h-4 w-4 mr-2" />
-                          查看详情
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Settings className="h-4 w-4 mr-2" />
-                          编辑信息
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Gauge className="h-4 w-4 mr-2" />
-                          配额管理
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Receipt className="h-4 w-4 mr-2" />
-                          账单管理
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Cpu className="h-4 w-4 mr-2" />
-                          模型配置
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <ShieldCheck className="h-4 w-4 mr-2" />
-                          MCP 审批
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
                         {canManage && (
                           tenant.status === 'suspended' ? (
                             <DropdownMenuItem onClick={() => handleSetStatus(tenant.id, 'active')} disabled={busy}>
@@ -329,29 +331,36 @@ export function TenantsView({
         </CardContent>
       </Card>
 
-      {/* Revenue Chart Placeholder */}
+      {/* Revenue Chart（真实：近 6 个月估算收入，按 Token 用量推算） */}
       <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-foreground">收入趋势</CardTitle>
-          <CardDescription>过去 6 个月收入变化</CardDescription>
+          <CardTitle className="text-foreground">收入趋势（估算）</CardTitle>
+          <CardDescription>过去 6 个月估算收入，按 Token 用量推算，非真实账单</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-48 flex items-end justify-between gap-2 px-4">
-            {[45, 62, 78, 85, 92, 100].map((height, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                <div
-                  className="w-full bg-primary/20 rounded-t-sm"
-                  style={{ height: `${height}%` }}
-                >
-                  <div
-                    className="w-full bg-primary rounded-t-sm"
-                    style={{ height: `${height * 0.8}%` }}
-                  />
+          {revenueTrend.length === 0 ? (
+            <div className="h-48 flex items-center justify-center text-sm text-muted-foreground">暂无数据</div>
+          ) : (
+            (() => {
+              const max = Math.max(1, ...revenueTrend.map((p) => p.cost));
+              return (
+                <div className="h-48 flex items-end justify-between gap-2 px-4">
+                  {revenueTrend.map((p) => {
+                    const height = Math.round((p.cost / max) * 100);
+                    return (
+                      <div key={p.label} className="flex-1 flex flex-col items-center gap-2">
+                        <span className="text-xs text-muted-foreground">¥{p.cost.toFixed(0)}</span>
+                        <div className="w-full bg-primary/20 rounded-t-sm flex items-end" style={{ height: `${height}%` }}>
+                          <div className="w-full bg-primary rounded-t-sm" style={{ height: '80%' }} />
+                        </div>
+                        <span className="text-xs text-muted-foreground">{p.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <span className="text-xs text-muted-foreground">{['10月', '11月', '12月', '1月', '2月', '3月'][i]}</span>
-              </div>
-            ))}
-          </div>
+              );
+            })()
+          )}
         </CardContent>
       </Card>
 
