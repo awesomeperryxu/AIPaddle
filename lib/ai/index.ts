@@ -15,13 +15,28 @@ export const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM || 1536)
 // DashScope 嵌入单次批量上限（compatible-mode text-embedding-v4）
 const EMBED_BATCH = 10
 
-function headers(): HeadersInit {
-  if (!KEY) throw new Error('缺少 DASHSCOPE_API_KEY')
-  return { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' }
+// 4.8.5：可解析的模型客户端（endpoint + key + 可选默认模型）。
+// 租户配了自己的供应商 → 用租户的；未配 → 回退平台 env（现状零改变）。
+export type ModelClient = { baseURL: string; apiKey: string; model?: string }
+
+/** 平台默认客户端（env 单例）。租户未配时的回退。 */
+export function envModelClient(): ModelClient {
+  return { baseURL: BASE, apiKey: KEY ?? '', model: LLM_MODEL }
 }
 
-async function postJson(path: string, body: unknown): Promise<Record<string, unknown>> {
-  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: headers(), body: JSON.stringify(body) })
+function headersFor(apiKey: string): HeadersInit {
+  if (!apiKey) throw new Error('缺少模型 API Key（租户未配且平台默认 DASHSCOPE_API_KEY 缺失）')
+  return { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+}
+
+async function postJson(
+  path: string,
+  body: unknown,
+  client: ModelClient = envModelClient(),
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${client.baseURL}${path}`, {
+    method: 'POST', headers: headersFor(client.apiKey), body: JSON.stringify(body),
+  })
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>
   if (!res.ok) {
     const err = json?.error as { message?: string } | undefined
@@ -78,15 +93,16 @@ export async function chat(
 // 带用量的对话（4.1.5 调用日志）：返回内容 + token 用量 + 实际模型，用于落 call_logs。
 export async function chatWithUsage(
   messages: ChatMessage[],
-  opts: { temperature?: number; maxTokens?: number; model?: string } = {},
+  opts: { temperature?: number; maxTokens?: number; model?: string; client?: ModelClient } = {},
 ): Promise<{ content: string; tokensIn: number; tokensOut: number; model: string }> {
-  const model = opts.model ?? LLM_MODEL
+  // 模型优先级：显式 opts.model（Agent 选择）> 客户端默认（租户槽）> 平台默认
+  const model = opts.model ?? opts.client?.model ?? LLM_MODEL
   const json = await postJson('/chat/completions', {
     model,
     messages,
     temperature: opts.temperature ?? 0.3,
     max_tokens: opts.maxTokens ?? 1024,
-  })
+  }, opts.client)
   const choices = json.choices as { message?: { content?: string } }[] | undefined
   const usage = (json.usage ?? {}) as { prompt_tokens?: number; completion_tokens?: number }
   return {
@@ -105,12 +121,13 @@ export type ChatStreamChunk =
 
 export async function* chatStream(
   messages: ChatMessage[],
-  opts: { temperature?: number; maxTokens?: number; model?: string } = {},
+  opts: { temperature?: number; maxTokens?: number; model?: string; client?: ModelClient } = {},
 ): AsyncGenerator<ChatStreamChunk> {
-  const model = opts.model ?? LLM_MODEL
-  const res = await fetch(`${BASE}/chat/completions`, {
+  const client = opts.client ?? envModelClient()
+  const model = opts.model ?? client.model ?? LLM_MODEL
+  const res = await fetch(`${client.baseURL}/chat/completions`, {
     method: 'POST',
-    headers: headers(),
+    headers: headersFor(client.apiKey),
     body: JSON.stringify({
       model,
       messages,
@@ -192,9 +209,9 @@ export async function chatWithTools(
   messages: ChatMessage[],
   tools: FunctionTool[],
   handler: ToolCallHandler,
-  opts: { temperature?: number; maxTokens?: number; model?: string; maxIterations?: number } = {},
+  opts: { temperature?: number; maxTokens?: number; model?: string; maxIterations?: number; client?: ModelClient } = {},
 ): Promise<{ content: string; tokensIn: number; tokensOut: number; model: string }> {
-  const model = opts.model ?? LLM_MODEL
+  const model = opts.model ?? opts.client?.model ?? LLM_MODEL
   const maxIter = opts.maxIterations ?? 5
   let totalIn = 0
   let totalOut = 0
@@ -210,7 +227,7 @@ export async function chatWithTools(
       tool_choice: tools.length > 0 ? 'auto' : undefined,
       temperature: opts.temperature ?? 0.3,
       max_tokens: opts.maxTokens ?? 2048,
-    }) as ToolCallResponse & Record<string, unknown>
+    }, opts.client) as ToolCallResponse & Record<string, unknown>
 
     const usage = (json.usage ?? {}) as { prompt_tokens?: number; completion_tokens?: number }
     totalIn += usage.prompt_tokens ?? 0
