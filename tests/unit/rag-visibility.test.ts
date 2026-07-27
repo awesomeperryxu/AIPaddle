@@ -55,3 +55,47 @@ describe('RAG 权限范围（4.2.8）', () => {
     expect(listAccessibleKbIds).toHaveBeenCalledWith(ctx, { agentId: 'agent-9' })
   })
 })
+
+describe('RAG 指定 kbId + 检索参数覆盖（BUG-79）', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('指定 kbId（在可访问范围内）→ 只在该库检索', async () => {
+    listAccessibleKbIds.mockResolvedValue(['kb-a', 'kb-b', 'kb-c'])
+    searchChunks.mockResolvedValue([
+      { id: 'c1', documentId: 'd1', content: '相关内容', metadata: {}, similarity: 0.9 },
+    ])
+    const res = await answerQuestion(ctx, '问题', { kbId: 'kb-b' })
+    // 检索范围被收窄到指定单库
+    expect(searchChunks).toHaveBeenCalledWith(ctx, expect.any(Array), expect.any(Number), ['kb-b'])
+    expect(res.refused).toBe(false)
+  })
+
+  it('越权 kbId（不在可访问范围内）→ 拒答，绝不检索他库', async () => {
+    listAccessibleKbIds.mockResolvedValue(['kb-a', 'kb-b'])
+    const res = await answerQuestion(ctx, '问题', { kbId: 'kb-other-tenant' })
+    expect(res.refused).toBe(true)
+    expect(res.citations).toHaveLength(0)
+    // 越权时根本不发起向量检索
+    expect(searchChunks).not.toHaveBeenCalled()
+  })
+
+  it('topK 覆盖生效 → 透传给检索层', async () => {
+    listAccessibleKbIds.mockResolvedValue(['kb-a'])
+    searchChunks.mockResolvedValue([
+      { id: 'c1', documentId: 'd1', content: '相关内容', metadata: {}, similarity: 0.9 },
+    ])
+    await answerQuestion(ctx, '问题', { kbId: 'kb-a', topK: 12 })
+    expect(searchChunks).toHaveBeenCalledWith(ctx, expect.any(Array), 12, ['kb-a'])
+  })
+
+  it('scoreThreshold 覆盖生效 → 高阈值过滤掉中相似度命中 → 拒答', async () => {
+    listAccessibleKbIds.mockResolvedValue(['kb-a'])
+    // 相似度 0.5：默认阈值 0.28 会通过，覆盖为 0.9 则被过滤
+    searchChunks.mockResolvedValue([
+      { id: 'c1', documentId: 'd1', content: '相关内容', metadata: {}, similarity: 0.5 },
+    ])
+    const res = await answerQuestion(ctx, '问题', { kbId: 'kb-a', scoreThreshold: 0.9 })
+    expect(res.refused).toBe(true)
+    expect(res.citations).toHaveLength(0)
+  })
+})

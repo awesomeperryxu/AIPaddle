@@ -78,20 +78,30 @@ const SYSTEM_PROMPT = `你是企业知识库问答助手。严格只依据下面
  * RAG 问答（4.2.3 / 4.2.8）：嵌入问题 → 按可访问知识库范围向量检索 → 相关块喂 qwen → 带引用作答；无相关块则拒答。
  * opts.agentId 传入（Agent 对话）→ 仅检索该 Agent 关联的知识库；
  * 不传（通用问答）→ 仅检索全员可见（visibility='org'）的知识库。
+ * opts.kbId 传入 → 仅在该库检索，但须落在可访问范围内（越权/不存在则拒答，绝不检索他库他租户）。
+ * opts.topK / opts.scoreThreshold 传入 → 覆盖库配置/默认值。
  */
 export async function answerQuestion(
   ctx: RequestContext,
   question: string,
-  opts?: { agentId?: string },
+  opts?: { agentId?: string; kbId?: string; topK?: number; scoreThreshold?: number },
 ): Promise<RagAnswer> {
   const q = question.trim()
   if (!q) return { answer: '请输入问题。', citations: [], refused: true }
 
-  const kbIds = await listAccessibleKbIds(ctx, { agentId: opts?.agentId })
-  // 4.2.8：单库时按其检索配置；多库/空范围回落默认。
+  const accessible = await listAccessibleKbIds(ctx, { agentId: opts?.agentId })
+  // 越权防护：指定 kbId 时必须落在可访问范围内，否则拒答（不越权检索他库/他租户）。
+  let kbIds = accessible
+  if (opts?.kbId) {
+    if (!accessible.includes(opts.kbId)) {
+      return { answer: '未找到相关信息。', citations: [], refused: true }
+    }
+    kbIds = [opts.kbId]
+  }
+  // 4.2.8：单库时按其检索配置；多库/空范围回落默认。显式 opts 覆盖优先。
   const cfg = kbIds.length === 1 ? await getKbRetrievalConfig(ctx, kbIds[0]) : null
-  const topK = cfg?.topK ?? TOP_K
-  const threshold = cfg?.scoreThreshold ?? MIN_SIMILARITY
+  const topK = opts?.topK ?? cfg?.topK ?? TOP_K
+  const threshold = opts?.scoreThreshold ?? cfg?.scoreThreshold ?? MIN_SIMILARITY
   const qEmbedding = await embedOne(q)
   const matches = await searchChunks(ctx, qEmbedding, topK, kbIds)
   const relevant = matches.filter((m) => m.similarity >= threshold)
