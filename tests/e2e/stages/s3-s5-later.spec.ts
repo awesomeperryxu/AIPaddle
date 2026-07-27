@@ -131,6 +131,39 @@ test.describe('S5 成员与租户闭环 @stage5', () => {
     });
   }
 
+  // 4.8.12 成员编辑闭环：行内下拉「编辑成员」→ 对话框改姓名/部门/角色 → PATCH → 列表即时生效
+  test('S5-02 编辑成员资料（姓名/部门/角色）并生效', async ({ page }) => {
+    const target = MEMBER_INVITES[0];
+    await login(page, 'adminA');
+    await page.goto('/members');
+
+    const row = page.getByRole('row', { name: new RegExp(target.email) });
+    await row.getByRole('button').last().click();
+    await page.getByRole('menuitem', { name: /编辑成员/ }).click();
+
+    await page.getByLabel(/^姓名$/).fill('吴改名');
+    await page.getByLabel(/^部门$/).fill('平台部');
+    await page.getByLabel(/角色/).selectOption('Auditor');
+    await page.getByRole('button', { name: /^保存$/ }).click();
+
+    const updated = page.getByRole('row', { name: new RegExp(target.email) });
+    await expect(updated).toContainText('吴改名');
+    await expect(updated).toContainText('平台部');
+    await expect(updated).toContainText('安全人员'); // Auditor 的展示标签
+  });
+
+  // 4.8.12 护栏：最后一名管理员不可移除（服务端 409，前端在确认框内回显错误）
+  test('S5-03 移除成员：最后一名管理员被拒', async ({ page }) => {
+    await login(page, 'adminA');
+    await page.goto('/members');
+
+    const selfRow = page.getByRole('row', { name: /adminA|管理员/ }).first();
+    await selfRow.getByRole('button').last().click();
+    await page.getByRole('menuitem', { name: /移除成员/ }).click();
+    await page.getByRole('button', { name: /确认移除/ }).click();
+    await expect(page.getByText(/不能移除(自己|最后一名管理员)/)).toBeVisible();
+  });
+
   // 平台租户开通/暂停已落地（ADR-010）：/tenants 服务端 isPlatformAdmin 门控，
   // 开通企业对话框(4 区块) + POST /api/tenants；行内下拉「暂停/恢复服务」→ PATCH。
   // 前置：seed 须把 adminA 加入 platform_admins，且存在 code=aipaddle-demo 的租户（幂等冲突用例）。
