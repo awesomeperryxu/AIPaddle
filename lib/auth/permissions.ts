@@ -35,6 +35,8 @@ export type Action =
   | 'workflow:run'
   | 'provider:manage'
   | 'apikey:manage'
+  | 'department:read'
+  | 'department:manage'
 
 // 每个 action 允许的角色集合；未列入矩阵的 action 视为无人允许（默认拒绝）。
 const MATRIX: Record<Action, Role[]> = {
@@ -73,6 +75,10 @@ const MATRIX: Record<Action, Role[]> = {
   'provider:manage': ['Admin'],
   // 对外 API Key（4.8.6）：签发/吊销本租户对外调用凭证，仅 Admin。
   'apikey:manage': ['Admin'],
+  // 组织架构（4.8.14a）：部门树全员可读（成员编辑/资源授权都要选部门）；增删改仅 Admin。
+  // PRD 2.10.3 的「部门管理员」角色与「本部门及下级」数据权限尚未进 ADR-007，故本期不设部门级管理员。
+  'department:read': ['Admin', 'Developer', 'User', 'Auditor'],
+  'department:manage': ['Admin'],
 }
 
 /** 多角色取并集：任一角色被允许即允许。默认拒绝。 */
