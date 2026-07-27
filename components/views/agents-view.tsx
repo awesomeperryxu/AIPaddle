@@ -134,7 +134,6 @@ export function AgentsView({
       .catch(() => {})
       .finally(() => { if (!cancelled) setTeamsLoading(false); });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   // ── 切换 Agent（聊天） ──

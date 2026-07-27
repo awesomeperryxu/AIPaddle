@@ -8,8 +8,9 @@ import {
 import { invokeCronAgent } from '@/lib/agents/cron-invoke'
 
 // POST /api/cron/agent-schedules
-// 由 Vercel Cron Job 每分钟触发（vercel.json）。
-// 鉴权：Bearer CRON_SECRET（Vercel 自动附带；本地开发若不设则跳过）。
+// 由外部调度器周期触发（自建服务器部署：GitHub Actions 定时 `.github/workflows/cron-schedules.yml`，
+// 每 ~5 分钟；需「每分钟」精度可改服务器 crontab）。端点本身与调度器无关。
+// 鉴权：Bearer CRON_SECRET（调用方显式附带；本地开发若未设 CRON_SECRET 则跳过校验）。
 // 执行逻辑：admin client 查到期 schedules → 直接调 invokeCronAgent → 写 runs → 更新 schedule 状态。
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET
