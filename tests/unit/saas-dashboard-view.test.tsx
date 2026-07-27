@@ -19,7 +19,7 @@ import { SaasDashboardView } from '@/components/views/saas-dashboard-view'
 import type { PlatformDashboard } from '@/lib/data/platform-dashboard'
 
 const base: PlatformDashboard = {
-  tenants: { total: 3, active: 2, suspended: 1, byPlan: { free: 1, standard: 1, enterprise: 1 } },
+  tenants: { total: 3, active: 2, suspended: 1 },
   usage30d: { tokens: 5_400_000, calls: 1234, estCost: 12.34 },
   tokenTrend: [
     { label: '02月', tokens: 1_000_000 }, { label: '03月', tokens: 2_000_000 },
@@ -65,7 +65,7 @@ describe('SaasDashboardView', () => {
 
   it('空数据 → 友好空态，无风险时提示无风险', () => {
     const empty: PlatformDashboard = {
-      tenants: { total: 0, active: 0, suspended: 0, byPlan: {} },
+      tenants: { total: 0, active: 0, suspended: 0 },
       usage30d: { tokens: 0, calls: 0, estCost: 0 },
       tokenTrend: [{ label: '07月', tokens: 0 }],
       tenantRanking: [], modelCost: [], risks: [], billingEnabled: false,

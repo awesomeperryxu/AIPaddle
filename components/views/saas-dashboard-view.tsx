@@ -12,8 +12,6 @@ const CURRENCY = '¥'
 const fmtTokens = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n)
 const fmtCost = (n: number) => `${CURRENCY}${n.toFixed(2)}`
 
-const PLAN_LABEL: Record<string, string> = { free: '免费版', standard: '标准版', pro: '专业版', enterprise: '企业版' }
-
 const tooltipStyle = {
   backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px',
   color: 'var(--foreground)', fontSize: '12px',
@@ -55,60 +53,36 @@ export function SaasDashboardView({ data }: { data: PlatformDashboard }) {
           value={fmtCost(usage30d.estCost)} sub="按通义 Qwen 单价估算，非结算金额" />
       </div>
 
-      {/* Token 趋势 + 套餐分布 */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="col-span-2 bg-card border-border shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-foreground">平台 Token 趋势</CardTitle>
-            <CardDescription className="text-xs">近 6 个月，来自 call_logs 真实聚合</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[220px]">
-              {usage30d.calls === 0 && tokenTrend.every((t) => t.tokens === 0) ? (
-                <EmptyBox text="暂无调用记录" />
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={tokenTrend}>
-                    <defs>
-                      <linearGradient id="colorTok" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={fmtTokens} />
-                    <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [fmtTokens(v), 'Token']} />
-                    <Area type="monotone" dataKey="tokens" stroke="var(--primary)" strokeWidth={2} fill="url(#colorTok)" name="Token" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-foreground">套餐分布</CardTitle>
-            <CardDescription className="text-xs">按租户数</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2.5">
-            {(['free', 'standard', 'pro', 'enterprise'] as const).map((p) => {
-              const count = tenants.byPlan[p] ?? 0
-              const pct = tenants.total > 0 ? Math.round((count / tenants.total) * 100) : 0
-              return (
-                <div key={p} className="flex items-center gap-3">
-                  <span className="w-16 text-sm text-foreground shrink-0">{PLAN_LABEL[p]}</span>
-                  <div className="flex-1 h-1.5 bg-muted rounded-full">
-                    <div className="h-1.5 rounded-full bg-primary" style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="w-8 text-xs text-muted-foreground text-right shrink-0">{count}</span>
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
-      </div>
+      {/* Token 趋势 */}
+      <Card className="bg-card border-border shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm text-foreground">平台 Token 趋势</CardTitle>
+          <CardDescription className="text-xs">近 6 个月，来自 call_logs 真实聚合</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[220px]">
+            {usage30d.calls === 0 && tokenTrend.every((t) => t.tokens === 0) ? (
+              <EmptyBox text="暂无调用记录" />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={tokenTrend}>
+                  <defs>
+                    <linearGradient id="colorTok" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={fmtTokens} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [fmtTokens(v), 'Token']} />
+                  <Area type="monotone" dataKey="tokens" stroke="var(--primary)" strokeWidth={2} fill="url(#colorTok)" name="Token" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* 租户消耗排行 + 模型成本 */}
       <div className="grid grid-cols-2 gap-4">

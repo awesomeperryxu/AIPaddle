@@ -4,24 +4,9 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { apiFetch } from '@/lib/api/client'
-import { Building2, Users, Bot, BookOpen, Zap, HardDrive, Loader2, Save } from 'lucide-react'
+import { Building2, Users, Bot, BookOpen, Zap, HardDrive, Loader2, Save, Info } from 'lucide-react'
 import type { TenantInfo } from '@/lib/data/tenant'
-
-const planLabel: Record<TenantInfo['planType'], string> = {
-  free: '免费版',
-  standard: '标准版',
-  pro: '专业版',
-  enterprise: '企业版',
-}
-
-const planClass: Record<TenantInfo['planType'], string> = {
-  free: 'bg-muted text-muted-foreground',
-  standard: 'bg-blue-500/10 text-blue-500',
-  pro: 'bg-primary/10 text-primary',
-  enterprise: 'bg-green-500/10 text-green-500',
-}
 
 export default function SettingsPage() {
   const [tenant, setTenant] = useState<TenantInfo | null>(null)
@@ -140,13 +125,18 @@ export default function SettingsPage() {
         </Card>
       </div>
 
-      {/* 套餐配额 */}
+      {/* 平台内置模型仅供演示提示（ADR-017：正式使用请配置本租户自己的模型供应商） */}
+      <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/30 p-3">
+        <Info className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+        <p className="text-xs text-muted-foreground">
+          平台内置模型仅供演示 / 测试，正式使用请在「模型供应商」中配置本租户自己的模型供应商与 API Key。
+        </p>
+      </div>
+
+      {/* 配额 */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base text-foreground">套餐配额</CardTitle>
-            <Badge className={planClass[tenant.planType]}>{planLabel[tenant.planType]}</Badge>
-          </div>
+          <CardTitle className="text-base text-foreground">配额</CardTitle>
           <CardDescription>加入日期：{tenant.createdAt}</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-3 gap-4">

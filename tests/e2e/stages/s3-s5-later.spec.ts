@@ -140,7 +140,7 @@ test.describe('S5 成员与租户闭环 @stage5', () => {
     await page.getByLabel(/企业编码/).fill(over.code ?? d.basic.code);
     await page.getByLabel(/联系人姓名/).fill(d.contact.name);
     await page.getByLabel(/邮箱/).fill(over.email ?? d.contact.email);
-    await page.getByLabel(/套餐/).selectOption(d.plan.type);
+    // ADR-017：取消套餐分级——开通表单不再有套餐选择器。
     await page.getByLabel(/Token 配额/).fill(over.tokenQuota ?? String(d.plan.tokenQuota));
   }
 

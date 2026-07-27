@@ -8,7 +8,7 @@ import { estimateCost } from '@/lib/data/dashboard'
 // 不造假——以 billingEnabled=false 标记，UI 诚实标注「即将上线」。
 
 export type PlatformDashboard = {
-  tenants: { total: number; active: number; suspended: number; byPlan: Record<string, number> }
+  tenants: { total: number; active: number; suspended: number }
   usage30d: { tokens: number; calls: number; estCost: number }
   tokenTrend: { label: string; tokens: number }[]        // 近 6 个月
   tenantRanking: { name: string; tokenUsage: number; tokenQuota: number; over: boolean }[]
@@ -17,7 +17,7 @@ export type PlatformDashboard = {
   billingEnabled: false                                   // 计费尚未上线（诚实标记）
 }
 
-type TenantRow = { id: string; name: string; plan_type: string; status: string; token_quota: number | null }
+type TenantRow = { id: string; name: string; status: string; token_quota: number | null }
 type LogRow = { org_id: string; model: string | null; tokens_in: number | null; tokens_out: number | null; created_at: string | null }
 
 const DAY = 86_400_000
@@ -30,7 +30,7 @@ export async function getPlatformDashboard(): Promise<PlatformDashboard> {
   const since180 = new Date(now - 180 * DAY).toISOString()
 
   const [tenantsRes, logsRes] = await Promise.all([
-    admin.from('tenants').select('id,name,plan_type,status,token_quota').is('deleted_at', null),
+    admin.from('tenants').select('id,name,status,token_quota').is('deleted_at', null),
     admin.from('call_logs').select('org_id,model,tokens_in,tokens_out,created_at').is('deleted_at', null).gte('created_at', since180),
   ])
   if (tenantsRes.error) throw new Error(tenantsRes.error.message)
@@ -40,13 +40,11 @@ export async function getPlatformDashboard(): Promise<PlatformDashboard> {
   const logs = (logsRes.data as LogRow[] | null) ?? []
   const tokensOf = (l: LogRow) => (l.tokens_in ?? 0) + (l.tokens_out ?? 0)
 
-  // 租户统计
-  const byPlan: Record<string, number> = {}
+  // 租户统计（ADR-017：去套餐化，不再按 plan 聚合）
   let active = 0, suspended = 0
   const nameById = new Map<string, string>()
   const quotaById = new Map<string, number>()
   for (const t of tenants) {
-    byPlan[t.plan_type] = (byPlan[t.plan_type] ?? 0) + 1
     if (t.status === 'suspended') suspended++; else active++
     nameById.set(t.id, t.name)
     quotaById.set(t.id, t.token_quota ?? 0)
@@ -110,5 +108,5 @@ export async function getPlatformDashboard(): Promise<PlatformDashboard> {
     else if (ratio > 0.8) risks.push({ level: 'mid', title: `${r.name} · Token 接近配额`, detail: `近 30 天已用 ${Math.round(ratio * 100)}%（${(r.tokenUsage / 1e6).toFixed(2)}M / ${(r.tokenQuota / 1e6).toFixed(2)}M）` })
   }
 
-  return { tenants: { total: tenants.length, active, suspended, byPlan }, usage30d, tokenTrend, tenantRanking, modelCost, risks, billingEnabled: false }
+  return { tenants: { total: tenants.length, active, suspended }, usage30d, tokenTrend, tenantRanking, modelCost, risks, billingEnabled: false }
 }

@@ -50,13 +50,13 @@ export async function listAllTenants(): Promise<TenantSummary[]> {
   return ((data as Row[] | null) ?? []).map(map)
 }
 
+// ADR-017：取消套餐分级——provision 不再收 planType；plan_type 走列默认值（'free'），仅作废弃保留列。
 export type ProvisionInput = {
   name: string; code: string; contactName: string; contactEmail: string
-  planType: PlanType; tokenQuota: number
+  tokenQuota: number
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const PLANS: PlanType[] = ['free', 'standard', 'pro', 'enterprise']
 
 /** 开通新租户（校验 code 唯一 / email 合法 / 配额>0）。 */
 export async function provisionTenant(input: ProvisionInput): Promise<TenantSummary> {
@@ -65,7 +65,6 @@ export async function provisionTenant(input: ProvisionInput): Promise<TenantSumm
   if (!name) throw new Error('企业名称不能为空')
   if (!code || !/^[a-zA-Z0-9_-]{2,32}$/.test(code)) throw new Error('企业编码非法（2-32 位字母数字/下划线/连字符）')
   if (!EMAIL_RE.test(input.contactEmail?.trim() ?? '')) throw new Error('联系邮箱格式非法')
-  if (!PLANS.includes(input.planType)) throw new Error('套餐类型非法')
   if (!Number.isFinite(input.tokenQuota) || input.tokenQuota <= 0) throw new Error('Token 配额必须为正数')
 
   const admin = createAdminClient()
@@ -76,7 +75,7 @@ export async function provisionTenant(input: ProvisionInput): Promise<TenantSumm
     .from('tenants')
     .insert({
       name, code, contact_name: input.contactName?.trim() || null,
-      contact_email: input.contactEmail.trim(), plan_type: input.planType,
+      contact_email: input.contactEmail.trim(),
       token_quota: input.tokenQuota, status: 'active',
     })
     .select(COLS).single()
