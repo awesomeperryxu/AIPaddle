@@ -34,6 +34,7 @@ export type Action =
   | 'workflow:update'
   | 'workflow:run'
   | 'provider:manage'
+  | 'apikey:manage'
 
 // 每个 action 允许的角色集合；未列入矩阵的 action 视为无人允许（默认拒绝）。
 const MATRIX: Record<Action, Role[]> = {
@@ -70,6 +71,8 @@ const MATRIX: Record<Action, Role[]> = {
   'workflow:run': ['Admin', 'Developer', 'User'],
   // 模型供应商（ADR-016 4.7.3）：租户管理员自助配供应商/Key/默认模型。跨租户代配走 isPlatformAdmin。
   'provider:manage': ['Admin'],
+  // 对外 API Key（4.8.6）：签发/吊销本租户对外调用凭证，仅 Admin。
+  'apikey:manage': ['Admin'],
 }
 
 /** 多角色取并集：任一角色被允许即允许。默认拒绝。 */

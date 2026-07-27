@@ -1,181 +1,138 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Plus, Key, CheckCircle2, Ban, Activity, Copy } from 'lucide-react';
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import { apiFetch } from '@/lib/api/client'
+import { Plus, Key, CheckCircle2, Ban, Loader2, Copy } from 'lucide-react'
 
-type KeyStatus = 'active' | 'revoked' | 'expired';
-
-interface ApiKey {
-  id: string;
-  name: string;
-  key: string;
-  scope: string;
-  rate: string;
-  calls: number;
-  lastUsed: string;
-  status: KeyStatus;
+type ApiKeyScope = 'agent' | 'readonly' | 'full'
+type ApiKeyMasked = {
+  id: string; name: string; keyPrefix: string; scope: ApiKeyScope
+  status: 'active' | 'revoked'; lastUsedAt: string | null; createdAt: string
 }
 
-const statusConfig: Record<KeyStatus, { label: string; className: string }> = {
+const SCOPE_LABEL: Record<ApiKeyScope, string> = {
+  agent: 'Agent 调用', readonly: '只读（用量/账单）', full: '全部权限',
+}
+const statusConfig = {
   active: { label: '生效中', className: 'bg-green-500/10 text-green-500' },
   revoked: { label: '已吊销', className: 'bg-destructive/10 text-destructive' },
-  expired: { label: '已过期', className: 'bg-yellow-500/10 text-yellow-500' },
-};
-
-const scopeOptions = ['Agent 调用', '只读（用量/账单）', '全部权限'];
-
-const initialKeys: ApiKey[] = [
-  { id: 'k-001', name: 'CRM 集成', key: 'ap_sk_live_a1f3************9c2b', scope: 'Agent 调用', rate: '50 QPS', calls: 892340, lastUsed: '3 分钟前', status: 'active' },
-  { id: 'k-002', name: '客服机器人', key: 'ap_sk_live_7d2e************4f81', scope: 'Agent 调用', rate: '100 QPS', calls: 615720, lastUsed: '1 小时前', status: 'active' },
-  { id: 'k-003', name: '数据看板只读', key: 'ap_sk_live_3b9c************e07a', scope: '只读（用量/账单）', rate: '20 QPS', calls: 128450, lastUsed: '昨天', status: 'active' },
-  { id: 'k-004', name: '运维管理密钥', key: 'ap_sk_live_5e11************b6d4', scope: '全部权限', rate: '30 QPS', calls: 43210, lastUsed: '5 天前', status: 'revoked' },
-  { id: 'k-005', name: '临时测试 Key', key: 'ap_sk_live_9c04************1a2f', scope: 'Agent 调用', rate: '10 QPS', calls: 5620, lastUsed: '2026-06-30', status: 'expired' },
-  { id: 'k-006', name: '营销活动集成', key: 'ap_sk_live_2f7b************8d3c', scope: 'Agent 调用', rate: '50 QPS', calls: 97880, lastUsed: '10 分钟前', status: 'active' },
-];
-
-const monthlyCallsLabel = '1.78M';
+} as const
 
 export function KeysView() {
-  const [keys, setKeys] = useState<ApiKey[]>(initialKeys);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newScope, setNewScope] = useState(scopeOptions[0]);
-  const [newRate, setNewRate] = useState('50');
+  const [keys, setKeys] = useState<ApiKeyMasked[]>([])
+  const [loading, setLoading] = useState(true)
+  const [forbidden, setForbidden] = useState(false)
 
-  const nTotal = keys.length;
-  const nActive = keys.filter((k) => k.status === 'active').length;
-  const nRevoked = keys.filter((k) => k.status !== 'active').length;
+  const [createOpen, setCreateOpen] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newScope, setNewScope] = useState<ApiKeyScope>('agent')
+  const [creating, setCreating] = useState(false)
+  const [issued, setIssued] = useState<string | null>(null) // 签发后一次性明文
 
-  const handleCopy = (id: string) => {
-    // 占位：真实实现将写入剪贴板
-    void id;
-  };
+  const load = useCallback(async () => {
+    try {
+      const data = await apiFetch<{ keys: ApiKeyMasked[] }>('/api/keys')
+      setKeys(data.keys)
+    } catch (e) {
+      if (e instanceof Error && /无权限|forbidden|403/i.test(e.message)) setForbidden(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  const handleRevoke = (id: string) => {
-    setKeys((prev) =>
-      prev.map((k) => (k.id === id ? { ...k, status: 'revoked' } : k)),
-    );
-  };
+  useEffect(() => {
+    apiFetch<{ keys: ApiKeyMasked[] }>('/api/keys')
+      .then((d) => setKeys(d.keys))
+      .catch((e) => { if (e instanceof Error && /无权限|forbidden|403/i.test(e.message)) setForbidden(true) })
+      .finally(() => setLoading(false))
+  }, [])
 
-  const handleSubmit = () => {
-    const name = newName.trim() || '未命名 Key';
-    const rate = newRate.trim() || '50';
-    const next: ApiKey = {
-      id: `k-${Date.now()}`,
-      name,
-      key: `ap_sk_live_${Math.random().toString(16).slice(2, 6)}************${Math.random().toString(16).slice(2, 6)}`,
-      scope: newScope,
-      rate: `${rate} QPS`,
-      calls: 0,
-      lastUsed: '尚未使用',
-      status: 'active',
-    };
-    setKeys((prev) => [...prev, next]);
-    setCreateOpen(false);
-    setNewName('');
-    setNewScope(scopeOptions[0]);
-    setNewRate('50');
-  };
+  const nTotal = keys.length
+  const nActive = keys.filter((k) => k.status === 'active').length
+  const nRevoked = keys.length - nActive
+
+  async function copyText(text: string) {
+    try { await navigator.clipboard.writeText(text); toast.success('已复制到剪贴板') }
+    catch { toast.error('复制失败，请手动选择复制') }
+  }
+
+  async function handleCreate() {
+    if (!newName.trim()) return
+    setCreating(true)
+    try {
+      const { key } = await apiFetch<{ key: string; apiKey: ApiKeyMasked }>('/api/keys', {
+        method: 'POST', body: JSON.stringify({ name: newName.trim(), scope: newScope }),
+      })
+      setCreateOpen(false)
+      setNewName(''); setNewScope('agent')
+      setIssued(key)        // 打开「一次性明文」弹窗
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '创建失败')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleRevoke(id: string) {
+    if (!confirm('确认吊销该 Key？吊销后立即失效，不可恢复。')) return
+    try {
+      await apiFetch(`/api/keys/${id}`, { method: 'DELETE' })
+      toast.success('已吊销')
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '吊销失败')
+    }
+  }
+
+  if (loading) {
+    return <div className="flex items-center gap-2 text-muted-foreground py-10"><Loader2 className="h-4 w-4 animate-spin" />加载中...</div>
+  }
+  if (forbidden) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center space-y-2">
+          <h2 className="text-lg font-semibold text-foreground">无访问权限</h2>
+          <p className="text-sm text-muted-foreground">仅 Admin 可管理对外 API Key</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6" data-testid="keys-view">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Key 管理</h1>
-          <p className="text-muted-foreground">管理平台 API 密钥、权限范围与限流</p>
+          <p className="text-muted-foreground">签发与管理对外 API 密钥（明文仅签发时显示一次）</p>
         </div>
-        <Button className="gap-2" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" />
-          创建 Key
+        <Button className="gap-2" data-testid="create-key" onClick={() => setCreateOpen(true)}>
+          <Plus className="h-4 w-4" />创建 Key
         </Button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Key className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-foreground">{nTotal}</p>
-                <p className="text-xs text-muted-foreground">全部 Key</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                <CheckCircle2 className="h-5 w-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-foreground">{nActive}</p>
-                <p className="text-xs text-muted-foreground">生效中</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center">
-                <Ban className="h-5 w-5 text-destructive" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-foreground">{nRevoked}</p>
-                <p className="text-xs text-muted-foreground">已吊销 / 过期</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-chart-3/10 flex items-center justify-center">
-                <Activity className="h-5 w-5 text-chart-3" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-foreground">{monthlyCallsLabel}</p>
-                <p className="text-xs text-muted-foreground">本月 Key 调用量</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* 真实统计 */}
+      <div className="grid grid-cols-3 gap-4">
+        <Stat icon={<Key className="h-5 w-5 text-primary" />} bg="bg-primary/10" n={nTotal} label="全部 Key" />
+        <Stat icon={<CheckCircle2 className="h-5 w-5 text-green-500" />} bg="bg-green-500/10" n={nActive} label="生效中" />
+        <Stat icon={<Ban className="h-5 w-5 text-destructive" />} bg="bg-destructive/10" n={nRevoked} label="已吊销" />
       </div>
 
-      {/* Keys Table */}
       <Card className="bg-card border-border">
         <CardContent className="p-0">
           <Table>
@@ -183,51 +140,32 @@ export function KeysView() {
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead className="text-muted-foreground">名称 / Key</TableHead>
                 <TableHead className="text-muted-foreground">权限范围</TableHead>
-                <TableHead className="text-muted-foreground">限流</TableHead>
-                <TableHead className="text-muted-foreground">累计调用</TableHead>
                 <TableHead className="text-muted-foreground">最近使用</TableHead>
+                <TableHead className="text-muted-foreground">创建时间</TableHead>
                 <TableHead className="text-muted-foreground">状态</TableHead>
                 <TableHead className="text-muted-foreground text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
+              {keys.length === 0 && (
+                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">还没有 API Key，点击右上角创建</TableCell></TableRow>
+              )}
               {keys.map((k) => (
-                <TableRow key={k.id} className="border-border">
+                <TableRow key={k.id} className="border-border" data-testid="key-row">
                   <TableCell>
                     <p className="font-medium text-foreground">{k.name}</p>
-                    <p className="text-xs text-muted-foreground font-mono">{k.key}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{k.keyPrefix}</p>
                   </TableCell>
-                  <TableCell>
-                    <Badge className="bg-muted text-foreground">{k.scope}</Badge>
-                  </TableCell>
-                  <TableCell className="text-foreground">{k.rate}</TableCell>
-                  <TableCell className="text-foreground">{k.calls.toLocaleString('en-US')}</TableCell>
-                  <TableCell className="text-muted-foreground">{k.lastUsed}</TableCell>
-                  <TableCell>
-                    <Badge className={statusConfig[k.status].className}>
-                      {statusConfig[k.status].label}
-                    </Badge>
-                  </TableCell>
+                  <TableCell><Badge className="bg-muted text-foreground">{SCOPE_LABEL[k.scope]}</Badge></TableCell>
+                  <TableCell className="text-muted-foreground">{k.lastUsedAt ?? '尚未使用'}</TableCell>
+                  <TableCell className="text-muted-foreground">{k.createdAt}</TableCell>
+                  <TableCell><Badge className={statusConfig[k.status].className}>{statusConfig[k.status].label}</Badge></TableCell>
                   <TableCell className="text-right whitespace-nowrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 mr-2 gap-1"
-                      onClick={() => handleCopy(k.id)}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                      复制
-                    </Button>
-                    {k.status === 'active' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
+                    {k.status === 'active' ? (
+                      <Button variant="outline" size="sm"
                         className="h-7 text-destructive border-destructive/35 hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => handleRevoke(k.id)}
-                      >
-                        吊销
-                      </Button>
-                    )}
+                        onClick={() => handleRevoke(k.id)}>吊销</Button>
+                    ) : <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -236,58 +174,73 @@ export function KeysView() {
         </CardContent>
       </Card>
 
-      {/* Create Key Dialog */}
+      {/* 创建 Key */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="bg-card border-border">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-foreground">创建 API Key</DialogTitle>
-            <DialogDescription>Key 仅在创建时完整展示一次，请妥善保存</DialogDescription>
+            <DialogTitle>创建 API Key</DialogTitle>
+            <DialogDescription>签发后明文只显示一次，请立即复制保存。</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="key-name">名称 *</Label>
-              <Input
-                id="key-name"
-                placeholder="如：CRM 集成"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                className="bg-background border-border"
-              />
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="key-name">名称</Label>
+              <Input id="key-name" value={newName} placeholder="如：CRM 集成" onChange={(e) => setNewName(e.target.value)} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="key-scope">权限范围 *</Label>
-              <Select value={newScope} onValueChange={setNewScope}>
-                <SelectTrigger id="key-scope" className="w-full bg-background border-border">
-                  <SelectValue />
-                </SelectTrigger>
+            <div>
+              <Label>权限范围</Label>
+              <Select value={newScope} onValueChange={(v) => setNewScope(v as ApiKeyScope)}>
+                <SelectTrigger data-testid="key-scope"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {scopeOptions.map((scope) => (
-                    <SelectItem key={scope} value={scope}>
-                      {scope}
-                    </SelectItem>
+                  {(Object.keys(SCOPE_LABEL) as ApiKeyScope[]).map((s) => (
+                    <SelectItem key={s} value={s}>{SCOPE_LABEL[s]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="key-rate">限流（QPS）*</Label>
-              <Input
-                id="key-rate"
-                type="number"
-                value={newRate}
-                onChange={(e) => setNewRate(e.target.value)}
-                className="bg-background border-border"
-              />
-            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              取消
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
+            <Button disabled={creating || !newName.trim()} onClick={handleCreate} className="gap-2" data-testid="submit-key">
+              {creating && <Loader2 className="h-4 w-4 animate-spin" />}签发
             </Button>
-            <Button onClick={handleSubmit}>创建</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 一次性明文展示 */}
+      <Dialog open={!!issued} onOpenChange={(o) => { if (!o) setIssued(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Key 已签发</DialogTitle>
+            <DialogDescription className="text-destructive">此明文仅显示这一次，关闭后无法再次查看，请立即复制保存。</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-3">
+            <code className="flex-1 text-sm font-mono break-all" data-testid="issued-key">{issued}</code>
+            <Button size="sm" variant="outline" className="gap-1 shrink-0" onClick={() => issued && copyText(issued)}>
+              <Copy className="h-3.5 w-3.5" />复制
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIssued(null)}>我已保存</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
-  );
+  )
+}
+
+function Stat({ icon, bg, n, label }: { icon: React.ReactNode; bg: string; n: number; label: string }) {
+  return (
+    <Card className="bg-card border-border">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-lg ${bg} flex items-center justify-center`}>{icon}</div>
+          <div>
+            <p className="text-lg font-semibold text-foreground">{n}</p>
+            <p className="text-xs text-muted-foreground">{label}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
