@@ -56,6 +56,7 @@ export interface Workflow {
 export interface SecurityReview {
   id: string;
   resourceType: 'skill' | 'agent' | 'workflow';
+  resourceId?: string;
   resourceName: string;
   submitter: string;
   riskLevel: 'low' | 'medium' | 'high';
