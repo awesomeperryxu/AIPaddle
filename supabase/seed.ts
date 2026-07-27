@@ -25,15 +25,20 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
+// 🔴 迁移 0024 起 tenants.code 唯一索引是部分索引（where deleted_at is null），
+// onConflict 无法表达 WHERE 谓词，必须显式先查后写。
 async function ensureTenant(name: string, code: string, planType: string = 'standard') {
-  const { data, error } = await admin
-    .from('tenants')
-    .upsert(
-      { name, code, plan_type: planType, status: 'active' },
-      { onConflict: 'code' },
-    )
-    .select('id, name, code')
-    .single()
+  const { data: found } = await admin
+    .from('tenants').select('id').eq('code', code).is('deleted_at', null).maybeSingle()
+
+  const { data, error } = found
+    ? await admin.from('tenants')
+        .update({ name, plan_type: planType, status: 'active' })
+        .eq('id', (found as { id: string }).id)
+        .select('id, name, code').single()
+    : await admin.from('tenants')
+        .insert({ name, code, plan_type: planType, status: 'active' })
+        .select('id, name, code').single()
 
   if (error) throw new Error(`创建租户 ${name} 失败: ${error.message}`)
   console.log(`  ✓ 租户: ${data.name} (${data.code}) id=${data.id}`)
@@ -79,12 +84,13 @@ async function ensureAccount(
     )
   if (userErr) throw new Error(`写入 users 失败: ${userErr.message}`)
 
-  const { error: roleErr } = await admin
-    .from('user_roles')
-    .upsert(
-      { user_id: userId, org_id: orgId, role },
-      { onConflict: 'user_id,role' },
-    )
+  // 🔴 迁移 0025 起 user_roles 唯一索引是部分索引（where deleted_at is null），同样不能用 onConflict
+  const { data: roleFound } = await admin
+    .from('user_roles').select('id')
+    .eq('user_id', userId).eq('role', role).is('deleted_at', null).maybeSingle()
+  const { error: roleErr } = roleFound
+    ? { error: null }
+    : await admin.from('user_roles').insert({ user_id: userId, org_id: orgId, role })
   if (roleErr) throw new Error(`写入 user_roles 失败: ${roleErr.message}`)
 
   console.log(`    → org=${orgId} role=${role}`)

@@ -92,6 +92,46 @@ d('软删语义契约（连真实 Postgres）', () => {
     })
   }
 
+  /**
+   * 2026-07-27 血的教训：把全表 unique 改成部分唯一索引后，所有
+   * `upsert(..., { onConflict: 'a,b' })` 会立刻失效——PostgREST 的 onConflict 只能给列名、
+   * 无法表达 WHERE 谓词，Postgres 报 "no unique or exclusion constraint matching the
+   * ON CONFLICT specification"。当时 CI 的 seed 步骤和线上「安装 Skill」双双被打挂。
+   * 这条用例把「代码里的 onConflict 列组合」与「库里真实存在的**无条件**唯一索引」对账。
+   */
+  it('代码里每处 onConflict 都必须有对应的「无条件」唯一索引兜底', async () => {
+    // 维护约定：新增 upsert(onConflict) 时同步登记到这里，键=表名，值=onConflict 列组合
+    const USAGES: { file: string; table: string; cols: string }[] = [
+      { file: 'lib/data/workflow.ts', table: 'workflow_versions', cols: 'workflow_id,version' },
+    ]
+
+    const broken: string[] = []
+    for (const u of USAGES) {
+      const { rows } = await client.query(
+        `select indexdef from pg_indexes
+         where schemaname='public' and tablename=$1 and indexdef ilike '%unique%'`,
+        [u.table],
+      )
+      const cols = u.cols.split(',').map((c) => c.trim())
+      const ok = rows.some((r) => {
+        const def: string = r.indexdef
+        if (/where /i.test(def)) return false // 部分索引 → onConflict 匹配不上
+        return cols.every((c) => new RegExp(`\\b${c}\\b`).test(def))
+      })
+      if (!ok) broken.push(`${u.file} → ${u.table}(${u.cols})`)
+    }
+
+    expect(
+      broken,
+      broken.length
+        ? `以下 upsert 的 onConflict 找不到「无条件」唯一索引，运行时会报 ` +
+          `"no unique or exclusion constraint matching the ON CONFLICT specification"：\n` +
+          broken.map((b) => `  · ${b}`).join('\n') +
+          `\n修法：把该处 upsert 改成显式「先查后写」（参考 lib/data/skills.ts installSkill）。`
+        : '',
+    ).toEqual([])
+  })
+
   it('审计表 audit_logs 不可有软删列（只追加、不可篡改）', async () => {
     const { rows } = await client.query(`
       select 1 from pg_attribute
