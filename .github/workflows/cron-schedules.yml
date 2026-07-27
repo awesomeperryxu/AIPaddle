@@ -1,0 +1,28 @@
+name: Cron · Agent Schedules
+
+# 4.1.26 定时作业执行端触发器（适配自建服务器部署，替代 Vercel Cron）。
+# 项目部署在自建服务器（PM2 + Nginx，域名 aipaddle.net），无 Vercel Cron，故用 GitHub Actions 定时。
+# 端点 /api/cron/agent-schedules 为通用 Bearer 鉴权，任何调度器均可触发；此处每 5 分钟打一次。
+# ⚠️ GitHub Actions 定时最小实用粒度约 5 分钟且可能有延迟；如需「每分钟」精度，改用服务器 crontab
+#    （`* * * * * curl -fsS -X POST https://aipaddle.net/api/cron/agent-schedules -H "Authorization: Bearer $CRON_SECRET"`）。
+# 依赖：GitHub 仓库 Secret `CRON_SECRET`（与服务器 env 的 CRON_SECRET 一致）。
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: cron-agent-schedules
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 触发到期定时作业
+        run: |
+          curl -fsS -X POST "https://aipaddle.net/api/cron/agent-schedules" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 300
