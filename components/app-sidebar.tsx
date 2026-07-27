@@ -24,7 +24,8 @@ import {
   Sun,
   Server,
   LayoutTemplate,
-  Cpu
+  Cpu,
+  Clock,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from 'next-themes';
@@ -73,6 +74,7 @@ const navSections: NavSection[] = [
     items: [
       { title: 'Agent 管理', icon: <Bot className="h-4 w-4" />, href: 'agents-admin', badge: 6 },
       { title: '数字员工', icon: <Bot className="h-4 w-4" />, href: 'agents' },
+      { title: '定时作业', icon: <Clock className="h-4 w-4" />, href: 'agent-schedules' },
     ]
   },
   {

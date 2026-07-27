@@ -28,6 +28,7 @@ import {
   Copy,
   XCircle,
   ChevronDown,
+  Clock,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -382,6 +383,25 @@ export function AgentsAdminView({
                         {transitioningId === agent.id ? '处理中...' : ACTION_LABEL[action]}
                       </DropdownMenuItem>
                     ))}
+                    {actions.includes('approve') && canEdit && (
+                      <DropdownMenuItem
+                        disabled={transitioningId === agent.id}
+                        onSelect={async (e) => {
+                          e.preventDefault();
+                          if (transitioningId) return;
+                          setTransitioningId(agent.id);
+                          try {
+                            await apiFetch(`/api/agents/${agent.id}/transition`, { method: 'POST', body: JSON.stringify({ action: 'approve' }) });
+                            router.push(`/agent-schedules/new?agentId=${agent.id}`);
+                          } catch (err) {
+                            window.alert(err instanceof Error ? err.message : '操作失败');
+                          } finally { setTransitioningId(null); }
+                        }}
+                      >
+                        <Clock className="h-4 w-4 mr-2" />
+                        发布并配置定时执行
+                      </DropdownMenuItem>
+                    )}
                     {canDelete && (actions.length > 0 || canEdit) && <DropdownMenuSeparator />}
                     {canDelete && (
                       <DropdownMenuItem
