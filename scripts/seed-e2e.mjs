@@ -30,10 +30,10 @@ const TENANTS = {
   orgB: { name: 'Acme Corp', code: 'acme-corp', plan: 'standard' },
 }
 const USERS = [
-  { email: 'admin-demo@aipaddle.dev', name: 'Demo 管理员', role: 'Admin', org: 'orgA', platformAdmin: true },
-  { email: 'dev@aipaddle.dev', name: 'Demo 开发者', role: 'Developer', org: 'orgA' },
-  { email: 'user@aipaddle.dev', name: 'Demo 用户', role: 'User', org: 'orgA' },
-  { email: 'auditor@aipaddle.dev', name: 'Demo 审计员', role: 'Auditor', org: 'orgA' },
+  { email: 'admin-demo@aipaddle.net', name: 'Demo 管理员', role: 'Admin', org: 'orgA', platformAdmin: true },
+  { email: 'dev@aipaddle.net', name: 'Demo 开发者', role: 'Developer', org: 'orgA' },
+  { email: 'user@aipaddle.net', name: 'Demo 用户', role: 'User', org: 'orgA' },
+  { email: 'auditor@aipaddle.net', name: 'Demo 审计员', role: 'Auditor', org: 'orgA' },
   { email: 'admin-acme@acme.dev', name: 'Acme 管理员', role: 'Admin', org: 'orgB' },
 ]
 
@@ -80,11 +80,18 @@ async function findAuthUser(email) {
   return null
 }
 
+// 🔴 幂等策略（2026-07-28 修）：**已存在的账号不再覆盖密码**。
+// 事故：seed 每次 CI 都把这批账号的密码强制重设为 SEED_PASSWORD，而 admin-demo
+// 同时是人日常登录的管理账号——修 BUG-85 让 push 到 main 也跑 e2e 后，seed 执行
+// 频率翻倍，本人密码被反复覆盖，直接登不进去。
+// 现在只在**首次创建**时设密码；已存在则仅补齐 metadata 与邮箱确认态。
+// 副作用是若有人改了测试账号密码，e2e 会登录失败——那本就该报错让人知道，
+// 而不是静默覆盖掉别人的密码。
 async function ensureAuthUser(email, orgId, name) {
   const existing = await findAuthUser(email)
   if (existing) {
     await admin.auth.admin.updateUserById(existing.id, {
-      password: PASSWORD, email_confirm: true, user_metadata: { org_id: orgId, name },
+      email_confirm: true, user_metadata: { org_id: orgId, name },
     })
     return existing.id
   }

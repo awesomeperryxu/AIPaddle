@@ -4,7 +4,7 @@
 --   ADR-004：能力封装为 Skill；本脚本让平台可选 Skill 对齐真实 MCP 生态。
 --
 -- 目标组织 org_id       = 22f72480-222b-46ae-b0ea-00603b27581b（生产 demo 组织）
--- 平台发布者 publisher_id = 71c298bb-80ef-47ee-b940-16009e929a16（dev@aipaddle.dev）
+-- 平台发布者 publisher_id = 71c298bb-80ef-47ee-b940-16009e929a16（dev@aipaddle.net）
 --
 -- 两段：
 --   任务 A：软删 15 个虚构可选平台 skill（deleted_at=now()）；

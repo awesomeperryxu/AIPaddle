@@ -119,6 +119,43 @@ export async function updateMemberProfile(
 }
 
 /**
+ * 4.8.19：管理员为本租户成员重置密码。
+ *
+ * 与 4.8.18c 的「自行改密」分工：本人改密需验原密码；管理员重置**不需要**原密码
+ * （本来就是给忘记密码的人用的），因此必须严格限定：
+ *   · 只能重置**本租户在册成员**（跨租户/已移除一律拒绝）；
+ *   · **不能重置自己**——自己改密走 /api/auth/password 验原密码那条路，
+ *     否则会话被盗者可绕开原密码校验直接改掉自己的密码。
+ * 密码只透传给 Auth，不落业务库、不进审计 detail。
+ */
+export async function resetMemberPassword(
+  ctx: RequestContext,
+  userId: string,
+  newPassword: string,
+): Promise<void> {
+  if (userId === ctx.userId) {
+    throw new Error('不能重置自己的密码，请在「设置 → 修改密码」中操作')
+  }
+
+  const supabase = await createClient()
+  const { data: user, error: ue } = await supabase
+    .from('users')
+    .select('id')
+    .eq('id', userId)
+    .eq('org_id', ctx.orgId)
+    .is('deleted_at', null)
+    .single()
+  if (ue || !user) throw new Error('成员不存在或无权限')
+
+  const admin = createAdminClient()
+  const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword })
+  if (error) throw new Error(error.message)
+
+  // 审计只记「谁给谁重置了密码」，绝不记密码本身
+  await writeAudit(ctx, 'member.password_reset', 'user', userId, {})
+}
+
+/**
  * 4.8.12：移除成员（软删 users + 撤销角色 + 封禁登录）。
  * 两条护栏：不能移除自己；不能移除本租户最后一名 Admin（否则组织将无人可管理）。
  */

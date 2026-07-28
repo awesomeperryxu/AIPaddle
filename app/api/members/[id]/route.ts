@@ -5,15 +5,18 @@ import {
   setMemberStatus,
   updateMemberProfile,
   removeMember,
+  resetMemberPassword,
 } from '@/lib/data/members'
+import { checkPassword } from '@/lib/auth/password'
 import type { Member } from '@/lib/mock-data'
 
 const NAME_MAX = 50
 const DEPT_MAX = 50
 
-// 业务护栏拒绝（移除自己 / 最后一名管理员）映射为 409，与状态机非法流转一致
+// 业务护栏拒绝（移除自己 / 最后一名管理员 / 重置自己密码）映射为 409
 function fail(msg: string) {
-  const status = msg.includes('不存在或无权限') ? 404 : msg.includes('不能移除') ? 409 : 500
+  const status = msg.includes('不存在或无权限') ? 404
+    : /不能移除|不能重置自己/.test(msg) ? 409 : 500
   const code = status === 404 ? 'not_found' : status === 409 ? 'conflict' : 'server_error'
   return Response.json({ error: { code, message: msg } }, { status })
 }
@@ -46,6 +49,13 @@ export async function PATCH(
         return Response.json({ error: { code: 'invalid', message: '状态无效' } }, { status: 400 })
       }
       await setMemberStatus(ctx, userId, status)
+    }
+
+    // 4.8.19：管理员重置成员密码（不需原密码，故严格限本租户在册成员且不能是自己）
+    if ('password' in body) {
+      const pwdErr = checkPassword(body.password)
+      if (pwdErr) return Response.json({ error: { code: 'invalid', message: pwdErr } }, { status: 400 })
+      await resetMemberPassword(ctx, userId, body.password as string)
     }
 
     // 4.8.12：资料编辑（姓名 / 部门）
