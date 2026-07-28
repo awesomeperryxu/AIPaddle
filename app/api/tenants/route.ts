@@ -1,3 +1,4 @@
+import { checkPassword } from '@/lib/auth/password'
 import { getRequestContext } from '@/lib/context'
 import { isPlatformAdmin } from '@/lib/auth/platform'
 import { listAllTenants, provisionTenant } from '@/lib/data/tenants'
@@ -19,6 +20,13 @@ export async function POST(request: Request) {
   if (!(await isPlatformAdmin(ctx)))
     return Response.json({ error: { code: 'forbidden', message: '仅平台超管可开通租户' } }, { status: 403 })
   const b = await request.json().catch(() => ({} as Record<string, unknown>))
+
+  // 4.8.18：开通企业时同时创建该企业 Admin 账号，密码由开通人指定。
+  // 密码只透传给 Auth，不落业务库、不进审计、不回前端。
+  const adminPassword = typeof b?.adminPassword === 'string' ? b.adminPassword : ''
+  const pwdErr = checkPassword(adminPassword)
+  if (pwdErr) return Response.json({ error: { code: 'invalid', message: `管理员${pwdErr}` } }, { status: 400 })
+
   try {
     const tenant = await provisionTenant({
       name: String(b?.name ?? ''),
@@ -26,6 +34,7 @@ export async function POST(request: Request) {
       contactName: String(b?.contactName ?? ''),
       contactEmail: String(b?.contactEmail ?? ''),
       tokenQuota: Number(b?.tokenQuota),
+      adminPassword,
     })
     return Response.json({ tenant }, { status: 201 })
   } catch (e) {

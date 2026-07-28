@@ -1,5 +1,6 @@
 import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { findAuthUserByEmail } from '@/lib/data/members'
 
 // 平台级租户数据层（ADR-010）：跨租户操作，用 service_role（ADR-002 唯一沙可）。
 // ⚠️ 每个导出函数都必须由 API 入口的 isPlatformAdmin 兜住；此层不做 RLS 隔离。
@@ -54,6 +55,8 @@ export async function listAllTenants(): Promise<TenantSummary[]> {
 export type ProvisionInput = {
   name: string; code: string; contactName: string; contactEmail: string
   tokenQuota: number
+  /** 4.8.18：开通企业时同时创建该企业 Admin 账号，密码由开通人指定（不再发邀请邮件） */
+  adminPassword: string
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -107,7 +110,7 @@ export async function provisionTenant(
   if (error) throw new Error(friendlyTenantInsertError(error.message, error.code))
   const tenant = map(data as Row)
 
-  // 4.8.3 开户闭环：开通即建首个 Admin（联系邮箱），发 Auth 邀请邮件让其设密登录。
+  // 4.8.3 开户闭环：开通即建首个 Admin（联系邮箱）。4.8.18 起密码由开通人指定，不再发邀请邮件。
   // 平台级跨租户写，全程 service_role（新租户尚无成员，无法用请求级客户端）。
   // 失败则回滚（软删刚建的租户），不残留「无管理员」的租户。
   try {
@@ -115,6 +118,7 @@ export async function provisionTenant(
       orgId: tenant.id,
       name: input.contactName?.trim() || input.contactEmail.trim(),
       email: input.contactEmail.trim(),
+      password: input.adminPassword,
     })
   } catch (e) {
     await admin.from('tenants').update({ deleted_at: new Date().toISOString() }).eq('id', tenant.id)
@@ -124,10 +128,6 @@ export async function provisionTenant(
 }
 
 type AdminClient = ReturnType<typeof createAdminClient>
-
-// 新建 auth 账号与「复用已存在账号」的判定窗口：invite 对已注册但未确认的邮箱会静默返回原账号，
-// 那种账号不属于本次开通，回滚时绝不能删（会误删他人账号）。
-const FRESH_USER_WINDOW_MS = 60_000
 
 /**
  * BUG-81：联系邮箱占用前置校验。
@@ -167,16 +167,33 @@ function friendlyUserInsertError(message: string, code?: string): string {
  */
 export async function createFirstAdmin(
   admin: AdminClient,
-  input: { orgId: string; name: string; email: string },
+  input: { orgId: string; name: string; email: string; password: string },
 ): Promise<string> {
-  const { data: invited, error: invErr } = await admin.auth.admin.inviteUserByEmail(
-    input.email,
-    { data: { org_id: input.orgId, name: input.name } },
-  )
-  if (invErr) throw new Error(invErr.message)
-  const uid = invited.user.id
-  const createdAt = invited.user.created_at ? new Date(invited.user.created_at).getTime() : 0
-  const isFreshAuthUser = Date.now() - createdAt < FRESH_USER_WINDOW_MS
+  // 4.8.18：直接建号并设密码（email_confirm=true，开通即可登录），不再发邀请邮件。
+  // 邮箱若已有 auth 账号（曾被移除等），复用它并重置为本次指定的密码。
+  let uid: string
+  let isFreshAuthUser: boolean
+  const { data: created, error: createErr } = await admin.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { org_id: input.orgId, name: input.name },
+  })
+  if (createErr) {
+    const existing = await findAuthUserByEmail(admin, input.email)
+    if (!existing) throw new Error(createErr.message)
+    uid = existing
+    isFreshAuthUser = false      // 不是本次新建 → 失败补偿时绝不能删这个账号
+    const { error: resetErr } = await admin.auth.admin.updateUserById(existing, {
+      password: input.password,
+      ban_duration: 'none',
+      user_metadata: { org_id: input.orgId, name: input.name },
+    })
+    if (resetErr) throw new Error(resetErr.message)
+  } else {
+    uid = created.user.id
+    isFreshAuthUser = true
+  }
 
   // BUG-86：该邮箱可能留有一行**已软删**的成员（曾被移除）。users.id 是主键且 = auth uid，
   // 而 invite 对已注册邮箱会复用同一 uid，此时 INSERT 必撞 users_pkey——改为复活那一行。

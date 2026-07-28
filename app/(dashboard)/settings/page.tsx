@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiFetch } from '@/lib/api/client'
 import { ModelProvidersView } from '@/components/views/model-providers-view'
+import { ChangePasswordCard } from '@/components/views/change-password-card'
 import { Building2, Users, Bot, BookOpen, Zap, HardDrive, Loader2, Save, Info } from 'lucide-react'
 import type { TenantInfo } from '@/lib/data/tenant'
 
@@ -235,6 +236,10 @@ export default function SettingsPage() {
 
       {/* 模型供应商（ADR-016 4.7.4）——仅 Admin 可见，非 Admin 自动隐藏 */}
       <ModelProvidersView />
+
+      {/* 4.8.18c：修改密码。全角色可见——账号是管理员建的、密码也是管理员定的，
+          人人都该能自己改掉 */}
+      <ChangePasswordCard />
     </div>
   )
 }

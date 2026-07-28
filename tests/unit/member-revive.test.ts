@@ -54,10 +54,12 @@ function fakeAdmin(o: Opts = {}) {
     },
     auth: {
       admin: {
-        async inviteUserByEmail(email: string) {
-          calls.invite = email
-          return { data: { user: { id: 'auth-uid-1', created_at: new Date().toISOString() } }, error: null }
+        // 4.8.18：改为直接建号并设密码
+        async createUser(attrs: Record<string, unknown>) {
+          calls.createUser = attrs
+          return { data: { user: { id: 'auth-uid-1' } }, error: null }
         },
+        async listUsers() { return { data: { users: [] }, error: null } },
         async updateUserById(uid: string, attrs: Record<string, unknown>) {
           ops.push(`auth:${attrs.ban_duration}`)
           calls.lastBan = attrs.ban_duration

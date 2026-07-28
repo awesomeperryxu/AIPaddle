@@ -117,6 +117,7 @@ export function TenantsView({
   const [pContact, setPContact] = useState('');
   const [pEmail, setPEmail] = useState('');
   const [pQuota, setPQuota] = useState('1000000');
+  const [pAdminPwd, setPAdminPwd] = useState('');   // 4.8.18：开通即建 Admin，密码由开通人指定
   const [pErr, setPErr] = useState<string | null>(null);
 
   // 真实用量聚合（客户端拉取，ADR-008 只经 apiFetch）
@@ -275,10 +276,11 @@ export function TenantsView({
         body: JSON.stringify({
           name: pName.trim(), code: pCode.trim(), contactName: pContact.trim(),
           contactEmail: pEmail.trim(), tokenQuota: Number(pQuota),
+          adminPassword: pAdminPwd,
         }),
       });
       setProvOpen(false);
-      setPName(''); setPCode(''); setPContact(''); setPEmail(''); setPQuota('1000000');
+      setPName(''); setPCode(''); setPContact(''); setPEmail(''); setPQuota('1000000'); setPAdminPwd('');
       router.refresh();
     } catch (e) {
       setPErr(e instanceof Error ? e.message : '开通失败');
@@ -578,6 +580,15 @@ export function TenantsView({
             <div className="space-y-1.5">
               <Label htmlFor="t-quota">Token 配额</Label>
               <Input id="t-quota" type="number" value={pQuota} onChange={e => setPQuota(e.target.value)} placeholder="1000000" />
+            </div>
+            {/* 4.8.18：开通企业时同时创建该企业 Admin 账号（联系邮箱即登录账号） */}
+            <div className="space-y-1.5">
+              <Label htmlFor="t-adminpwd">管理员初始密码</Label>
+              <Input id="t-adminpwd" type="password" value={pAdminPwd} onChange={e => setPAdminPwd(e.target.value)}
+                     placeholder="至少 8 位，含字母/数字/符号中至少两类" />
+              <p className="text-xs text-muted-foreground">
+                将以「联系邮箱」为账号创建该企业的 Admin，开通后即可登录；请把密码转告对方。
+              </p>
             </div>
             {pErr && <p className="text-xs text-destructive">{pErr}</p>}
           </div>

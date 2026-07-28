@@ -1,6 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { listMembers, inviteMember } from '@/lib/data/members'
+import { checkPassword } from '@/lib/auth/password'
 import type { Member } from '@/lib/mock-data'
 
 export async function GET() {
@@ -30,12 +31,18 @@ export async function POST(request: Request) {
   if (!role || !validRoles.includes(role)) {
     return Response.json({ error: { code: 'invalid', message: '角色无效' } }, { status: 400 })
   }
+  // 4.8.18：创建人指定初始密码（不再发邀请邮件）。密码只往下透传给 Auth，
+  // 不落业务库、不进审计、不回前端。
+  const password = typeof body?.password === 'string' ? body.password : ''
+  const pwdErr = checkPassword(password)
+  if (pwdErr) return Response.json({ error: { code: 'invalid', message: pwdErr } }, { status: 400 })
 
   try {
-    const member = await inviteMember(ctx, { email, name, role, department })
+    const member = await inviteMember(ctx, { email, name, role, department, password })
     return Response.json({ member }, { status: 201 })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : '邀请失败'
-    return Response.json({ error: { code: 'invite_error', message: msg } }, { status: 500 })
+    const msg = e instanceof Error ? e.message : '创建成员失败'
+    const status = /已.*成员|已被占用|已有账号/.test(msg) ? 409 : 500
+    return Response.json({ error: { code: status === 409 ? 'conflict' : 'server_error', message: msg } }, { status })
   }
 }

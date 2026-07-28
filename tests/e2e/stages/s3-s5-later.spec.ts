@@ -107,27 +107,47 @@ test.describe('S4 Workflow 保存与执行 @stage4', () => {
   });
 });
 
+// 4.8.18：创建账号需指定初始密码。用例统一用这个值——须满足服务端策略
+// （≥8 位、至少两类字符、非弱口令黑名单），否则会被 400 拦下。
+const E2E_INIT_PASSWORD = 'E2eInit#2026';
+
 test.describe('S5 成员与租户闭环 @stage5', () => {
   stageGate(5);
 
   for (const invite of MEMBER_INVITES) {
-    // 4.5.1 成员邀请已落地：添加成员对话框（邮箱/姓名/角色/部门→发送邀请，POST /api/members）
-    // + 后端 inviteMember 幂等（重复邮箱返回「已邀请或已是成员」）
-    test(`S5-01 邀请成员：${invite.name}（${invite.role}）`, async ({ page }) => {
+    // 4.8.18 起：不再发邀请邮件，改为**创建人指定初始密码**，创建即可登录。
+    // 对话框字段：邮箱/姓名/角色/部门/初始密码 → 「创建成员」，POST /api/members
+    // + 后端幂等（重复邮箱返回「已邀请或已是成员」）
+    test(`S5-01 创建成员：${invite.name}（${invite.role}）`, async ({ page }) => {
       await login(page, 'adminA');
       await page.goto('/members');
       await page.getByRole('button', { name: /添加成员/ }).click();
       await page.getByLabel(/邮箱/).fill(invite.email);
-      await page.getByLabel(/姓名/).fill(invite.name);
+      await page.getByLabel(/^姓名$/).fill(invite.name);
       await page.getByLabel(/角色/).selectOption(invite.role);
-      await page.getByLabel(/部门/).fill(invite.department);
-      await page.getByRole('button', { name: /发送邀请/ }).click();
+      await page.getByLabel(/^部门$/).fill(invite.department);
+      await page.getByLabel(/初始密码/).fill(E2E_INIT_PASSWORD);
+      await page.getByRole('button', { name: /创建成员/ }).click();
       await expect(page.getByRole('row', { name: new RegExp(invite.email) })).toBeVisible();
-      // 重复邀请幂等
+      // 重复创建幂等
       await page.getByRole('button', { name: /添加成员/ }).click();
       await page.getByLabel(/邮箱/).fill(invite.email);
-      await page.getByRole('button', { name: /发送邀请/ }).click();
-      await expect(page.getByText(/已邀请|已存在/)).toBeVisible();
+      await page.getByLabel(/^姓名$/).fill(invite.name);
+      await page.getByLabel(/初始密码/).fill(E2E_INIT_PASSWORD);
+      await page.getByRole('button', { name: /创建成员/ }).click();
+      await expect(page.getByText(/已邀请|已存在|已是成员/)).toBeVisible();
+    });
+
+    // 4.8.18：密码强度由服务端强制——前端校验可绕过，这条守住弱口令不进生产
+    test(`S5-01b 弱口令被拒：${invite.role}`, async ({ page }) => {
+      await login(page, 'adminA');
+      await page.goto('/members');
+      await page.getByRole('button', { name: /添加成员/ }).click();
+      await page.getByLabel(/邮箱/).fill(`weak.${invite.role.toLowerCase()}@aipaddle-test.local`);
+      await page.getByLabel(/^姓名$/).fill('弱口令测试');
+      await page.getByLabel(/初始密码/).fill('12345678');
+      await page.getByRole('button', { name: /创建成员/ }).click();
+      await expect(page.getByText(/至少两类|过于常见/)).toBeVisible();
     });
   }
 
@@ -175,6 +195,8 @@ test.describe('S5 成员与租户闭环 @stage5', () => {
     await page.getByLabel(/邮箱/).fill(over.email ?? d.contact.email);
     // ADR-017：取消套餐分级——开通表单不再有套餐选择器。
     await page.getByLabel(/Token 配额/).fill(over.tokenQuota ?? String(d.plan.tokenQuota));
+    // 4.8.18：开通企业时同时创建该企业 Admin 账号，密码由开通人指定
+    await page.getByLabel(/管理员初始密码/).fill(over.adminPassword ?? E2E_INIT_PASSWORD);
   }
 
   test('S5-04 租户开通四区块表单（PRD 2.9.8）', async ({ page }) => {
