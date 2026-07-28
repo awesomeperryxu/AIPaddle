@@ -4,9 +4,9 @@
  *
  * 创建内容：
  *   租户：AIPaddle Demo（code: aipaddle-demo）、Acme Corp（code: acme-corp）
- *   账号：admin-demo@aipaddle.dev（Admin）、admin-acme@acme.dev（Admin）
- *         dev@aipaddle.dev（Developer）、user@aipaddle.dev（User）
- *         auditor@aipaddle.dev（Auditor）
+ *   账号：admin-demo@aipaddle.net（Admin）、admin-acme@acme.dev（Admin）
+ *         dev@aipaddle.net（Developer）、user@aipaddle.net（User）
+ *         auditor@aipaddle.net（Auditor）
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -127,10 +127,10 @@ async function main() {
   const tenantAcme = await ensureTenant('Acme Corp', 'acme-corp', 'standard')
 
   console.log('\n【账号】')
-  const adminDemoId = await ensureAccount('admin-demo@aipaddle.dev', 'Admin', tenantDemo.id, 'Demo 管理员')
-  await ensureAccount('dev@aipaddle.dev', 'Developer', tenantDemo.id, 'Demo 开发者')
-  await ensureAccount('user@aipaddle.dev', 'User', tenantDemo.id, 'Demo 用户')
-  await ensureAccount('auditor@aipaddle.dev', 'Auditor', tenantDemo.id, 'Demo 审计员')
+  const adminDemoId = await ensureAccount('admin-demo@aipaddle.net', 'Admin', tenantDemo.id, 'Demo 管理员')
+  await ensureAccount('dev@aipaddle.net', 'Developer', tenantDemo.id, 'Demo 开发者')
+  await ensureAccount('user@aipaddle.net', 'User', tenantDemo.id, 'Demo 用户')
+  await ensureAccount('auditor@aipaddle.net', 'Auditor', tenantDemo.id, 'Demo 审计员')
   const adminAcmeId = await ensureAccount('admin-acme@acme.dev', 'Admin', tenantAcme.id, 'Acme 管理员')
 
   console.log('\n【Agent（每租户 1 个，供隔离/API 用例）】')

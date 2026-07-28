@@ -13,18 +13,22 @@ vi.mock('@/lib/data/members', () => ({
   setMemberStatus: vi.fn(),
   updateMemberProfile: vi.fn(),
   removeMember: vi.fn(),
+  resetMemberPassword: vi.fn(),
 }))
 
 import { getRequestContext } from '@/lib/context'
 import { GET, POST } from '@/app/api/members/route'
 import { PATCH, DELETE } from '@/app/api/members/[id]/route'
-import { listMembers, setMemberStatus, updateMemberProfile, removeMember } from '@/lib/data/members'
+import {
+  listMembers, setMemberStatus, updateMemberProfile, removeMember, resetMemberPassword,
+} from '@/lib/data/members'
 
 const mockCtx = vi.mocked(getRequestContext)
 const mockList = vi.mocked(listMembers)
 const mockSetStatus = vi.mocked(setMemberStatus)
 const mockProfile = vi.mocked(updateMemberProfile)
 const mockRemove = vi.mocked(removeMember)
+const mockReset = vi.mocked(resetMemberPassword)
 
 const adminCtx: RequestContext = { userId: 'u1', orgId: 'org1', roles: ['Admin'] }
 const devCtx: RequestContext   = { userId: 'u2', orgId: 'org1', roles: ['Developer'] }
@@ -274,5 +278,65 @@ describe('DELETE /api/members/[id]（4.8.12）', () => {
     mockCtx.mockResolvedValueOnce(adminCtx)
     mockRemove.mockRejectedValueOnce(new Error('成员不存在或无权限'))
     expect((await del('other-org-user')).status).toBe(404)
+  })
+})
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 4.8.19 管理员重置成员密码
+describe('PATCH /api/members/[id] · 管理员重置密码（4.8.19）', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  const makeParams = (id: string) => ({ params: Promise.resolve({ id }) })
+  const patch = (body: unknown, id = 'u2') => PATCH(
+    new Request(`http://localhost/api/members/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    makeParams(id),
+  )
+
+  it('非 Admin → 403，且不触数据层', async () => {
+    mockCtx.mockResolvedValueOnce(devCtx)
+    expect((await patch({ password: 'Xk9#mQ2vLp' })).status).toBe(403)
+    expect(mockReset).not.toHaveBeenCalled()
+  })
+
+  it('弱口令 → 400（与创建走同一强度策略，不因是重置就放宽）', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    const res = await patch({ password: 'admin123' })
+    expect(res.status).toBe(400)
+    expect(mockReset).not.toHaveBeenCalled()
+  })
+
+  it('纯数字 → 400', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    expect((await patch({ password: '12345678' })).status).toBe(400)
+  })
+
+  it('合格密码 → 200 且透传数据层', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockReset.mockResolvedValueOnce(undefined)
+    const res = await patch({ password: 'Xk9#mQ2vLp' })
+    expect(res.status).toBe(200)
+    expect(mockReset).toHaveBeenCalledWith(adminCtx, 'u2', 'Xk9#mQ2vLp')
+  })
+
+  it('🔴 响应体绝不含密码', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockReset.mockResolvedValueOnce(undefined)
+    const res = await patch({ password: 'Xk9#mQ2vLp' })
+    expect(JSON.stringify(await res.json())).not.toContain('Xk9#mQ2vLp')
+  })
+
+  it('🔴 重置自己 → 409（自己改密必须走验原密码那条路）', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockReset.mockRejectedValueOnce(new Error('不能重置自己的密码，请在「设置 → 修改密码」中操作'))
+    const res = await patch({ password: 'Xk9#mQ2vLp' }, 'u1')
+    expect(res.status).toBe(409)
+    expect((await res.json()).error.code).toBe('conflict')
+  })
+
+  it('跨租户成员 → 404', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockReset.mockRejectedValueOnce(new Error('成员不存在或无权限'))
+    expect((await patch({ password: 'Xk9#mQ2vLp' }, 'other-org')).status).toBe(404)
   })
 })

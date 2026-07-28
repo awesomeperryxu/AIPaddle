@@ -23,10 +23,10 @@ if (NEW_PASSWORD.length < 12) {
 }
 
 const EMAILS = [
-  'admin-demo@aipaddle.dev',
-  'dev@aipaddle.dev',
-  'user@aipaddle.dev',
-  'auditor@aipaddle.dev',
+  'admin-demo@aipaddle.net',
+  'dev@aipaddle.net',
+  'user@aipaddle.net',
+  'auditor@aipaddle.net',
   'admin-acme@acme.dev',
 ]
 

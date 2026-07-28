@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/table';
 import {
   Plus, Search, Upload, Settings, MoreHorizontal,
-  Users, Shield, Zap, UserCheck, Loader2, Trash2,
+  Users, Shield, Zap, UserCheck, Loader2, Trash2, KeyRound,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -70,6 +70,12 @@ export function MembersView() {
   const [edRole, setEdRole] = useState<Member['role']>('User');
   const [edBusy, setEdBusy] = useState(false);
   const [edError, setEdError] = useState<string | null>(null);
+  // 重置密码（4.8.19）
+  const [resetting, setResetting] = useState<Member | null>(null);
+  const [rsPwd, setRsPwd] = useState('');
+  const [rsBusy, setRsBusy] = useState(false);
+  const [rsErr, setRsErr] = useState<string | null>(null);
+  const [rsOk, setRsOk] = useState(false);
   // 移除成员（4.8.12）
   const [removing, setRemoving] = useState<Member | null>(null);
   const [rmBusy, setRmBusy] = useState(false);
@@ -124,6 +130,20 @@ export function MembersView() {
     } catch (e) {
       setEdError(e instanceof Error ? e.message : '保存失败');
     } finally { setEdBusy(false); }
+  }
+
+  async function handleResetPassword() {
+    if (!resetting || rsBusy) return;
+    setRsBusy(true); setRsErr(null);
+    try {
+      await apiFetch(`/api/members/${resetting.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ password: rsPwd }),
+      });
+      setRsOk(true);
+    } catch (e) {
+      setRsErr(e instanceof Error ? e.message : '重置失败');
+    } finally { setRsBusy(false); }
   }
 
   async function handleRemove() {
@@ -349,6 +369,13 @@ export function MembersView() {
                               启用账号
                             </DropdownMenuItem>
                           )}
+                          {/* 4.8.19：成员忘记密码时由管理员重置（自己改密走设置页，需验原密码）*/}
+                          <DropdownMenuItem onClick={() => {
+                            setRsErr(null); setRsOk(false); setRsPwd(''); setResetting(member);
+                          }}>
+                            <KeyRound className="h-4 w-4 mr-2" />
+                            重置密码
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-destructive"
@@ -448,6 +475,46 @@ export function MembersView() {
             <Button onClick={handleSaveEdit} disabled={edBusy}>
               {edBusy ? '保存中…' : '保存'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 重置密码（4.8.19）：管理员为忘记密码的成员设新密码 */}
+      <Dialog open={resetting !== null} onOpenChange={(o) => { if (!o) setResetting(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>重置 {resetting?.name} 的密码</DialogTitle>
+          </DialogHeader>
+          {rsOk ? (
+            <div className="space-y-2">
+              <p className="text-sm text-green-500">密码已重置</p>
+              <p className="text-xs text-muted-foreground">
+                请把新密码转告 {resetting?.name}（{resetting?.email}）。
+                对方登录后可在「设置 → 修改密码」自行更改。
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rs-pwd">新密码</Label>
+                <Input id="rs-pwd" type="password" value={rsPwd} onChange={e => setRsPwd(e.target.value)}
+                       placeholder="至少 8 位，含字母/数字/符号中至少两类" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                重置后原密码立即失效。该操作会记入审计日志（不含密码内容）。
+              </p>
+              {rsErr && <p className="text-xs text-destructive">{rsErr}</p>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetting(null)} disabled={rsBusy}>
+              {rsOk ? '关闭' : '取消'}
+            </Button>
+            {!rsOk && (
+              <Button onClick={handleResetPassword} disabled={rsBusy}>
+                {rsBusy ? '重置中…' : '确认重置'}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

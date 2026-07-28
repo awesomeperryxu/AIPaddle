@@ -17,16 +17,16 @@ export const TENANTS = {
 // ─── 账号与角色（与 seed 一致；PRD 2.8：Admin/Developer/User/Auditor）────────
 const SEED_PASSWORD = process.env.SEED_PASSWORD ?? '';
 export const USERS = {
-  adminA:   { email: 'admin-demo@aipaddle.dev', password: SEED_PASSWORD, name: 'Demo 管理员', role: 'Admin',     org: 'orgA' },
-  devA:     { email: 'dev@aipaddle.dev',        password: SEED_PASSWORD, name: 'Demo 开发者', role: 'Developer', org: 'orgA' },
-  userA:    { email: 'user@aipaddle.dev',       password: SEED_PASSWORD, name: 'Demo 用户',   role: 'User',      org: 'orgA' },
-  auditorA: { email: 'auditor@aipaddle.dev',    password: SEED_PASSWORD, name: 'Demo 审计员', role: 'Auditor',   org: 'orgA' },
+  adminA:   { email: 'admin-demo@aipaddle.net', password: SEED_PASSWORD, name: 'Demo 管理员', role: 'Admin',     org: 'orgA' },
+  devA:     { email: 'dev@aipaddle.net',        password: SEED_PASSWORD, name: 'Demo 开发者', role: 'Developer', org: 'orgA' },
+  userA:    { email: 'user@aipaddle.net',       password: SEED_PASSWORD, name: 'Demo 用户',   role: 'User',      org: 'orgA' },
+  auditorA: { email: 'auditor@aipaddle.net',    password: SEED_PASSWORD, name: 'Demo 审计员', role: 'Auditor',   org: 'orgA' },
   adminB:   { email: 'admin-acme@acme.dev',     password: SEED_PASSWORD, name: 'Acme 管理员', role: 'Admin',     org: 'orgB' },
 } as const;
 
 export const BAD_CREDENTIALS = [
-  { email: 'admin-demo@aipaddle.dev', password: 'wrong-password', expect: '密码错误' },
-  { email: 'nobody@aipaddle.dev',     password: SEED_PASSWORD,    expect: '账号不存在或密码错误' },
+  { email: 'admin-demo@aipaddle.net', password: 'wrong-password', expect: '密码错误' },
+  { email: 'nobody@aipaddle.net',     password: SEED_PASSWORD,    expect: '账号不存在或密码错误' },
   { email: 'not-an-email',            password: 'x',              expect: '邮箱格式' },
 ] as const;
 
