@@ -133,15 +133,30 @@ test.describe('S0-PRM 权限校验 @stage0', () => {
 test.describe('S0-DAL 数据层与持久化 @stage0', () => {
   stageGate(0);
 
+  // 交互已随 4.1.13a 变更：点「创建 Agent」不再弹名称对话框，而是直接以
+  // 「未命名 Agent」建草稿并跳转编排页，名称在顶栏输入框改、自动保存。
+  // 本用例此前停留在旧交互上——因为 stages 从未在 CI 跑过，脱节一直没被发现。
   test('S0-DAL-02 操作后刷新数据仍在 @smoke', async ({ page }) => {
     await login(page, 'devA');
     const marker = `持久化验证-${Date.now()}`;
+
     await page.goto('/agents-admin');
+    // 「创建 Agent」是下拉菜单（AI 帮我建 / 创建空白 / 从模板 / 导入 DSL），
+    // 走「创建空白」这条最短路径验证持久化
     await page.getByRole('button', { name: /创建 Agent/ }).click();
-    await page.getByLabel(/名称/).fill(marker);
-    await page.getByLabel(/部门/).fill('研发部');
-    await page.getByRole('button', { name: /保存|创建/ }).click();
+    await page.getByRole('menuitem', { name: /创建空白 Agent/ }).click();
+
+    // 跳到编排页后在顶栏改名
+    await expect(page).toHaveURL(/\/agents-admin\/[0-9a-f-]{36}/, { timeout: 15_000 });
+    const nameInput = page.getByTestId('agent-name-input');
+    await nameInput.fill(marker);
+    // 自动保存是 800ms debounce，不是 blur 触发——等界面上的「已自动保存」再走，
+    // 比 waitForTimeout 猜时间可靠（后者一旦 debounce 调参就会 flaky）
+    await expect(page.getByText('已自动保存')).toBeVisible({ timeout: 15_000 });
+
+    // 关键断言：回列表页刷新后数据仍在（验证真落库，而非仅前端状态）
+    await page.goto('/agents-admin');
     await page.reload();
-    await expect(page.getByText(marker)).toBeVisible();
+    await expect(page.getByText(marker)).toBeVisible({ timeout: 15_000 });
   });
 });

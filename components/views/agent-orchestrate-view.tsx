@@ -358,10 +358,14 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="min-w-0">
+            {/* 顶栏改名（4.1.13a）。加 aria-label + testid：此前无任何可访问名，
+                e2e 定位不到，S0-DAL-02 因此一直挂着（见 tests/e2e/README 选择器约定）*/}
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               disabled={!canEdit}
+              aria-label="Agent 名称"
+              data-testid="agent-name-input"
               className="bg-transparent text-sm font-medium text-foreground outline-none disabled:opacity-70"
             />
             <div className="flex items-center gap-2">
