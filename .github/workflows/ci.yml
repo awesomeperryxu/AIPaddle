@@ -109,6 +109,20 @@ jobs:
       - name: Authed integration smoke
         if: env.SEED_PASSWORD != ''
         run: pnpm exec playwright test authed-smoke.spec.ts
+
+      # 4.9.2：分阶段放开 stages 用例。E2E_STAGE=0 先启用切片 0——
+      # 认证/租户隔离/权限校验是安全底线，价值最高；S1+ 待逐步提高该值。
+      # 这些用例会真写库（注册账号、建 Agent），故下一步无条件清理残留。
+      - name: Stage E2E (切片 0：认证 / 隔离 / 权限)
+        if: env.SEED_PASSWORD != ''
+        env:
+          E2E_STAGE: '0'
+        run: pnpm exec playwright test stages/s0-foundation.spec.ts
+
+      # 无条件执行（always）：上一步失败时残留更需要清，否则下次跑会受污染数据干扰
+      - name: 清理 e2e 残留数据
+        if: always() && env.SEED_PASSWORD != ''
+        run: node scripts/cleanup-e2e.mjs
       - name: Skip note
         if: env.SEED_PASSWORD == ''
         run: echo "⏭️ 未配 SEED_PASSWORD/Supabase secrets，跳过 e2e 冒烟（配置后自动生效）"
