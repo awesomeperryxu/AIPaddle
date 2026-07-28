@@ -29,7 +29,11 @@ beforeEach(() => {
 describe('resolveModelClient（4.8.5）', () => {
   it('租户配了 OpenAI 兼容 → 用租户(解密Key + 去尾斜杠 + 槽模型)', async () => {
     const c = await resolveModelClient(ctx, 'llm')
-    expect(c).toEqual({ baseURL: 'https://dashscope/v1', apiKey: 'tenant-key', model: 'qwen-max', source: 'tenant' })
+    // 4.8.17a：ResolvedClient 增加 provider，用于 call_logs 记录成本归属
+    expect(c).toEqual({
+      baseURL: 'https://dashscope/v1', apiKey: 'tenant-key', model: 'qwen-max',
+      source: 'tenant', provider: 'openai-compat',
+    })
   })
 
   it('未配该能力槽 → 回退平台', async () => {

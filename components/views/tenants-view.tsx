@@ -69,7 +69,20 @@ type PlatformTenant = {
 };
 
 // 每租户真实用量（来自 /api/platform/tenant-usage 聚合，ADR-008 只经 apiFetch）
-type TenantUsage = { members: number; agents: number; tokens30d: number; estCost30d: number };
+type TenantUsage = {
+  members: number; agents: number; tokens30d: number; estCost30d: number;
+  // 4.8.17a/b：按 Key 来源拆分。estCost30d 只含平台侧（BYO 平台零成本）
+  platformTokens30d: number; byoTokens30d: number; unknownTokens30d: number;
+  keyMode: 'byo' | 'platform' | 'mixed' | 'none';
+};
+
+// 4.8.17b：Key 来源徽标
+const keyModeConfig: Record<TenantUsage['keyMode'], { label: string; className: string; hint: string }> = {
+  byo:      { label: '自配 Key',  className: 'bg-blue-500/10 text-blue-500',   hint: '租户使用自己的 LLM API Key，平台无 Token 成本' },
+  platform: { label: '平台 Key',  className: 'bg-primary/10 text-primary',     hint: '使用平台 Key 调用，Token 成本由平台承担' },
+  mixed:    { label: '混用',      className: 'bg-yellow-500/10 text-yellow-500', hint: '已配自有 Key，但仍有部分调用回退到平台 Key（如非 OpenAI 兼容供应商）' },
+  none:     { label: '未调用',    className: 'bg-muted text-muted-foreground', hint: '近 30 天无调用记录' },
+};
 
 // 4.8.15a：租户详情（GET /api/tenants/[id]，含用量统计）
 type TenantDetail = PlatformTenant & {
@@ -326,6 +339,7 @@ export function TenantsView({
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead className="text-muted-foreground">企业</TableHead>
                 <TableHead className="text-muted-foreground">状态</TableHead>
+                <TableHead className="text-muted-foreground">Key 来源</TableHead>
                 <TableHead className="text-muted-foreground">成员数</TableHead>
                 <TableHead className="text-muted-foreground">Agent 数</TableHead>
                 <TableHead className="text-muted-foreground">Token 用量</TableHead>
@@ -351,6 +365,14 @@ export function TenantsView({
                     <Badge className={statusConfig[tenant.status].className}>
                       {statusConfig[tenant.status].label}
                     </Badge>
+                  </TableCell>
+                  {/* 4.8.17b：该租户用的是自己的 LLM Key 还是平台的 */}
+                  <TableCell>
+                    {(() => {
+                      const m = usage[tenant.id]?.keyMode ?? 'none';
+                      const c = keyModeConfig[m];
+                      return <Badge className={c.className} title={c.hint}>{c.label}</Badge>;
+                    })()}
                   </TableCell>
                   <TableCell className="text-foreground">{tenant.members.toLocaleString()}</TableCell>
                   <TableCell className="text-foreground">{tenant.agents}</TableCell>
@@ -416,8 +438,11 @@ export function TenantsView({
       {/* Revenue Chart（真实：近 6 个月估算收入，按 Token 用量推算） */}
       <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-foreground">收入趋势（估算）</CardTitle>
-          <CardDescription>过去 6 个月估算收入，按 Token 用量推算，非真实账单</CardDescription>
+          <CardTitle className="text-foreground">平台 Token 成本趋势（估算）</CardTitle>
+          <CardDescription>
+            过去 6 个月**平台侧**成本，按 Token 用量 × 固定单价推算，非真实账单；
+            租户自配 Key（BYO）的调用平台零成本，已排除在外
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {revenueTrend.length === 0 ? (
@@ -519,6 +544,41 @@ export function TenantsView({
                   </div>
                 ))}
               </div>
+
+              {/* 4.8.17b：Key 来源与成本归属 */}
+              {(() => {
+                const u = usage[detail.id];
+                const mode = u?.keyMode ?? 'none';
+                const c = keyModeConfig[mode];
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-medium text-foreground">LLM Key 来源</h4>
+                      <Badge className={c.className}>{c.label}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{c.hint}</p>
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <div className="p-2 rounded-md bg-muted/30 border border-border">
+                        <p className="text-[11px] text-muted-foreground">平台 Key Token</p>
+                        <p className="text-sm font-medium text-foreground">{(u?.platformTokens30d ?? 0).toLocaleString()}</p>
+                      </div>
+                      <div className="p-2 rounded-md bg-muted/30 border border-border">
+                        <p className="text-[11px] text-muted-foreground">自配 Key Token</p>
+                        <p className="text-sm font-medium text-foreground">{(u?.byoTokens30d ?? 0).toLocaleString()}</p>
+                      </div>
+                      <div className="p-2 rounded-md bg-muted/30 border border-border">
+                        <p className="text-[11px] text-muted-foreground">来源未知</p>
+                        <p className="text-sm font-medium text-foreground">{(u?.unknownTokens30d ?? 0).toLocaleString()}</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      平台侧 30 天估算成本 <span className="text-foreground font-medium">¥{(u?.estCost30d ?? 0).toFixed(2)}</span>
+                      ；仅按平台 Key 的 Token 计算，自配 Key 平台零成本。
+                      「来源未知」为 2026-07-28 记录来源之前的历史调用，不计入成本。
+                    </p>
+                  </div>
+                );
+              })()}
 
               <div className="space-y-3">
                 <h4 className="text-sm font-medium text-foreground">基本信息</h4>

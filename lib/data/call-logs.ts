@@ -25,6 +25,10 @@ export async function recordCall(
     latencyMs?: number
     success: boolean
     errorCode?: string
+    /** 4.8.17a：这次调用用的是谁的 Key。取自 resolveModelClient() 的 source，
+     *  不传=来源未知（不计入平台成本，避免把 BYO 调用算成平台花的钱）。 */
+    keySource?: 'tenant' | 'platform'
+    provider?: string
   },
 ): Promise<void> {
   try {
@@ -39,6 +43,8 @@ export async function recordCall(
       latency_ms: input.latencyMs ?? null,
       success: input.success,
       error_code: input.errorCode ?? null,
+      key_source: input.keySource ?? null,
+      provider: input.provider ?? null,
     })
     if (error) console.error('[call_logs] 写入失败:', error.message)
   } catch (e) {
