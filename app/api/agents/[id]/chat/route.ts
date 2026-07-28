@@ -78,7 +78,7 @@ export async function POST(req: Request, { params }: Ctx) {
   if (agent.moderationEnabled) {
     const mod = moderateText(lastUser)
     if (mod.flagged) {
-      await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, success: false, errorCode: 'moderation_blocked' })
+      await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: false, errorCode: 'moderation_blocked' })
       return Response.json({ reply: '抱歉，你的请求涉及不合规内容，我无法协助。', agent: { id: agent.id, name: agent.name, moderated: true } })
     }
   }
@@ -90,7 +90,7 @@ export async function POST(req: Request, { params }: Ctx) {
       return Response.json({ reply: '⚠️ 该 Agent 绑定的工作流不存在或已删除，请到编排页重新配置。', agent: { id: agent.id, name: agent.name } })
     }
     const result = await executeGraph(wf.graph, lastUser, { ctx })
-    await recordCall(ctx, { agentId: agent.id, model: `workflow:${wf.name}`, latencyMs: Date.now() - startedAt, success: result.status === 'succeeded', errorCode: result.status === 'succeeded' ? undefined : 'workflow_failed' })
+    await recordCall(ctx, { agentId: agent.id, model: `workflow:${wf.name}`, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: result.status === 'succeeded', errorCode: result.status === 'succeeded' ? undefined : 'workflow_failed' })
     const reply = result.status === 'succeeded' ? (result.output || '（工作流未产生输出）') : `⚠️ 工作流执行失败：${result.traces.find((t) => t.status === 'failed')?.error ?? '未知错误'}`
     return Response.json({ reply, agent: { id: agent.id, name: agent.name, brain: 'workflow' } })
   }
@@ -105,7 +105,7 @@ export async function POST(req: Request, { params }: Ctx) {
       }
       const allowedTools = Array.isArray(skill.config.allowed_tools) ? skill.config.allowed_tools.map(String) : []
       const check = evaluateSkillCall({ type: skill.type, allowedTools, requestedTool: skill.type === 'MCP' ? allowedTools[0] : undefined, serverStatus: skill.type === 'MCP' ? 'approved' : undefined })
-      await recordCall(ctx, { agentId: agent.id, model: `skill:${skill.name}`, latencyMs: Date.now() - startedAt, success: check.ok, errorCode: check.ok ? undefined : 'skill_denied' })
+      await recordCall(ctx, { agentId: agent.id, model: `skill:${skill.name}`, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: check.ok, errorCode: check.ok ? undefined : 'skill_denied' })
       const reply = check.ok
         ? `已按事项「${hit.keyword}」路由到 Skill「${skill.name}」（${skill.type}）。\n输入：${lastUser}\n结果（模拟试跑）：执行成功，返回处理结果占位。`
         : `Skill「${skill.name}」调用被拒：${check.message}`
@@ -195,11 +195,11 @@ export async function POST(req: Request, { params }: Ctx) {
           handler,
           { model: agent.model, temperature: agent.temperature, maxIterations: 5, client: llmClient },
         )
-        await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, success: true })
+        await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: true })
         return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model, brain: 'mcp_direct' } })
       } catch (e) {
         console.error('[chat] MCP Function Calling 失败:', e)
-        await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, success: false, errorCode: 'mcp_error' })
+        await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: false, errorCode: 'mcp_error' })
         return Response.json({ error: { code: 'mcp_error', message: 'MCP 工具调用失败，请稍后重试' } }, { status: 502 })
       }
     }
@@ -211,11 +211,11 @@ export async function POST(req: Request, { params }: Ctx) {
       [{ role: 'system', content: systemPrompt }, ...history],
       { model: agent.model, temperature: agent.temperature, client: llmClient },
     )
-    await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, success: true })
+    await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: true })
     return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model } })
   } catch (e) {
     console.error('[chat] LLM 调用失败:', e)
-    await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, success: false, errorCode: 'llm_error' })
+    await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: false, errorCode: 'llm_error' })
     return Response.json({ error: { code: 'llm_error', message: '大模型调用失败，请稍后重试' } }, { status: 502 })
   }
 }

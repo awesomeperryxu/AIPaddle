@@ -8,7 +8,12 @@ import { envModelClient, type ModelClient } from '@/lib/ai'
 // 未配 / 解析异常 / 非 OpenAI 兼容供应商 → 回退平台 env（现状不破，平滑迁移，不停服）。
 // 首版只接 LLM 对话路径（分批改造，ADR-016 决策③）；embedding/rerank 后置。
 
-export type ResolvedClient = ModelClient & { source: 'tenant' | 'platform' }
+// source=这次调用用的是谁的 Key：tenant=租户自配（BYO，平台零成本）/ platform=平台 env。
+// provider=具体供应商标识，落 call_logs 便于按供应商分摊成本（4.8.17a）。
+export type ResolvedClient = ModelClient & {
+  source: 'tenant' | 'platform'
+  provider: string
+}
 
 // 仅 OpenAI 兼容类可走现有 /chat/completions 路径；原生适配（anthropic/bedrock/gemini）属 4.7.5，回退平台。
 const OPENAI_COMPAT = new Set(['openai-compat', 'openai', 'custom'])
@@ -27,12 +32,12 @@ export async function resolveModelClient(
           ? cred.baseUrl.replace(/\/+$/, '')
           : cred.provider === 'openai' ? 'https://api.openai.com/v1' : null
         if (baseURL) {
-          return { baseURL, apiKey: cred.apiKey, model: slot.model, source: 'tenant' }
+          return { baseURL, apiKey: cred.apiKey, model: slot.model, source: 'tenant', provider: cred.provider }
         }
       }
     }
   } catch {
     // 租户配置异常绝不影响调用：静默回退平台默认。
   }
-  return { ...envModelClient(), source: 'platform' }
+  return { ...envModelClient(), source: 'platform', provider: 'platform-env' }
 }

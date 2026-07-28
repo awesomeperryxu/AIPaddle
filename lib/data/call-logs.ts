@@ -25,11 +25,15 @@ export async function recordCall(
     latencyMs?: number
     success: boolean
     errorCode?: string
+    /** 4.8.17a：这次调用用的是谁的 Key。取自 resolveModelClient() 的 source，
+     *  不传=来源未知（不计入平台成本，避免把 BYO 调用算成平台花的钱）。 */
+    keySource?: 'tenant' | 'platform'
+    provider?: string
   },
 ): Promise<void> {
   try {
     const supabase = await createClient()
-    const { error } = await supabase.from('call_logs').insert({
+    const base = {
       org_id: ctx.orgId,
       agent_id: input.agentId,
       user_id: ctx.userId,
@@ -39,8 +43,23 @@ export async function recordCall(
       latency_ms: input.latencyMs ?? null,
       success: input.success,
       error_code: input.errorCode ?? null,
+    }
+    const { error } = await supabase.from('call_logs').insert({
+      ...base,
+      key_source: input.keySource ?? null,
+      provider: input.provider ?? null,
     })
-    if (error) console.error('[call_logs] 写入失败:', error.message)
+
+    // 🔴 迁移 0026 若尚未 apply，key_source/provider 列不存在会整条写失败——
+    // 那样调用日志会**静默全丢**（用量/成本统计一起归零）。退回不带新列再写一次，
+    // 保证代码先于迁移上线时日志不丢，只是暂时缺来源标记（统计上归「来源未知」）。
+    if (error?.code === 'PGRST204' || /key_source|provider/.test(error?.message ?? '')) {
+      console.warn('[call_logs] 新列不可用，回退写入（迁移 0026 是否已 apply？）:', error?.message)
+      const { error: fallbackErr } = await supabase.from('call_logs').insert(base)
+      if (fallbackErr) console.error('[call_logs] 回退写入仍失败:', fallbackErr.message)
+    } else if (error) {
+      console.error('[call_logs] 写入失败:', error.message)
+    }
   } catch (e) {
     console.error('[call_logs] 写入异常:', e)
   }

@@ -22,18 +22,24 @@ import {
   Coins,
   Wallet,
   Ban,
-  Trash2
+  Trash2,
+  Eye,
+  Loader2
 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
+} from '@/components/ui/sheet';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api/client';
 
@@ -63,8 +69,35 @@ type PlatformTenant = {
 };
 
 // 每租户真实用量（来自 /api/platform/tenant-usage 聚合，ADR-008 只经 apiFetch）
-type TenantUsage = { members: number; agents: number; tokens30d: number; estCost30d: number };
+type TenantUsage = {
+  members: number; agents: number; tokens30d: number; estCost30d: number;
+  // 4.8.17a/b：按 Key 来源拆分。estCost30d 只含平台侧（BYO 平台零成本）
+  platformTokens30d: number; byoTokens30d: number; unknownTokens30d: number;
+  keyMode: 'byo' | 'platform' | 'mixed' | 'none';
+};
+
+// 4.8.17b：Key 来源徽标
+const keyModeConfig: Record<TenantUsage['keyMode'], { label: string; className: string; hint: string }> = {
+  byo:      { label: '自配 Key',  className: 'bg-blue-500/10 text-blue-500',   hint: '租户使用自己的 LLM API Key，平台无 Token 成本' },
+  platform: { label: '平台 Key',  className: 'bg-primary/10 text-primary',     hint: '使用平台 Key 调用，Token 成本由平台承担' },
+  mixed:    { label: '混用',      className: 'bg-yellow-500/10 text-yellow-500', hint: '已配自有 Key，但仍有部分调用回退到平台 Key（如非 OpenAI 兼容供应商）' },
+  none:     { label: '未调用',    className: 'bg-muted text-muted-foreground', hint: '近 30 天无调用记录' },
+};
+
+// 4.8.15a：租户详情（GET /api/tenants/[id]，含用量统计）
+type TenantDetail = PlatformTenant & {
+  storageQuota: number; memberCount: number; agentCount: number;
+  tokensUsed30d: number; storageUsed: number;
+};
 type RevenuePoint = { label: string; cost: number };
+
+// 4.8.17c：模型定价（版本化，按 effectiveFrom 生效）
+type ModelPrice = {
+  id: string; provider: string; model: string;
+  inputPer1k: number; outputPer1k: number; currency: string;
+  effectiveFrom: string; sourceNote: string | null;
+};
+const PRICING_STALE_DAYS = 90;
 type UsageResp = { usage: Record<string, TenantUsage>; revenueTrend: RevenuePoint[] };
 
 export function TenantsView({
@@ -89,6 +122,119 @@ export function TenantsView({
   // 真实用量聚合（客户端拉取，ADR-008 只经 apiFetch）
   const [usage, setUsage] = useState<Record<string, TenantUsage>>({});
   const [revenueTrend, setRevenueTrend] = useState<RevenuePoint[]>([]);
+
+  // 4.8.17c/d：模型定价维护 + 陈旧告警
+  const [pricing, setPricing] = useState<ModelPrice[]>([]);
+  const [priceOpen, setPriceOpen] = useState(false);
+  const [pvProvider, setPvProvider] = useState('platform-env');
+  const [pvModel, setPvModel] = useState('');
+  const [pvIn, setPvIn] = useState('');
+  const [pvOut, setPvOut] = useState('');
+  const [pvNote, setPvNote] = useState('');
+  const [pvErr, setPvErr] = useState<string | null>(null);
+  const [pvBusy, setPvBusy] = useState(false);
+
+  // 陈旧判定在数据回调里算而非渲染期——Date.now() 是非纯函数，
+  // React 编译器 react-hooks/purity 禁止在渲染中调用（会让渲染结果不确定）
+  const [latestPriceAt, setLatestPriceAt] = useState<string | null>(null);
+  const [pricingStale, setPricingStale] = useState(false);
+
+  const reloadPricing = () =>
+    apiFetch<{ pricing: ModelPrice[] }>('/api/model-pricing')
+      .then((d) => {
+        const rows = d.pricing ?? [];
+        setPricing(rows);
+        const latest = rows.reduce<string | null>(
+          (m, p) => (!m || p.effectiveFrom > m ? p.effectiveFrom : m), null);
+        setLatestPriceAt(latest);
+        // 没有实时价格 API（DashScope 只公示文档价），只能靠「多久没维护」提醒
+        setPricingStale(!latest ||
+          Date.now() - new Date(latest).getTime() > PRICING_STALE_DAYS * 24 * 3600 * 1000);
+      })
+      .catch(() => { /* 定价拉取失败不阻断列表 */ });
+
+  useEffect(() => { void reloadPricing(); }, []);
+
+  async function handleAddPrice() {
+    if (pvBusy) return;
+    setPvBusy(true); setPvErr(null);
+    try {
+      await apiFetch('/api/model-pricing', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: pvProvider.trim(), model: pvModel.trim(),
+          inputPer1k: Number(pvIn), outputPer1k: Number(pvOut),
+          sourceNote: pvNote.trim() || null,
+        }),
+      });
+      setPvModel(''); setPvIn(''); setPvOut(''); setPvNote('');
+      await reloadPricing();
+      router.refresh();
+    } catch (e) {
+      setPvErr(e instanceof Error ? e.message : '新增定价失败');
+    } finally { setPvBusy(false); }
+  }
+
+  // 4.8.15a/b：租户详情抽屉（承载查看详情 / 编辑信息 / 配额管理三项）
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<TenantDetail | null>(null);
+  const [dLoading, setDLoading] = useState(false);
+  const [dErr, setDErr] = useState<string | null>(null);
+  const [dSaving, setDSaving] = useState(false);
+  const [fName, setFName] = useState('');
+  const [fContact, setFContact] = useState('');
+  const [fEmail, setFEmail] = useState('');
+  const [fToken, setFToken] = useState('');
+  const [fStorage, setFStorage] = useState('');
+  const [fQps, setFQps] = useState('');
+
+  // 打开抽屉：重置态在触发处做，effect 内不同步 setState（React 编译器
+  // react-hooks/set-state-in-effect 会报级联渲染，项目 4.6.2 已踩过同一条）
+  function openDetail(id: string) {
+    setDetail(null); setDErr(null); setDLoading(true);
+    setDetailId(id);
+  }
+
+  useEffect(() => {
+    if (!detailId) return;
+    let alive = true;
+    apiFetch<{ tenant: TenantDetail }>(`/api/tenants/${detailId}`)
+      .then((d) => {
+        if (!alive) return;
+        setDetail(d.tenant);
+        setFName(d.tenant.name);
+        setFContact(d.tenant.contactName ?? '');
+        setFEmail(d.tenant.contactEmail ?? '');
+        setFToken(String(d.tenant.tokenQuota ?? 0));
+        setFStorage(String(d.tenant.storageQuota ?? 0));
+        setFQps(String(d.tenant.qpsLimit ?? 0));
+      })
+      .catch((e) => { if (alive) setDErr(e instanceof Error ? e.message : '加载失败'); })
+      .finally(() => { if (alive) setDLoading(false); });
+    return () => { alive = false; };
+  }, [detailId]);
+
+  async function handleSaveDetail() {
+    if (!detailId || dSaving) return;
+    setDSaving(true); setDErr(null);
+    try {
+      await apiFetch(`/api/tenants/${detailId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: fName.trim(),
+          contactName: fContact.trim() || null,
+          contactEmail: fEmail.trim(),
+          tokenQuota: Number(fToken),
+          storageQuota: Number(fStorage),
+          qpsLimit: Number(fQps),
+        }),
+      });
+      setDetailId(null);
+      router.refresh();
+    } catch (e) {
+      setDErr(e instanceof Error ? e.message : '保存失败');
+    } finally { setDSaving(false); }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -253,6 +399,7 @@ export function TenantsView({
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead className="text-muted-foreground">企业</TableHead>
                 <TableHead className="text-muted-foreground">状态</TableHead>
+                <TableHead className="text-muted-foreground">Key 来源</TableHead>
                 <TableHead className="text-muted-foreground">成员数</TableHead>
                 <TableHead className="text-muted-foreground">Agent 数</TableHead>
                 <TableHead className="text-muted-foreground">Token 用量</TableHead>
@@ -279,6 +426,14 @@ export function TenantsView({
                       {statusConfig[tenant.status].label}
                     </Badge>
                   </TableCell>
+                  {/* 4.8.17b：该租户用的是自己的 LLM Key 还是平台的 */}
+                  <TableCell>
+                    {(() => {
+                      const m = usage[tenant.id]?.keyMode ?? 'none';
+                      const c = keyModeConfig[m];
+                      return <Badge className={c.className} title={c.hint}>{c.label}</Badge>;
+                    })()}
+                  </TableCell>
                   <TableCell className="text-foreground">{tenant.members.toLocaleString()}</TableCell>
                   <TableCell className="text-foreground">{tenant.agents}</TableCell>
                   <TableCell>
@@ -301,6 +456,15 @@ export function TenantsView({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-popover border-border">
+                        {/* 4.8.15a/b：详情抽屉承接「查看详情 / 编辑信息 / 配额管理」。
+                            BUG-82 的 6 个空菜单此前由 PR #118 直接移除；本次把其中三项以
+                            真实可用的形式加回（另三项账单/模型配置/MCP 审批仍无按租户维度的
+                            后端能力，见 4.8.15c / 4.8.10，做完再放）。 */}
+                        <DropdownMenuItem onClick={() => openDetail(tenant.id)}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          {canManage ? '详情与配额' : '查看详情'}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         {canManage && (
                           tenant.status === 'suspended' ? (
                             <DropdownMenuItem onClick={() => handleSetStatus(tenant.id, 'active')} disabled={busy}>
@@ -334,8 +498,28 @@ export function TenantsView({
       {/* Revenue Chart（真实：近 6 个月估算收入，按 Token 用量推算） */}
       <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-foreground">收入趋势（估算）</CardTitle>
-          <CardDescription>过去 6 个月估算收入，按 Token 用量推算，非真实账单</CardDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-foreground">平台 Token 成本趋势（估算）</CardTitle>
+              <CardDescription>
+                过去 6 个月平台侧成本，按调用当时生效的单价推算，非真实账单；
+                租户自配 Key（BYO）平台零成本，已排除在外
+              </CardDescription>
+            </div>
+            {canManage && (
+              <Button variant="outline" size="sm" onClick={() => { setPvErr(null); setPriceOpen(true); }}>
+                模型定价
+              </Button>
+            )}
+          </div>
+          {/* 4.8.17d：没有实时价格 API，只能靠「多久没维护」提醒单价可能已漂移 */}
+          {pricingStale && (
+            <p className="mt-2 text-xs text-yellow-500">
+              ⚠️ 定价已超过 {PRICING_STALE_DAYS} 天未更新
+              {latestPriceAt ? `（最近生效 ${latestPriceAt.slice(0, 10)}）` : '（尚未配置任何定价）'}
+              ，成本估算可能与供应商现价不符。供应商无价格查询 API，需人工核对官方定价页后更新。
+            </p>
+          )}
         </CardHeader>
         <CardContent>
           {revenueTrend.length === 0 ? (
@@ -404,6 +588,204 @@ export function TenantsView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 4.8.17c：模型定价维护。改价=新增一条生效档，不改既有行——历史成本按当时单价算，改价不篡改历史 */}
+      <Dialog open={priceOpen} onOpenChange={setPriceOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>模型定价</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              供应商未提供价格查询 API，单价需人工维护。
+              <span className="text-foreground">改价请新增一条生效档</span>——历史调用仍按当时的单价计算，趋势图不会因改价而变形。
+            </p>
+
+            <div className="max-h-56 overflow-y-auto rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border hover:bg-transparent">
+                    <TableHead className="text-muted-foreground">供应商 / 模型</TableHead>
+                    <TableHead className="text-muted-foreground">输入 /1K</TableHead>
+                    <TableHead className="text-muted-foreground">输出 /1K</TableHead>
+                    <TableHead className="text-muted-foreground">生效起</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pricing.length === 0 ? (
+                    <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">暂无定价</TableCell></TableRow>
+                  ) : pricing.map((p) => (
+                    <TableRow key={p.id} className="border-border">
+                      <TableCell className="text-foreground">
+                        {p.model}
+                        <span className="text-xs text-muted-foreground ml-1.5">{p.provider}</span>
+                      </TableCell>
+                      <TableCell className="text-foreground">¥{p.inputPer1k}</TableCell>
+                      <TableCell className="text-foreground">¥{p.outputPer1k}</TableCell>
+                      <TableCell className="text-muted-foreground">{p.effectiveFrom.slice(0, 10)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="space-y-3 pt-1">
+              <h4 className="text-sm font-medium text-foreground">新增生效档</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="pv-provider">供应商</Label>
+                  <Input id="pv-provider" value={pvProvider} onChange={e => setPvProvider(e.target.value)} placeholder="platform-env" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pv-model">模型（* 表示兜底档）</Label>
+                  <Input id="pv-model" value={pvModel} onChange={e => setPvModel(e.target.value)} placeholder="qwen-plus" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="pv-in">输入单价（元 / 1K token）</Label>
+                  <Input id="pv-in" type="number" step="0.000001" min={0} value={pvIn} onChange={e => setPvIn(e.target.value)} placeholder="0.0008" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pv-out">输出单价（元 / 1K token）</Label>
+                  <Input id="pv-out" type="number" step="0.000001" min={0} value={pvOut} onChange={e => setPvOut(e.target.value)} placeholder="0.0048" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pv-note">价格出处</Label>
+                <Input id="pv-note" value={pvNote} onChange={e => setPvNote(e.target.value)} placeholder="阿里云百炼定价页，2026-07-28 查" />
+              </div>
+              {pvErr && <p className="text-xs text-destructive">{pvErr}</p>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPriceOpen(false)} disabled={pvBusy}>关闭</Button>
+            <Button onClick={handleAddPrice} disabled={pvBusy}>{pvBusy ? '保存中…' : '新增生效档'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 4.8.15a/b：租户详情与配额抽屉。非管理员只读展示，Admin 可改基本信息与配额。 */}
+      <Sheet open={detailId !== null} onOpenChange={(o) => { if (!o) setDetailId(null); }}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>{detail?.name ?? '租户详情'}</SheetTitle>
+            <SheetDescription>
+              {detail ? `企业编码 ${detail.code} · 开通于 ${detail.createdAt}` : '加载中…'}
+            </SheetDescription>
+          </SheetHeader>
+
+          {dLoading && (
+            <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />加载中…
+            </div>
+          )}
+
+          {detail && (
+            <div className="px-4 space-y-6 pb-4">
+              {/* 用量统计（只读） */}
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: '成员数', value: detail.memberCount.toLocaleString() },
+                  { label: 'Agent 数', value: detail.agentCount.toLocaleString() },
+                  { label: '30 天 Token', value: detail.tokensUsed30d.toLocaleString() },
+                  { label: '已用存储', value: `${(detail.storageUsed / 1024 / 1024).toFixed(1)} MB` },
+                ].map((s) => (
+                  <div key={s.label} className="p-3 rounded-lg bg-muted/30 border border-border">
+                    <p className="text-xs text-muted-foreground">{s.label}</p>
+                    <p className="text-lg font-semibold text-foreground mt-0.5">{s.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* 4.8.17b：Key 来源与成本归属 */}
+              {(() => {
+                const u = usage[detail.id];
+                const mode = u?.keyMode ?? 'none';
+                const c = keyModeConfig[mode];
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-medium text-foreground">LLM Key 来源</h4>
+                      <Badge className={c.className}>{c.label}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{c.hint}</p>
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <div className="p-2 rounded-md bg-muted/30 border border-border">
+                        <p className="text-[11px] text-muted-foreground">平台 Key Token</p>
+                        <p className="text-sm font-medium text-foreground">{(u?.platformTokens30d ?? 0).toLocaleString()}</p>
+                      </div>
+                      <div className="p-2 rounded-md bg-muted/30 border border-border">
+                        <p className="text-[11px] text-muted-foreground">自配 Key Token</p>
+                        <p className="text-sm font-medium text-foreground">{(u?.byoTokens30d ?? 0).toLocaleString()}</p>
+                      </div>
+                      <div className="p-2 rounded-md bg-muted/30 border border-border">
+                        <p className="text-[11px] text-muted-foreground">来源未知</p>
+                        <p className="text-sm font-medium text-foreground">{(u?.unknownTokens30d ?? 0).toLocaleString()}</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      平台侧 30 天估算成本 <span className="text-foreground font-medium">¥{(u?.estCost30d ?? 0).toFixed(2)}</span>
+                      ；仅按平台 Key 的 Token 计算，自配 Key 平台零成本。
+                      「来源未知」为 2026-07-28 记录来源之前的历史调用，不计入成本。
+                    </p>
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-foreground">基本信息</h4>
+                <div className="space-y-1.5">
+                  <Label htmlFor="d-name">企业名称</Label>
+                  <Input id="d-name" value={fName} onChange={e => setFName(e.target.value)} disabled={!canManage} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="d-contact">联系人</Label>
+                    <Input id="d-contact" value={fContact} onChange={e => setFContact(e.target.value)} disabled={!canManage} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="d-email">联系邮箱</Label>
+                    <Input id="d-email" type="email" value={fEmail} onChange={e => setFEmail(e.target.value)} disabled={!canManage} />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">企业编码 {detail.code} 不可修改（对外标识）</p>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-foreground">配额（0 表示不限制，改动立即生效）</h4>
+                <div className="space-y-1.5">
+                  <Label htmlFor="d-token">Token 配额（每 30 天）</Label>
+                  <Input id="d-token" type="number" min={0} value={fToken} onChange={e => setFToken(e.target.value)} disabled={!canManage} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="d-storage">存储配额（字节）</Label>
+                    <Input id="d-storage" type="number" min={0} value={fStorage} onChange={e => setFStorage(e.target.value)} disabled={!canManage} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="d-qps">QPS 上限</Label>
+                    <Input id="d-qps" type="number" min={0} value={fQps} onChange={e => setFQps(e.target.value)} disabled={!canManage} />
+                  </div>
+                </div>
+              </div>
+
+              {dErr && <p className="text-xs text-destructive">{dErr}</p>}
+            </div>
+          )}
+
+          {!dLoading && dErr && !detail && <p className="px-4 text-sm text-destructive">{dErr}</p>}
+
+          <SheetFooter>
+            <Button variant="outline" onClick={() => setDetailId(null)} disabled={dSaving}>关闭</Button>
+            {canManage && detail && (
+              <Button onClick={handleSaveDetail} disabled={dSaving}>
+                {dSaving ? '保存中…' : '保存'}
+              </Button>
+            )}
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
