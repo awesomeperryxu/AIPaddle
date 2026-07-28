@@ -90,6 +90,14 @@ type TenantDetail = PlatformTenant & {
   tokensUsed30d: number; storageUsed: number;
 };
 type RevenuePoint = { label: string; cost: number };
+
+// 4.8.17c：模型定价（版本化，按 effectiveFrom 生效）
+type ModelPrice = {
+  id: string; provider: string; model: string;
+  inputPer1k: number; outputPer1k: number; currency: string;
+  effectiveFrom: string; sourceNote: string | null;
+};
+const PRICING_STALE_DAYS = 90;
 type UsageResp = { usage: Record<string, TenantUsage>; revenueTrend: RevenuePoint[] };
 
 export function TenantsView({
@@ -114,6 +122,58 @@ export function TenantsView({
   // 真实用量聚合（客户端拉取，ADR-008 只经 apiFetch）
   const [usage, setUsage] = useState<Record<string, TenantUsage>>({});
   const [revenueTrend, setRevenueTrend] = useState<RevenuePoint[]>([]);
+
+  // 4.8.17c/d：模型定价维护 + 陈旧告警
+  const [pricing, setPricing] = useState<ModelPrice[]>([]);
+  const [priceOpen, setPriceOpen] = useState(false);
+  const [pvProvider, setPvProvider] = useState('platform-env');
+  const [pvModel, setPvModel] = useState('');
+  const [pvIn, setPvIn] = useState('');
+  const [pvOut, setPvOut] = useState('');
+  const [pvNote, setPvNote] = useState('');
+  const [pvErr, setPvErr] = useState<string | null>(null);
+  const [pvBusy, setPvBusy] = useState(false);
+
+  // 陈旧判定在数据回调里算而非渲染期——Date.now() 是非纯函数，
+  // React 编译器 react-hooks/purity 禁止在渲染中调用（会让渲染结果不确定）
+  const [latestPriceAt, setLatestPriceAt] = useState<string | null>(null);
+  const [pricingStale, setPricingStale] = useState(false);
+
+  const reloadPricing = () =>
+    apiFetch<{ pricing: ModelPrice[] }>('/api/model-pricing')
+      .then((d) => {
+        const rows = d.pricing ?? [];
+        setPricing(rows);
+        const latest = rows.reduce<string | null>(
+          (m, p) => (!m || p.effectiveFrom > m ? p.effectiveFrom : m), null);
+        setLatestPriceAt(latest);
+        // 没有实时价格 API（DashScope 只公示文档价），只能靠「多久没维护」提醒
+        setPricingStale(!latest ||
+          Date.now() - new Date(latest).getTime() > PRICING_STALE_DAYS * 24 * 3600 * 1000);
+      })
+      .catch(() => { /* 定价拉取失败不阻断列表 */ });
+
+  useEffect(() => { void reloadPricing(); }, []);
+
+  async function handleAddPrice() {
+    if (pvBusy) return;
+    setPvBusy(true); setPvErr(null);
+    try {
+      await apiFetch('/api/model-pricing', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: pvProvider.trim(), model: pvModel.trim(),
+          inputPer1k: Number(pvIn), outputPer1k: Number(pvOut),
+          sourceNote: pvNote.trim() || null,
+        }),
+      });
+      setPvModel(''); setPvIn(''); setPvOut(''); setPvNote('');
+      await reloadPricing();
+      router.refresh();
+    } catch (e) {
+      setPvErr(e instanceof Error ? e.message : '新增定价失败');
+    } finally { setPvBusy(false); }
+  }
 
   // 4.8.15a/b：租户详情抽屉（承载查看详情 / 编辑信息 / 配额管理三项）
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -438,11 +498,28 @@ export function TenantsView({
       {/* Revenue Chart（真实：近 6 个月估算收入，按 Token 用量推算） */}
       <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-foreground">平台 Token 成本趋势（估算）</CardTitle>
-          <CardDescription>
-            过去 6 个月**平台侧**成本，按 Token 用量 × 固定单价推算，非真实账单；
-            租户自配 Key（BYO）的调用平台零成本，已排除在外
-          </CardDescription>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-foreground">平台 Token 成本趋势（估算）</CardTitle>
+              <CardDescription>
+                过去 6 个月平台侧成本，按调用当时生效的单价推算，非真实账单；
+                租户自配 Key（BYO）平台零成本，已排除在外
+              </CardDescription>
+            </div>
+            {canManage && (
+              <Button variant="outline" size="sm" onClick={() => { setPvErr(null); setPriceOpen(true); }}>
+                模型定价
+              </Button>
+            )}
+          </div>
+          {/* 4.8.17d：没有实时价格 API，只能靠「多久没维护」提醒单价可能已漂移 */}
+          {pricingStale && (
+            <p className="mt-2 text-xs text-yellow-500">
+              ⚠️ 定价已超过 {PRICING_STALE_DAYS} 天未更新
+              {latestPriceAt ? `（最近生效 ${latestPriceAt.slice(0, 10)}）` : '（尚未配置任何定价）'}
+              ，成本估算可能与供应商现价不符。供应商无价格查询 API，需人工核对官方定价页后更新。
+            </p>
+          )}
         </CardHeader>
         <CardContent>
           {revenueTrend.length === 0 ? (
@@ -508,6 +585,82 @@ export function TenantsView({
             <Button onClick={handleProvision} disabled={busy}>
               {busy ? '开通中…' : '提交开通'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 4.8.17c：模型定价维护。改价=新增一条生效档，不改既有行——历史成本按当时单价算，改价不篡改历史 */}
+      <Dialog open={priceOpen} onOpenChange={setPriceOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>模型定价</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              供应商未提供价格查询 API，单价需人工维护。
+              <span className="text-foreground">改价请新增一条生效档</span>——历史调用仍按当时的单价计算，趋势图不会因改价而变形。
+            </p>
+
+            <div className="max-h-56 overflow-y-auto rounded-md border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-border hover:bg-transparent">
+                    <TableHead className="text-muted-foreground">供应商 / 模型</TableHead>
+                    <TableHead className="text-muted-foreground">输入 /1K</TableHead>
+                    <TableHead className="text-muted-foreground">输出 /1K</TableHead>
+                    <TableHead className="text-muted-foreground">生效起</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pricing.length === 0 ? (
+                    <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">暂无定价</TableCell></TableRow>
+                  ) : pricing.map((p) => (
+                    <TableRow key={p.id} className="border-border">
+                      <TableCell className="text-foreground">
+                        {p.model}
+                        <span className="text-xs text-muted-foreground ml-1.5">{p.provider}</span>
+                      </TableCell>
+                      <TableCell className="text-foreground">¥{p.inputPer1k}</TableCell>
+                      <TableCell className="text-foreground">¥{p.outputPer1k}</TableCell>
+                      <TableCell className="text-muted-foreground">{p.effectiveFrom.slice(0, 10)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="space-y-3 pt-1">
+              <h4 className="text-sm font-medium text-foreground">新增生效档</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="pv-provider">供应商</Label>
+                  <Input id="pv-provider" value={pvProvider} onChange={e => setPvProvider(e.target.value)} placeholder="platform-env" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pv-model">模型（* 表示兜底档）</Label>
+                  <Input id="pv-model" value={pvModel} onChange={e => setPvModel(e.target.value)} placeholder="qwen-plus" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="pv-in">输入单价（元 / 1K token）</Label>
+                  <Input id="pv-in" type="number" step="0.000001" min={0} value={pvIn} onChange={e => setPvIn(e.target.value)} placeholder="0.0008" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="pv-out">输出单价（元 / 1K token）</Label>
+                  <Input id="pv-out" type="number" step="0.000001" min={0} value={pvOut} onChange={e => setPvOut(e.target.value)} placeholder="0.0048" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pv-note">价格出处</Label>
+                <Input id="pv-note" value={pvNote} onChange={e => setPvNote(e.target.value)} placeholder="阿里云百炼定价页，2026-07-28 查" />
+              </div>
+              {pvErr && <p className="text-xs text-destructive">{pvErr}</p>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPriceOpen(false)} disabled={pvBusy}>关闭</Button>
+            <Button onClick={handleAddPrice} disabled={pvBusy}>{pvBusy ? '保存中…' : '新增生效档'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

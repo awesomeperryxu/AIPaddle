@@ -1,5 +1,6 @@
 import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { loadPricingTable } from '@/lib/data/model-pricing'
 import { estimateCost } from '@/lib/data/dashboard'
 
 // ADR-010 平台运营大盘（4.8.1）：跨租户真实聚合，用 service_role（ADR-002 唯一沙可）。
@@ -124,6 +125,7 @@ export type TenantUsage = {
   platformTokens30d: number  // 其中：平台 Key 产生的 token
   byoTokens30d: number       // 其中：租户自配 Key（BYO）产生的 token
   unknownTokens30d: number   // 其中：迁移 0026 之前的历史数据，来源未知
+  unpricedCalls30d: number   // 平台侧但在 model_pricing 里找不到定价的调用数（成本被低估的量）
   keyMode: 'byo' | 'platform' | 'mixed' | 'none'  // 当前配置态（取自 tenant_model_providers，非历史日志）
 }
 
@@ -139,10 +141,12 @@ export async function getTenantUsage(): Promise<Record<string, TenantUsage>> {
   const [usersRes, agentsRes, logsRes, provRes] = await Promise.all([
     admin.from('users').select('org_id').is('deleted_at', null),
     admin.from('agents').select('org_id').is('deleted_at', null),
-    admin.from('call_logs').select('org_id,tokens_in,tokens_out,key_source').is('deleted_at', null).gte('created_at', since30),
+    admin.from('call_logs').select('org_id,tokens_in,tokens_out,key_source,provider,model,created_at').is('deleted_at', null).gte('created_at', since30),
     // 4.8.17b：当前是否自带 Key，取「配置态」而非历史日志——刚配好还没调用过的租户也要正确显示 BYO
     admin.from('tenant_model_providers').select('org_id,enabled').is('deleted_at', null),
   ])
+  // 4.8.17c：单价改从 model_pricing 取，按调用当时生效的档计算（改价不篡改历史）
+  const pricing = await loadPricingTable()
   if (usersRes.error) throw new Error(usersRes.error.message)
   if (agentsRes.error) throw new Error(agentsRes.error.message)
   if (logsRes.error) throw new Error(logsRes.error.message)
@@ -151,13 +155,16 @@ export async function getTenantUsage(): Promise<Record<string, TenantUsage>> {
   const usage: Record<string, TenantUsage> = {}
   const ensure = (org: string) => (usage[org] ??= {
     members: 0, agents: 0, tokens30d: 0, estCost30d: 0,
-    platformTokens30d: 0, byoTokens30d: 0, unknownTokens30d: 0, keyMode: 'platform',
+    platformTokens30d: 0, byoTokens30d: 0, unknownTokens30d: 0, unpricedCalls30d: 0, keyMode: 'platform',
   })
 
   for (const u of (usersRes.data as { org_id: string }[] | null) ?? []) ensure(u.org_id).members++
   for (const a of (agentsRes.data as { org_id: string }[] | null) ?? []) ensure(a.org_id).agents++
 
-  type LogRow = { org_id: string; tokens_in: number | null; tokens_out: number | null; key_source: string | null }
+  type LogRow = {
+    org_id: string; tokens_in: number | null; tokens_out: number | null
+    key_source: string | null; provider: string | null; model: string | null; created_at: string | null
+  }
   for (const l of (logsRes.data as LogRow[] | null) ?? []) {
     const e = ensure(l.org_id)
     const tin = l.tokens_in ?? 0, tout = l.tokens_out ?? 0
@@ -166,8 +173,10 @@ export async function getTenantUsage(): Promise<Record<string, TenantUsage>> {
       e.byoTokens30d += tin + tout
     } else if (l.key_source === 'platform') {
       e.platformTokens30d += tin + tout
-      // 只有平台 Key 的调用才是平台真金白银的支出
-      e.estCost30d += estimateCost(tin, tout)
+      // 只有平台 Key 的调用才是平台真金白银的支出；无匹配定价时记为 0 并计数，避免静默失真
+      const c = pricing.costOf(l)
+      if (c === null) e.unpricedCalls30d += 1
+      else e.estCost30d += c
     } else {
       // 迁移 0026 之前的历史数据：来源未知，不硬塞进任何一边（不制造假精确）
       e.unknownTokens30d += tin + tout
@@ -205,18 +214,24 @@ export async function getPlatformRevenueTrend(): Promise<RevenuePoint[]> {
   const since180 = new Date(now - 180 * DAY).toISOString()
 
   const { data, error } = await admin
-    .from('call_logs').select('tokens_in,tokens_out,created_at')
+    .from('call_logs').select('tokens_in,tokens_out,created_at,provider,model')
     .eq('key_source', 'platform')          // 4.8.17a/b：BYO 与来源未知的调用不计入平台成本
     .is('deleted_at', null).gte('created_at', since180)
   if (error) throw new Error(error.message)
+  const pricing = await loadPricingTable()
 
   const months: string[] = []
   for (let i = 5; i >= 0; i--) months.push(ymKey(new Date(now - i * 30 * DAY)))
   const map = new Map(months.map((m) => [m, 0]))
-  for (const l of (data as { tokens_in: number | null; tokens_out: number | null; created_at: string | null }[] | null) ?? []) {
+  type TrendLog = {
+    tokens_in: number | null; tokens_out: number | null; created_at: string | null
+    provider: string | null; model: string | null
+  }
+  for (const l of (data as TrendLog[] | null) ?? []) {
     if (!l.created_at) continue
     const k = ymKey(new Date(l.created_at))
-    if (map.has(k)) map.set(k, map.get(k)! + estimateCost(l.tokens_in ?? 0, l.tokens_out ?? 0))
+    // 4.8.17c：按调用当时生效的单价算，改价不会让历史月份跟着变
+    if (map.has(k)) map.set(k, map.get(k)! + (pricing.costOf(l) ?? 0))
   }
   return months.map((m) => ({ label: m.slice(5) + '月', cost: Math.round((map.get(m) ?? 0) * 100) / 100 }))
 }
