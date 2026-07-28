@@ -51,13 +51,24 @@ export async function listModelPricing(): Promise<ModelPrice[]> {
   return ((data as Row[] | null) ?? []).map(map)
 }
 
-/** 取定价快照供批量成本聚合使用（一次读全量，避免 N+1）。 */
+/**
+ * 取定价快照供批量成本聚合使用（一次读全量，避免 N+1）。
+ *
+ * 🔴 容错：迁移 0027 若尚未 apply，这里**降级为空定价表**而不是抛错。
+ * 理由是本函数被 getTenantUsage / getPlatformRevenueTrend 调用，抛错会让整个
+ * 租户管理页 500——代码先于迁移上线时后果太重（BUG-89 的教训：迁移与代码的
+ * 顺序依赖必须显式兜住）。空表的表现是「成本算作 0 且计入 unpricedCalls」，
+ * 数据不虚报，运维能从告警看出来。
+ */
 export async function loadPricingTable(): Promise<PricingTable> {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('model_pricing').select('provider,model,input_per_1k,output_per_1k,effective_from')
     .is('deleted_at', null)
-  if (error) throw new Error(error.message)
+  if (error) {
+    console.error('[model_pricing] 读取失败，降级为空定价表（迁移 0027 是否已 apply？）:', error.message)
+    return new PricingTable([])
+  }
   const rows: PriceRow[] = ((data as Row[] | null) ?? []).map((r) => ({
     provider: r.provider, model: r.model,
     inputPer1k: num(r.input_per_1k), outputPer1k: num(r.output_per_1k),
