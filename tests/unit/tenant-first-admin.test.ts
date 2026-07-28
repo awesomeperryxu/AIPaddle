@@ -47,16 +47,26 @@ function fakeAdmin(o: Opts = {}) {
     },
     auth: {
       admin: {
-        async inviteUserByEmail(email: string, opts: unknown) {
-          calls.invite = { email, opts }
+        // 4.8.18：改为直接建号并设密码，不再发邀请邮件
+        async createUser(attrs: Record<string, unknown>) {
+          calls.createUser = attrs
           if (o.inviteError) return { data: null, error: o.inviteError }
-          const createdAt = o.reuseExistingAuthUser
-            ? new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString() // 3 小时前注册的旧账号
-            : new Date().toISOString()
-          return { data: { user: { id: 'auth-uid-1', created_at: createdAt } }, error: null }
+          // reuseExistingAuthUser=该邮箱已有 auth 账号 → createUser 报冲突，走复用分支
+          if (o.reuseExistingAuthUser) return { data: null, error: { message: 'User already registered' } }
+          return { data: { user: { id: 'auth-uid-1' } }, error: null }
+        },
+        async listUsers() {
+          calls.listUsers = true
+          return { data: { users: o.reuseExistingAuthUser ? [{ id: 'auth-uid-1', email: 'a@b.com' }] : [] }, error: null }
         },
         async deleteUser(uid: string) {
           calls.deletedAuthUser = uid
+          return { error: null }
+        },
+        // 4.8.18：复用既有账号时重置密码/解封；BUG-81 回滚时恢复封禁
+        async updateUserById(uid: string, attrs: Record<string, unknown>) {
+          calls.lastBan = attrs.ban_duration
+          if ('password' in attrs) calls.passwordReset = true
           return { error: null }
         },
       },
@@ -74,7 +84,11 @@ describe('createFirstAdmin（4.8.3 开户闭环）', () => {
     const { client, calls, deletes } = fakeAdmin()
     const uid = await run(client)
     expect(uid).toBe('auth-uid-1')
-    expect(calls.invite).toEqual({ email: 'a@b.com', opts: { data: { org_id: 'org-new', name: '张三' } } })
+    // 4.8.18：不再发邀请邮件，改为直接建号 + 设密码 + 免邮箱验证
+    expect(calls.createUser).toMatchObject({
+      email: 'a@b.com', email_confirm: true,
+      user_metadata: { org_id: 'org-new', name: '张三' },
+    })
     expect(calls.users).toMatchObject({ id: 'auth-uid-1', org_id: 'org-new', email: 'a@b.com', status: 'active' })
     expect(calls.user_roles).toEqual({ user_id: 'auth-uid-1', org_id: 'org-new', role: 'Admin' })
     expect(deletes).toHaveLength(0) // 成功路径不触发任何清理

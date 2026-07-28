@@ -210,9 +210,13 @@ export async function setMemberStatus(
   await writeAudit(ctx, 'member.status_changed', 'user', userId, { status })
 }
 
+/**
+ * 新建成员（4.8.18 起由**创建人直接指定密码**，不再走 Supabase 邀请邮件）。
+ * 密码只透传给 Supabase Auth，绝不落业务库、不进审计 detail、不回前端。
+ */
 export async function inviteMember(
   ctx: RequestContext,
-  input: { email: string; name: string; role: Member['role']; department?: string },
+  input: { email: string; name: string; role: Member['role']; department?: string; password: string },
 ): Promise<Member> {
   const admin = createAdminClient()
 
@@ -232,13 +236,30 @@ export async function inviteMember(
   // id 与 auth 账号天然一致，零冲突，也不违反全表软删铁律（C6）。
   const softDeleted = await findSoftDeletedByEmail(admin, input.email)
 
-  // 1. 通过 Supabase Auth 发邀请邮件（创建 auth.users；已存在则复用并重发邀请）
-  const { data: invited, error: invErr } = await admin.auth.admin.inviteUserByEmail(
-    input.email,
-    { data: { org_id: ctx.orgId, name: input.name } },
-  )
-  if (invErr) throw new Error(invErr.message)
-  const authUserId = invited.user.id
+  // 1. 直接创建 auth 账号并设密码（email_confirm=true 跳过邮箱验证，创建即可登录）。
+  // 该邮箱若已有 auth 账号（如曾被移除、或他租户遗留），createUser 会报错——
+  // 此时复用既有 auth uid 并重置密码，与下面的「复活软删行」配套。
+  let authUserId: string
+  const { data: created, error: createErr } = await admin.auth.admin.createUser({
+    email: input.email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { org_id: ctx.orgId, name: input.name },
+  })
+  if (createErr) {
+    const existing = await findAuthUserByEmail(admin, input.email)
+    if (!existing) throw new Error(friendlyMemberInsertError(createErr.message, undefined))
+    authUserId = existing
+    // 复用既有 auth 账号：重置为本次指定的密码并解除可能的封禁
+    const { error: resetErr } = await admin.auth.admin.updateUserById(existing, {
+      password: input.password,
+      ban_duration: 'none',
+      user_metadata: { org_id: ctx.orgId, name: input.name },
+    })
+    if (resetErr) throw new Error(resetErr.message)
+  } else {
+    authUserId = created.user.id
+  }
 
   const supabase = await createClient()
 
@@ -290,6 +311,24 @@ export async function inviteMember(
 }
 
 type AdminClient = ReturnType<typeof createAdminClient>
+
+/**
+ * 4.8.18：按邮箱找既有 auth 账号 id。
+ * Supabase admin API 没有「按邮箱查」的直接接口，只能分页扫 listUsers；
+ * 仅在 createUser 报冲突时才走这条慢路径，正常新建不受影响。
+ */
+export async function findAuthUserByEmail(admin: AdminClient, email: string): Promise<string | null> {
+  const target = email.trim().toLowerCase()
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 })
+    if (error) throw new Error(error.message)
+    const users = data?.users ?? []
+    const hit = users.find((u) => (u.email ?? '').toLowerCase() === target)
+    if (hit) return hit.id
+    if (users.length < 200) break
+  }
+  return null
+}
 
 /** BUG-86：按邮箱找一行已软删的成员（跨租户，用 admin 客户端绕开 RLS）。 */
 export async function findSoftDeletedByEmail(

@@ -60,6 +60,7 @@ export function MembersView() {
   const [invName, setInvName] = useState('');
   const [invRole, setInvRole] = useState<Member['role']>('User');
   const [invDept, setInvDept] = useState('');
+  const [invPwd, setInvPwd] = useState('');   // 4.8.18：创建人指定初始密码
   const [invBusy, setInvBusy] = useState(false);
   const [invError, setInvError] = useState<string | null>(null);
   // 编辑成员（4.8.12）
@@ -140,16 +141,18 @@ export function MembersView() {
   async function handleInvite() {
     if (invBusy) return;
     if (!invEmail.trim() || !invName.trim()) { setInvError('邮箱和姓名不能为空'); return; }
+    if (!invPwd) { setInvError('请设置初始密码'); return; }
     setInvBusy(true); setInvError(null);
     try {
       await apiFetch('/api/members', {
         method: 'POST',
         body: JSON.stringify({
-          email: invEmail.trim(), name: invName.trim(), role: invRole, department: invDept.trim() || undefined,
+          email: invEmail.trim(), name: invName.trim(), role: invRole,
+          department: invDept.trim() || undefined, password: invPwd,
         }),
       });
       setInviteOpen(false);
-      setInvEmail(''); setInvName(''); setInvRole('User'); setInvDept('');
+      setInvEmail(''); setInvName(''); setInvRole('User'); setInvDept(''); setInvPwd('');
       setTick(t => t + 1);
     } catch (e) {
       setInvError(e instanceof Error ? e.message : '邀请失败');
@@ -506,11 +509,20 @@ export function MembersView() {
                 <Input id="inv-dept" value={invDept} onChange={e => setInvDept(e.target.value)} placeholder="所属部门" />
               </div>
             </div>
+            {/* 4.8.18：不再发邀请邮件，创建人直接设初始密码 */}
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-pwd">初始密码</Label>
+              <Input id="inv-pwd" type="password" value={invPwd} onChange={e => setInvPwd(e.target.value)}
+                     placeholder="至少 8 位，含字母/数字/符号中至少两类" />
+              <p className="text-xs text-muted-foreground">
+                请把该密码转告本人。成员登录后可在「设置 → 修改密码」自行更改，不改则一直沿用。
+              </p>
+            </div>
             {invError && <p className="text-xs text-destructive">{invError}</p>}
           </div>
           <DialogFooter>
             <Button onClick={handleInvite} disabled={invBusy}>
-              {invBusy ? '发送中…' : '发送邀请'}
+              {invBusy ? '创建中…' : '创建成员'}
             </Button>
           </DialogFooter>
         </DialogContent>
