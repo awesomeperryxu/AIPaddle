@@ -1,7 +1,7 @@
 import 'server-only'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { loadPricingTable } from '@/lib/data/model-pricing'
-import { estimateCost } from '@/lib/data/dashboard'
+
 
 // ADR-010 平台运营大盘（4.8.1）：跨租户真实聚合，用 service_role（ADR-002 唯一沙可）。
 // ⚠️ 必须由 API/页面入口的 isPlatformAdmin 兜住；此层不做 RLS 隔离。
@@ -19,7 +19,12 @@ export type PlatformDashboard = {
 }
 
 type TenantRow = { id: string; name: string; status: string; token_quota: number | null }
-type LogRow = { org_id: string; model: string | null; tokens_in: number | null; tokens_out: number | null; created_at: string | null }
+type LogRow = {
+  org_id: string; model: string | null; tokens_in: number | null; tokens_out: number | null
+  created_at: string | null
+  provider: string | null      // 4.8.17a：供应商，取价用
+  key_source: string | null    // 4.8.17a：tenant=BYO（平台零成本）/ platform / null=迁移前历史
+}
 
 const DAY = 86_400_000
 function ymKey(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
@@ -32,10 +37,13 @@ export async function getPlatformDashboard(): Promise<PlatformDashboard> {
 
   const [tenantsRes, logsRes] = await Promise.all([
     admin.from('tenants').select('id,name,status,token_quota').is('deleted_at', null),
-    admin.from('call_logs').select('org_id,model,tokens_in,tokens_out,created_at').is('deleted_at', null).gte('created_at', since180),
+    admin.from('call_logs').select('org_id,model,tokens_in,tokens_out,created_at,provider,key_source').is('deleted_at', null).gte('created_at', since180),
   ])
   if (tenantsRes.error) throw new Error(tenantsRes.error.message)
   if (logsRes.error) throw new Error(logsRes.error.message)
+  // 4.8.17c 收口：运营大盘的成本也走定价表，与租户管理页同一口径。
+  // 此前这里还用硬编码 estimateCost，两处口径不一致——同一批调用在两个页面能算出不同的钱。
+  const pricing = await loadPricingTable()
 
   const tenants = (tenantsRes.data as TenantRow[] | null) ?? []
   const logs = (logsRes.data as LogRow[] | null) ?? []
@@ -57,7 +65,8 @@ export async function getPlatformDashboard(): Promise<PlatformDashboard> {
   const usage30d = {
     tokens: logs30.reduce((s, l) => s + tokensOf(l), 0),
     calls: logs30.length,
-    estCost: logs30.reduce((s, l) => s + estimateCost(l.tokens_in ?? 0, l.tokens_out ?? 0), 0),
+    // 只算平台 Key 的调用：BYO 是租户自己付钱，来源未知（迁移 0026 前）不硬塞
+    estCost: logs30.reduce((s, l) => s + (l.key_source === 'platform' ? (pricing.costOf(l) ?? 0) : 0), 0),
   }
 
   // 近 6 个月 Token 趋势
@@ -82,13 +91,13 @@ export async function getPlatformDashboard(): Promise<PlatformDashboard> {
     .sort((a, b) => b.tokenUsage - a.tokenUsage)
     .slice(0, 8)
 
-  // 模型成本结构（近 30 天，按 model 聚合 estimateCost）
+  // 模型成本结构（近 30 天，按 model 聚合；成本只算平台 Key 的调用）
   const byModel = new Map<string, { tokens: number; cost: number }>()
   for (const l of logs30) {
     const key = l.model || '(未知模型)'
     const cur = byModel.get(key) ?? { tokens: 0, cost: 0 }
     cur.tokens += tokensOf(l)
-    cur.cost += estimateCost(l.tokens_in ?? 0, l.tokens_out ?? 0)
+    cur.cost += l.key_source === 'platform' ? (pricing.costOf(l) ?? 0) : 0
     byModel.set(key, cur)
   }
   const totalCost = [...byModel.values()].reduce((s, m) => s + m.cost, 0)

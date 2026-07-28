@@ -5,6 +5,8 @@ on:
     branches: ["**"]
   pull_request:
     branches: [main]
+  # 手动触发：改了 secret / 想验证某条流水线时不必空提交一次
+  workflow_dispatch:
 
 jobs:
   # ── 机密文件守卫（独立必需检查，2026-07-21）──

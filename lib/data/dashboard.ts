@@ -73,6 +73,15 @@ export async function getDashboardStats(_ctx: RequestContext): Promise<Dashboard
 
 // 通义千问-Plus 计价（元 / 1K token），用于成本估算。
 // ⚠️ 估算值：DB 未记录真实计费金额，仅按 token 数 × 固定单价推算，实际以账单为准。
+//
+// 🔴 @deprecated（4.8.17c）——**平台侧成本已改走 `lib/pricing` 的定价表**
+// （版本化、按调用当时生效档计费、可在界面维护）。这里的常量仅剩**租户视角**
+// 的监控看板与账单页在用，两者语义不同：
+//   · 平台视角：只算平台 Key 的调用（BYO 是租户自己付钱）→ 已收口到定价表
+//   · 租户视角：算自己的全部消耗（不论用谁的 Key）→ 口径待定，故暂留
+// 风险：本常量已与阿里云现价漂移（调价后输出约 4.8 元/百万，这里是 2.0），
+// 且改它会让**历史成本整体变形**（定价表没有这个问题，它带 effective_from）。
+// 待办：租户侧口径定下来后一并切到 lib/pricing，然后删除本常量。
 export const QWEN_PLUS_PRICE = { in: 0.0008, out: 0.002 }
 
 /**
