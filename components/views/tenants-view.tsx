@@ -313,6 +313,19 @@ export function TenantsView({
     } finally { setBusy(false); }
   }
 
+  // 汇总卡点击查明细：按指标展开每租户拆分
+  const [metricDetail, setMetricDetail] = useState<'members' | 'tokens' | 'cost' | null>(null);
+  const METRIC_CFG = {
+    members: { label: '总用户', col: '成员数', get: (u?: TenantUsage) => u?.members ?? 0, fmt: (n: number) => n.toLocaleString() },
+    tokens: { label: '本月 Token', col: '30天 Token', get: (u?: TenantUsage) => u?.tokens30d ?? 0, fmt: (n: number) => n.toLocaleString() },
+    cost: { label: '本月收入（估算）', col: '30天估算成本', get: (u?: TenantUsage) => u?.estCost30d ?? 0, fmt: (n: number) => '¥' + n.toFixed(2) },
+  } as const;
+  const metricRows = metricDetail
+    ? tenants
+        .map((t) => ({ id: t.id, name: t.name, value: METRIC_CFG[metricDetail].get(usage[t.id]) }))
+        .sort((a, b) => b.value - a.value)
+    : [];
+
   // 平台真实聚合：总用户 / 本月 Token / 本月收入（估算）
   const totals = Object.values(usage).reduce(
     (a, u) => ({
@@ -339,9 +352,13 @@ export function TenantsView({
         )}
       </div>
 
-      {/* Stats（真实聚合：近 30 天用量） */}
+      {/* Stats（真实聚合：近 30 天用量）——点击查看每租户明细 */}
       <div className="grid grid-cols-3 gap-4">
-        <Card className="bg-card border-border">
+        <Card
+          role="button" tabIndex={0} onClick={() => setMetricDetail('members')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setMetricDetail('members'); } }}
+          className="bg-card border-border cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/30"
+        >
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -349,12 +366,16 @@ export function TenantsView({
               </div>
               <div>
                 <p className="text-lg font-semibold text-foreground">{totals.members.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">总用户</p>
+                <p className="text-xs text-muted-foreground">总用户 · 查看明细</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
+        <Card
+          role="button" tabIndex={0} onClick={() => setMetricDetail('tokens')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setMetricDetail('tokens'); } }}
+          className="bg-card border-border cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/30"
+        >
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
@@ -362,12 +383,16 @@ export function TenantsView({
               </div>
               <div>
                 <p className="text-lg font-semibold text-foreground">{(totals.tokens30d / 1000000).toFixed(2)}M</p>
-                <p className="text-xs text-muted-foreground">本月 Token</p>
+                <p className="text-xs text-muted-foreground">本月 Token · 查看明细</p>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
+        <Card
+          role="button" tabIndex={0} onClick={() => setMetricDetail('cost')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setMetricDetail('cost'); } }}
+          className="bg-card border-border cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/30"
+        >
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
@@ -375,12 +400,52 @@ export function TenantsView({
               </div>
               <div>
                 <p className="text-lg font-semibold text-foreground">¥{totals.estCost30d.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">本月收入（估算）</p>
+                <p className="text-xs text-muted-foreground">本月收入（估算）· 查看明细</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* 汇总卡明细弹窗：按指标列每租户拆分（数据来自已加载的真实聚合） */}
+      <Dialog open={metricDetail !== null} onOpenChange={(o) => { if (!o) setMetricDetail(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{metricDetail ? METRIC_CFG[metricDetail].label : ''} · 明细</DialogTitle>
+          </DialogHeader>
+          {metricDetail && (
+            <div className="max-h-[60vh] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>租户</TableHead>
+                    <TableHead className="text-right">{METRIC_CFG[metricDetail].col}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {metricRows.length === 0 && (
+                    <TableRow><TableCell colSpan={2} className="text-center text-sm text-muted-foreground py-6">暂无数据</TableCell></TableRow>
+                  )}
+                  {metricRows.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.name}</TableCell>
+                      <TableCell className="text-right tabular-nums">{METRIC_CFG[metricDetail].fmt(r.value)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {metricRows.length > 0 && (
+                    <TableRow className="border-t-2">
+                      <TableCell className="font-semibold">合计</TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums">
+                        {METRIC_CFG[metricDetail].fmt(metricRows.reduce((s, r) => s + r.value, 0))}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Search */}
       <div className="relative max-w-md">
