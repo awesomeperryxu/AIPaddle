@@ -42,7 +42,13 @@ const EXEMPT: { constraint: string; reason: string }[] = [
 d('软删语义契约（连真实 Postgres）', () => {
   beforeAll(async () => {
     try {
-      const c = new Client({ connectionString: DB_URL, connectionTimeoutMillis: 8000 })
+      // Supabase 走自签证书链；pg 库不像 psql 那样接受连接串里的 sslmode=require，
+      // 需去掉该参数并显式给 ssl 选项（留在串里会覆盖显式配置，报 self-signed certificate）。
+      const c = new Client({
+        connectionString: DB_URL!.replace(/[?&]sslmode=[^&]*/, ''),
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 8000,
+      })
       await c.connect()
       client = c
     } catch (e) {
