@@ -47,9 +47,13 @@ describe('SaasDashboardView', () => {
     expect(screen.getAllByText('¥12.34').length).toBeGreaterThan(0) // 估算成本
   })
 
-  it('计费类指标诚实标注「即将上线」，不显示收入估算', () => {
+  // 文案随 4.8.16 变更：原写「计费指标即将上线」，但 ADR-017 已**取消**平台计费——
+  // 那是不会兑现的承诺。本用例的**意图未变**（诚实标注、不显示收入估算），
+  // 新文案反而更彻底：直接说明不存在收入，故更新断言而非回退改动。
+  it('计费类指标诚实标注：说明不存在收入，不显示收入估算', () => {
     render(<SaasDashboardView data={base} />)
-    expect(screen.getByText(/计费相关指标（MRR \/ ARPU \/ 逾期应收）即将上线/)).toBeInTheDocument()
+    expect(screen.getByText(/本页无收入类指标（MRR \/ ARPU \/ 逾期应收）/)).toBeInTheDocument()
+    expect(screen.getByText(/ADR-017 已取消平台计费/)).toBeInTheDocument()
   })
 
   it('超配额租户显示徽标 + 真实风险项', () => {
