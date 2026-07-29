@@ -39,7 +39,9 @@ export async function login(page: Page, userKey: UserKey) {
 export async function logout(page: Page) {
   await page.getByTestId('user-menu').click();
   await page.getByRole('menuitem', { name: /退出登录/ }).click();
-  await expect(page).toHaveURL(/login/);
+  // 退出是「调接口清会话 → 客户端跳转」两步，默认 5s 断言在 dev 冷编译时会 flaky。
+  // 放宽到 15s 并等 URL 真正变化，而不是赌一次跳转的时序。
+  await expect(page).toHaveURL(/login/, { timeout: 15_000 });
 }
 
 /** 断言页面任何位置都不出现指定文本（租户隔离 UI 断言用） */
