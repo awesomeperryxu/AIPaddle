@@ -22,7 +22,8 @@ import {
   Upload,
   Download,
   MoreHorizontal,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
 
@@ -139,6 +140,22 @@ export function WorkflowView() {
       const { workflow } = await res.json();
       router.push(`/workflows/${workflow.id}`);
     } catch { showToast('创建失败：网络错误'); }
+  };
+
+  // GX-5 补遗：删除工作流 —— 二次确认 → DELETE 端点（软删）→ 从列表移除。
+  // 前端无权限上下文，故菜单始终显示；无权限时由后端 403 兜底并提示。
+  const handleDeleteWorkflow = async (app: WorkflowApp) => {
+    if (!window.confirm(`确定删除「${app.name}」？删除后将从列表移除。`)) return;
+    try {
+      const res = await fetch(`/api/workflows/${app.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        showToast(`删除失败：${body?.error?.message ?? '无权限或未登录'}`);
+        return;
+      }
+      setApps((prev) => prev.filter((a) => a.id !== app.id));
+      showToast('已删除');
+    } catch { showToast('删除失败：网络错误'); }
   };
 
   // 4.4.12：导入 DSL 文件 → 建草稿并进编辑页
@@ -332,6 +349,13 @@ export function WorkflowView() {
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportDsl(app); }}>
                             <Download className="h-4 w-4 mr-2" />
                             导出 DSL
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={(e) => { e.stopPropagation(); void handleDeleteWorkflow(app); }}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            删除
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
