@@ -19,6 +19,7 @@ const TITLES: Record<string, string> = {
   'knowledge-admin': '知识库管理',
   tenants: '租户管理',
   knowledge: '知识库问答',
+  'office-tools': '办公文件处理',
   'my-skills': '我的 Skill',
   'saas-dashboard': '运营看板',
   keys: 'Key 管理',

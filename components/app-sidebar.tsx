@@ -91,6 +91,7 @@ const navSections: NavSection[] = [
     items: [
       { title: '知识库管理', icon: <FileText className="h-4 w-4" />, href: 'knowledge-admin' },
       { title: '知识库问答', icon: <Database className="h-4 w-4" />, href: 'knowledge' },
+      { title: '办公文件处理', icon: <FileText className="h-4 w-4" />, href: 'office-tools' },
     ]
   },
   {

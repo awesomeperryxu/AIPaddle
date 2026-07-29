@@ -109,6 +109,19 @@ export async function saveWorkflow(
   return { ...mapItem(r), graph: r.graph ?? { nodes: [], edges: [] } }
 }
 
+/** 软删工作流（GX-5 补遗）：置 deleted_at=now()，不物理删除。
+ *  请求级客户端 + RLS 兜底本租户隔离；Developer 仅 own 由 RLS/矩阵约束，
+ *  与 saveWorkflow 一致不在此另做归属查询。幂等：已删/不存在均安全返回。 */
+export async function deleteWorkflow(_ctx: RequestContext, id: string): Promise<void> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('workflows')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('deleted_at', null)
+  if (error) throw new Error(error.message)
+}
+
 // ── 4.4.4：版本发布 + 运行历史 ──────────────────────────────
 
 export type WorkflowRun = {

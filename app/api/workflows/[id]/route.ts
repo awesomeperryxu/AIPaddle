@@ -1,6 +1,6 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
-import { getWorkflow, saveWorkflow } from '@/lib/data/workflow'
+import { getWorkflow, saveWorkflow, deleteWorkflow } from '@/lib/data/workflow'
 import { validateGraph } from '@/lib/workflow/validate'
 import { validateToolNodes } from '@/lib/workflow/validate-tools'
 
@@ -44,4 +44,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
   // 结构校验 + Tool 节点校验（4.4.2：Tool 只引用已发布 Skill、拒直连 MCP）
   const validation = [...validateGraph(workflow.graph), ...(await validateToolNodes(ctx, workflow.graph))]
   return Response.json({ workflow, validation, valid: validation.length === 0 })
+}
+
+// DELETE /api/workflows/[id] —— 软删工作流（GX-5 补遗）。workflow:delete。
+export async function DELETE(_req: Request, { params }: Ctx) {
+  const ctx = await getRequestContext()
+  if (!ctx) return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
+  if (!can(ctx, 'workflow:delete')) {
+    return Response.json({ error: { code: 'forbidden', message: '无权限：删除工作流' } }, { status: 403 })
+  }
+  const { id } = await params
+  await deleteWorkflow(ctx, id)
+  return Response.json({ ok: true })
 }

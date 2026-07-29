@@ -32,6 +32,7 @@ export type Action =
   | 'workflow:create'
   | 'workflow:read'
   | 'workflow:update'
+  | 'workflow:delete'
   | 'workflow:run'
   | 'provider:manage'
   | 'apikey:manage'
@@ -70,6 +71,7 @@ const MATRIX: Record<Action, Role[]> = {
   'workflow:create': ['Admin', 'Developer'],
   'workflow:read': ['Admin', 'Developer', 'User', 'Auditor'],
   'workflow:update': ['Admin', 'Developer'], // Developer 仅 own，归属校验在应用层
+  'workflow:delete': ['Admin', 'Developer'], // Developer 仅 own，归属校验在应用层（软删，RLS 兜底租户隔离）
   'workflow:run': ['Admin', 'Developer', 'User'],
   // 模型供应商（ADR-016 4.7.3）：租户管理员自助配供应商/Key/默认模型。跨租户代配走 isPlatformAdmin。
   'provider:manage': ['Admin'],
