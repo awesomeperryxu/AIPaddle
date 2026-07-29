@@ -697,7 +697,7 @@ function MessageBubble({ role, content, citations, streaming, attachments, label
 
   // Assistant 消息 —— 无气泡框，更接近 Claude 风格
   return (
-    <div data-testid="assistant-msg" className="flex gap-3">
+    <div data-testid="chat-message-assistant" data-testid-legacy="assistant-msg" className="flex gap-3">
       <div className="shrink-0 w-7 h-7 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mt-0.5 ring-1 ring-border/30">
         <Bot className="h-3.5 w-3.5 text-primary" />
       </div>

@@ -446,7 +446,7 @@ export function DashboardView({ data }: { data: DashboardData }) {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">今日调用量</p>
-                <p className="text-2xl font-semibold text-foreground mt-1">{todayCalls.toLocaleString()}</p>
+                <p data-testid="metric-calls" className="text-2xl font-semibold text-foreground mt-1">{todayCalls.toLocaleString()}</p>
                 <DeltaBadge value={delta(trend, 'calls')} label="vs 昨日" />
               </div>
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">

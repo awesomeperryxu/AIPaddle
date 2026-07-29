@@ -33,12 +33,16 @@ export function SaasDashboardView({ data }: { data: PlatformDashboard }) {
         <Badge variant="outline" className="text-xs">近 30 天 / 6 个月</Badge>
       </div>
 
-      {/* 计费未上线诚实提示 */}
+      {/* 4.8.16：口径说明。原文写「计费指标即将上线」，但 ADR-017 已**取消**平台计费，
+          那是个不会兑现的承诺；同时 4.8.17 把成本改为按定价表计算且只算平台 Key。
+          故改为如实说明当前口径，而非许诺未来功能。 */}
       <div className="flex items-start gap-2.5 rounded-lg border border-warning/20 bg-warning/5 p-3">
         <Wallet className="h-4 w-4 text-warning mt-0.5 shrink-0" />
         <p className="text-xs text-muted-foreground">
-          <span className="text-foreground font-medium">计费相关指标（MRR / ARPU / 逾期应收）即将上线</span>
-          ——计费引擎属通道 G 4.8.7 / 阶段 6，未接通前本页只展示<span className="text-foreground">真实用量与租户</span>数据，不显示收入类估算。
+          <span className="text-foreground font-medium">本页无收入类指标（MRR / ARPU / 逾期应收）</span>
+          ——ADR-017 已取消平台计费与套餐分级，平台不向租户收费，因此不存在收入。
+          「估算成本」指<span className="text-foreground">平台自己付出的 Token 成本</span>，
+          按模型定价表中调用当时生效的单价推算；租户自带 Key（BYO）的调用平台零成本，已排除在外。
         </p>
       </div>
 
@@ -54,7 +58,7 @@ export function SaasDashboardView({ data }: { data: PlatformDashboard }) {
           value={usage30d.calls.toLocaleString('en-US')} sub="来自 call_logs 真实记录"
           href="/platform-metrics/calls" />
         <KpiCard icon={<Wallet className="h-5 w-5 text-primary" />} label="近 30 天估算成本"
-          value={fmtCost(usage30d.estCost)} sub="按通义 Qwen 单价估算，非结算金额"
+          value={fmtCost(usage30d.estCost)} sub="仅平台 Key 调用，按定价表估算"
           href="/platform-metrics/cost" />
       </div>
 
