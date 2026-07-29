@@ -2,7 +2,8 @@
  * L3 集成测试 · app/api/agents/[id]（DELETE 软删除，4.1.1）
  * 测四件事（docs/TESTING.md L3 约定）：
  *   1. 正常（Admin，存在）→ 200 { ok: true }
- *   2. 目标不存在 / 跨租户（deleteAgent 返回 false）→ 404
+ *   2. 目标不存在 / 跨租户（deleteAgent 返回 not_found）→ 404
+ *   3. 已发布须先下线（deleteAgent 返回 published）→ 409
  *   3. 无权限角色（User，无 agent:delete）→ 403
  *   4. 未登录 → 401
  * 真实跨租户隔离（RLS 兜底）由 3.7 S0-ISO 专项脚本覆盖。
@@ -62,18 +63,28 @@ describe('DELETE /api/agents/[id]', () => {
 
   it('Admin 删除存在的 Agent → 200 { ok: true }', async () => {
     mockCtx.mockResolvedValueOnce(adminCtx)
-    mockDelete.mockResolvedValueOnce(true)
+    mockDelete.mockResolvedValueOnce('deleted')
     const res = await call()
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true })
     expect(mockDelete).toHaveBeenCalledWith(adminCtx, ID)
   })
 
-  it('目标不存在 / 跨租户（deleteAgent=false）→ 404', async () => {
+  it('目标不存在 / 跨租户（deleteAgent=not_found）→ 404', async () => {
     mockCtx.mockResolvedValueOnce(adminCtx)
-    mockDelete.mockResolvedValueOnce(false)
+    mockDelete.mockResolvedValueOnce('not_found')
     const res = await call()
     expect(res.status).toBe(404)
+  })
+
+  // S1-CRUD-04：已发布不能直接删。用 409 而非 404——资源存在，是状态不允许，
+  // 前端据此提示「先下线」；给 404 会让用户以为 Agent 没了。
+  it('🔴 已发布（deleteAgent=published）→ 409 且文案提示先下线', async () => {
+    mockCtx.mockResolvedValueOnce(adminCtx)
+    mockDelete.mockResolvedValueOnce('published')
+    const res = await call()
+    expect(res.status).toBe(409)
+    expect((await res.json()).error.message).toMatch(/先下线/)
   })
 })
 

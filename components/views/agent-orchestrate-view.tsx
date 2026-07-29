@@ -114,6 +114,8 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   const [depDialogOpen, setDepDialogOpen] = useState(fromTemplate && requiredSkills.length > 0);
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // 服务端返回的校验文案（如「名称不能为空」），显示在顶栏名称下方
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = useCallback((m: string) => {
@@ -175,8 +177,14 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
         setSaveStatus('error');
         const body = await res.json().catch(() => ({}));
         if (res.status === 422 && body?.error?.code === 'brain_cycle') showToast(body.error.message);
+        // 名称等入参校验失败：文案要显示在顶栏名称旁边，否则用户只看到
+        // 「保存失败」，分不清是名字空了还是网络断了（S1-CRUD-02）
+        else if (res.status === 422 || res.status === 400) {
+          setSaveError(typeof body?.error?.message === 'string' ? body.error.message : '保存失败');
+        }
         return false;
       }
+      setSaveError(null);
       setSaveStatus('saved');
       return true;
     } catch { setSaveStatus('error'); return false; }
@@ -368,6 +376,11 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
               data-testid="agent-name-input"
               className="bg-transparent text-sm font-medium text-foreground outline-none disabled:opacity-70"
             />
+            {saveError && (
+              <p role="alert" data-testid="agent-name-error" className="text-[11px] text-destructive">
+                {saveError}
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-muted-foreground">AGENT · {agent.department || '未分部门'}</span>
               <Badge className={st.cls}>{st.text}</Badge>

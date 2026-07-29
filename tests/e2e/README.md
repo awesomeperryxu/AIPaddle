@@ -42,8 +42,11 @@ CI 接入：切片 0 启动后，在 `.github/workflows/ci.yml` 的 e2e job 中�
 
 1. 优先可访问性定位：表单控件必须有 `<Label>` 关联（`getByLabel`）、按钮用语义文本（`getByRole('button', {name})`）。
 2. 动态/统计类元素加 `data-testid`，已约定的 ID：
-   `user-menu`、`stat-<页签名>`、`metric-calls`、`chat-message-assistant`、`citation`、
-   `retrieval-score`、`skill-installs`、`canvas`、`block-<节点类型>`、`node-status-<节点类型>`、`run-result`。
+   `user-menu`、`metric-calls`、`chat-message-assistant`、`citation`、
+   `retrieval-score`、`skill-installs`、`canvas`、`block-<节点类型>`、`node-status-<节点类型>`、`run-result`、
+   `agent-name-input`、`agent-name-error`。
+   （`stat-<页签名>` 已于 2026-07-29 移除：约定了但**实现从来没有统计卡**，
+   对应的 S1-CRUD-06 是一条永远失败的用例，已随之删除。）
 3. stages 用例是**可执行规格**（executable spec）：开发对应功能时按用例中的选择器实现 UI，测试即验收标准；确需偏离时改用例并在 PR 里说明。
 
 ## 与 Issue 的对应

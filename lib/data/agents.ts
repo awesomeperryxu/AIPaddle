@@ -1,4 +1,5 @@
 import 'server-only'
+import { assertAgentName } from '@/lib/agents/name'
 import type { Agent } from '@/lib/mock-data'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
@@ -81,7 +82,7 @@ export async function updateAgent(
   patch: { name?: string; description?: string; department?: string },
 ): Promise<Agent | null> {
   const fields: Record<string, unknown> = {}
-  if (typeof patch.name === 'string') fields.name = patch.name.trim()
+  if (typeof patch.name === 'string') fields.name = assertAgentName(patch.name)
   if (typeof patch.description === 'string') fields.description = patch.description
   if (typeof patch.department === 'string') fields.department = patch.department
   if (!UUID_RE.test(id)) return null
@@ -99,20 +100,41 @@ export async function updateAgent(
   return data ? mapRow(data as Row) : null
 }
 
-// 软删除单个 Agent（置 deleted_at）。RLS 兜底租户隔离：他租户 id 影响 0 行 → false → 路由 404。
-// 已删除的再删也返回 false（`.is('deleted_at', null)` 只命中未删行），保证幂等且不泄露存在性。
-export async function deleteAgent(_ctx: RequestContext, id: string): Promise<boolean> {
-  if (!UUID_RE.test(id)) return false
+/** 删除结果：区分「不存在/无权」与「已发布须先下线」，路由据此给 404 / 409。 */
+export type DeleteAgentResult = 'deleted' | 'not_found' | 'published'
+
+// 软删除单个 Agent（置 deleted_at）。RLS 兜底租户隔离：他租户 id 影响 0 行 → not_found → 路由 404。
+// 已删除的再删也返回 not_found（`.is('deleted_at', null)` 只命中未删行），保证幂等且不泄露存在性。
+export async function deleteAgent(_ctx: RequestContext, id: string): Promise<DeleteAgentResult> {
+  if (!UUID_RE.test(id)) return 'not_found'
   const supabase = await createClient()
+
+  // 🔴 已发布的必须先下线才能删（S1-CRUD-04）。此前对任何状态一律直接软删——
+  // 线上正在被调用的 Agent 可以被一键删掉，使用方毫无预警。删除本身是软删可恢复，
+  // 但「谁在用」这件事在删掉的瞬间就断了，所以拦在删除前而不是事后补救。
+  //
+  // 拦截条件写进 update 本身而非「先查后写」：并发下「查到是 offline → 期间被发布
+  // → 仍然删掉」的窗口必须靠单条语句关掉（BUG-89 的教训）。
   const { data, error } = await supabase
     .from('agents')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', id)
     .is('deleted_at', null)
+    .neq('status', 'published')
     .select('id')
     .maybeSingle()
   if (error) throw new Error(error.message)
-  return !!data
+  if (data) return 'deleted'
+
+  // 0 行有两种原因，回查一次仅用于**区分错误码**（不参与是否删除的判定，
+  // 因此不重新引入并发窗口）：还在且是 published → 让用户知道要先下线。
+  const { data: existing } = await supabase
+    .from('agents')
+    .select('status')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  return (existing as { status?: string } | null)?.status === 'published' ? 'published' : 'not_found'
 }
 
 export async function createAgent(
@@ -136,7 +158,7 @@ export async function createAgent(
     .insert({
       org_id: ctx.orgId,
       created_by: ctx.userId,
-      name: input.name,
+      name: assertAgentName(input.name),
       department: input.department ?? null,
       description: input.description ?? null,
       status: 'draft', // AI 生成/手工创建一律 draft，发布须走审核（4.1.2/4.1.3）
@@ -251,7 +273,8 @@ export async function saveAgent(
 ): Promise<AgentDetail | null> {
   if (!UUID_RE.test(id)) return null
   const fields: Record<string, unknown> = {}
-  if (typeof patch.name === 'string') fields.name = patch.name.trim()
+  // 编排页顶栏改名走的是这条（不是 updateAgent），名称校验必须在这里也生效
+  if (typeof patch.name === 'string') fields.name = assertAgentName(patch.name)
   if (typeof patch.description === 'string') fields.description = patch.description
   if (typeof patch.department === 'string') fields.department = patch.department
   if (patch.origin === 'platform' || patch.origin === 'user') fields.origin = patch.origin

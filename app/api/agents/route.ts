@@ -2,6 +2,7 @@ import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { createClient } from '@/lib/supabase/server'
 import { listAgents } from '@/lib/data/agents'
+import { assertAgentName, AgentValidationError } from '@/lib/agents/name'
 import { requiresEnterprisePermission, type AgentOrigin } from '@/lib/agents/taxonomy'
 
 // GET /api/agents —— 列出本租户 Agent（RLS 隔离，agent:read 默认所有角色可读）。
@@ -26,9 +27,16 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>))
-  const name = String(body?.name ?? '').trim()
-  if (!name) {
-    return Response.json({ error: { code: 'invalid', message: '名称不能为空' } }, { status: 400 })
+  // 与改名共用 assertAgentName：两处各写一份规则必然漂移（此前这里只挡空名、
+  // 不挡超长，改名路径则两样都不挡）
+  let name: string
+  try {
+    name = assertAgentName(String(body?.name ?? ''))
+  } catch (e) {
+    if (e instanceof AgentValidationError) {
+      return Response.json({ error: { code: 'invalid', message: e.message } }, { status: 400 })
+    }
+    throw e
   }
 
   // 4.1.17 / ADR-013：来源分类。origin/mandatory 属高权写操作——设"平台来源"或"强制下发"
