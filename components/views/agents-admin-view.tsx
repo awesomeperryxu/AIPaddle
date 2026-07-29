@@ -160,7 +160,9 @@ export function AgentsAdminView({
       await apiFetch(`/api/agents/${agent.id}`, { method: 'DELETE' });
       router.refresh();
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : '删除失败');
+      // 用页内提示而非 window.alert：alert 的文案不进 DOM，用户无法复制、
+      // e2e 也断言不到（S1-CRUD-04 一直挂在这），且与本页其它提示不一致
+      showNotice(e instanceof Error ? e.message : '删除失败');
     } finally { setDeletingId(null); }
   }
 

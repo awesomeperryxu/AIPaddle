@@ -1,6 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { getAgentById, saveAgent, deleteAgent } from '@/lib/data/agents'
+import { AgentValidationError } from '@/lib/agents/name'
 import { AgentConfigSchema } from '@/lib/agents/config'
 import { detectBrainCycle } from '@/lib/agents/brain'
 import { requiresEnterprisePermission, type AgentOrigin } from '@/lib/agents/taxonomy'
@@ -60,14 +61,23 @@ export async function PATCH(req: Request, { params }: Ctx) {
     }
   }
 
-  const agent = await saveAgent(ctx, id, {
-    name: typeof body?.name === 'string' ? body.name : undefined,
-    description: typeof body?.description === 'string' ? body.description : undefined,
-    department: typeof body?.department === 'string' ? body.department : undefined,
-    origin,
-    mandatory,
-    config,
-  })
+  let agent
+  try {
+    agent = await saveAgent(ctx, id, {
+      name: typeof body?.name === 'string' ? body.name : undefined,
+      description: typeof body?.description === 'string' ? body.description : undefined,
+      department: typeof body?.department === 'string' ? body.department : undefined,
+      origin,
+      mandatory,
+      config,
+    })
+  } catch (e) {
+    // 名称等入参校验失败 → 422（与 config 校验同档），前端顶栏直接显示该文案
+    if (e instanceof AgentValidationError) {
+      return Response.json({ error: { code: 'invalid', message: e.message } }, { status: 422 })
+    }
+    throw e
+  }
   if (!agent) {
     return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
   }
@@ -85,8 +95,15 @@ export async function DELETE(_req: Request, { params }: Ctx) {
     return Response.json({ error: { code: 'forbidden', message: '无权限：删除 Agent' } }, { status: 403 })
   }
   const { id } = await params
-  const ok = await deleteAgent(ctx, id)
-  if (!ok) {
+  const result = await deleteAgent(ctx, id)
+  if (result === 'published') {
+    // 409 而非 404：Agent 确实存在，是**状态**不允许删除，前端据此提示「先下线」
+    return Response.json(
+      { error: { code: 'conflict', message: '已发布的 Agent 无法删除，请先下线' } },
+      { status: 409 },
+    )
+  }
+  if (result === 'not_found') {
     return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
   }
   return Response.json({ ok: true })

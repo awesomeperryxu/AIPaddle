@@ -27,5 +27,20 @@ export async function GET() {
     .limit(1)
     .maybeSingle()
 
-  return Response.json({ orgAAgentId: agent?.id ?? null })
+  // 每种状态取一个样本 id，供 S1-STM-02 直打 transition API 验非法流转被拒。
+  // 用例一直在读 agentIdsByStatus，但这个字段**从未实现**——4 条用例因此全挂
+  // 在「读 undefined」上，看起来像状态机有问题，其实是测试数据接口缺字段。
+  const { data: statusRows } = await admin
+    .from('agents')
+    .select('id,status')
+    .eq('org_id', orgA.id)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true })
+
+  const agentIdsByStatus: Record<string, string> = {}
+  for (const r of (statusRows as { id: string; status: string }[] | null) ?? []) {
+    if (r.status && !agentIdsByStatus[r.status]) agentIdsByStatus[r.status] = r.id
+  }
+
+  return Response.json({ orgAAgentId: agent?.id ?? null, agentIdsByStatus })
 }

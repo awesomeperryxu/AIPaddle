@@ -28,6 +28,15 @@ export function storageStatePath(key: UserKey): string {
 export async function login(page: Page, userKey: UserKey) {
   const user = USERS[userKey];
   await page.goto('/login');
+
+  // 已有会话时 /login 会被重定向到 /dashboard，邮箱框永远不出现——直接 fill 会一直
+  // 等到超时（S1-STM-01 中途从 devA 切到 adminA 就卡在这，报错只说「waiting for
+  // getByLabel(邮箱)」，看着像登录页坏了）。先退干净再登，切账号才可靠。
+  if (!/\/login/.test(page.url())) {
+    await logout(page);
+    await page.goto('/login');
+  }
+
   await page.getByLabel(/邮箱|email/i).fill(user.email);
   await page.getByLabel(/密码|password/i).fill(user.password);
   await page.getByRole('button', { name: /登录|sign in/i }).click();
