@@ -34,6 +34,7 @@ export type Action =
   | 'workflow:update'
   | 'workflow:run'
   | 'provider:manage'
+  | 'provider:manage-any'
   | 'apikey:manage'
   | 'department:read'
   | 'department:manage'
@@ -73,6 +74,11 @@ const MATRIX: Record<Action, Role[]> = {
   'workflow:run': ['Admin', 'Developer', 'User'],
   // 模型供应商（ADR-016 4.7.3）：租户管理员自助配供应商/Key/默认模型。跨租户代配走 isPlatformAdmin。
   'provider:manage': ['Admin'],
+  // 4.8.10：跨租户代配模型供应商。**矩阵里对所有角色留空**——它不是角色能力，
+  // 而是平台超管专属：入口须再过 isPlatformAdmin(ctx)，与 tenant:manage 同一模式
+  //（ADR-007 §5：平台超管走独立判定，不混进租户角色体系）。
+  // 留在矩阵里是为了让「新增写操作必须登记 action」这条约定有据可查，默认拒绝。
+  'provider:manage-any': [],
   // 对外 API Key（4.8.6）：签发/吊销本租户对外调用凭证，仅 Admin。
   'apikey:manage': ['Admin'],
   // 组织架构（4.8.14a）：部门树全员可读（成员编辑/资源授权都要选部门）；增删改仅 Admin。

@@ -1,6 +1,7 @@
 import 'server-only'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { encryptApiKey, decryptApiKey, maskApiKey, isEncryptionAvailable } from '@/lib/crypto/model-key'
 
 // ADR-016 4.7.3：租户模型供应商数据层。
@@ -65,6 +66,67 @@ export async function listProviders(ctx: RequestContext): Promise<ProviderMasked
     .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return ((data as Row[] | null) ?? []).map(toMasked)
+}
+
+/**
+ * 4.8.10：**平台超管代某租户**读写模型供应商。
+ *
+ * 与上面的租户自管函数刻意分开命名，而不是给它们加个可选 orgId 参数——
+ * 后者一旦某处漏传/误传就会静默跨租户操作，属于最危险的那类 bug。
+ * 独立函数 + admin client 让「这是跨租户操作」在调用点一目了然，
+ * 且入口必须由 isPlatformAdmin 兜住（此层不做 RLS 隔离，比照 lib/data/tenants.ts）。
+ */
+export async function listProvidersForOrg(orgId: string): Promise<ProviderMasked[]> {
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('tenant_model_providers')
+    .select(COLS)
+    .eq('org_id', orgId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return ((data as Row[] | null) ?? []).map(toMasked)
+}
+
+/** 4.8.10：平台超管为指定租户新增供应商（Key 加密规则与租户自管完全一致）。 */
+export async function createProviderForOrg(
+  orgId: string,
+  actorId: string,
+  input: CreateProviderInput,
+): Promise<ProviderMasked> {
+  if (!isEncryptionAvailable()) throw new Error('未配置 MODEL_KEY_ENC_SECRET，暂无法保存模型 Key')
+  if (!input.apiKey?.trim()) throw new Error('API Key 不能为空')
+  if (!input.credentialName?.trim()) throw new Error('凭据名称不能为空')
+
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('tenant_model_providers')
+    .insert({
+      org_id: orgId,
+      provider: input.provider,
+      credential_name: input.credentialName.trim(),
+      base_url: input.baseUrl?.trim() || null,
+      api_key_ciphertext: encryptApiKey(input.apiKey.trim()),
+      models: input.models ?? [],
+      created_by: actorId,
+    })
+    .select(COLS)
+    .single()
+  if (error) throw new Error(error.message)
+  return toMasked(data as Row)
+}
+
+/** 4.8.10：平台超管软删指定租户的供应商。orgId 一并校验，避免只凭 id 误删他租户的。 */
+export async function deleteProviderForOrg(orgId: string, id: string): Promise<boolean> {
+  const admin = createAdminClient()
+  const now = new Date().toISOString()
+  const { data, error } = await admin
+    .from('tenant_model_providers')
+    .update({ deleted_at: now, updated_at: now })
+    .eq('id', id).eq('org_id', orgId).is('deleted_at', null)
+    .select('id')
+  if (error) throw new Error(error.message)
+  return ((data as { id: string }[] | null) ?? []).length > 0
 }
 
 export type CreateProviderInput = {
