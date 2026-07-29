@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Building2, Zap, Activity, Wallet, AlertTriangle } from 'lucide-react'
@@ -41,16 +42,20 @@ export function SaasDashboardView({ data }: { data: PlatformDashboard }) {
         </p>
       </div>
 
-      {/* KPI Cards（全部真实） */}
+      {/* KPI Cards（全部真实 · 点击查看每租户明细） */}
       <div className="grid grid-cols-4 gap-4">
         <KpiCard icon={<Building2 className="h-5 w-5 text-primary" />} label="租户总数"
-          value={String(tenants.total)} sub={`活跃 ${tenants.active} · 停用 ${tenants.suspended}`} />
+          value={String(tenants.total)} sub={`活跃 ${tenants.active} · 停用 ${tenants.suspended}`}
+          href="/platform-metrics/tenants" />
         <KpiCard icon={<Zap className="h-5 w-5 text-chart-3" />} label="近 30 天平台 Token"
-          value={fmtTokens(usage30d.tokens)} sub={`${usage30d.calls.toLocaleString('en-US')} 次调用`} />
+          value={fmtTokens(usage30d.tokens)} sub={`${usage30d.calls.toLocaleString('en-US')} 次调用`}
+          href="/platform-metrics/tokens" />
         <KpiCard icon={<Activity className="h-5 w-5 text-accent" />} label="近 30 天调用次数"
-          value={usage30d.calls.toLocaleString('en-US')} sub="来自 call_logs 真实记录" />
+          value={usage30d.calls.toLocaleString('en-US')} sub="来自 call_logs 真实记录"
+          href="/platform-metrics/calls" />
         <KpiCard icon={<Wallet className="h-5 w-5 text-primary" />} label="近 30 天估算成本"
-          value={fmtCost(usage30d.estCost)} sub="按通义 Qwen 单价估算，非结算金额" />
+          value={fmtCost(usage30d.estCost)} sub="按通义 Qwen 单价估算，非结算金额"
+          href="/platform-metrics/cost" />
       </div>
 
       {/* Token 趋势 */}
@@ -167,9 +172,23 @@ export function SaasDashboardView({ data }: { data: PlatformDashboard }) {
   )
 }
 
-function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub: string }) {
+function KpiCard({ icon, label, value, sub, href }: { icon: React.ReactNode; label: string; value: string; sub: string; href?: string }) {
+  const router = useRouter()
+  const clickable = !!href
   return (
-    <Card className="bg-card border-border shadow-sm">
+    <Card
+      className={`bg-card border-border shadow-sm${clickable ? ' cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/30' : ''}`}
+      {...(clickable
+        ? {
+            role: 'button' as const,
+            tabIndex: 0,
+            onClick: () => router.push(href),
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(href) }
+            },
+          }
+        : {})}
+    >
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <div>

@@ -53,8 +53,26 @@ describe('getTenantUsage（每租户真实用量聚合）', () => {
     )
 
     const usage = await getTenantUsage()
-    expect(usage.a).toMatchObject({ members: 2, agents: 1, tokens30d: 2000, estCost30d: 0.0028, platformTokens30d: 2000 })
-    expect(usage.b).toMatchObject({ members: 1, agents: 0, tokens30d: 2000, estCost30d: 0.0016, platformTokens30d: 2000 })
+    expect(usage.a).toMatchObject({ members: 2, agents: 1, tokens30d: 2000, calls30d: 1, estCost30d: 0.0028, platformTokens30d: 2000 })
+    expect(usage.b).toMatchObject({ members: 1, agents: 0, tokens30d: 2000, calls30d: 1, estCost30d: 0.0016, platformTokens30d: 2000 })
+  })
+
+  // 4.9.x：调用次数=call_logs 行数，不分来源（平台/BYO/未知都计）
+  it('calls30d 按 org 计 call_logs 行数，跨来源汇总', async () => {
+    mockCreate.mockReturnValue(
+      fakeAdmin({
+        call_logs: [
+          { org_id: 'a', tokens_in: 100, tokens_out: 0, key_source: 'platform', provider: 'platform-env', model: 'qwen-plus', created_at: new Date().toISOString() },
+          { org_id: 'a', tokens_in: 100, tokens_out: 0, key_source: 'tenant' },
+          { org_id: 'a', tokens_in: 100, tokens_out: 0, key_source: null },
+          { org_id: 'b', tokens_in: 100, tokens_out: 0, key_source: 'platform', provider: 'platform-env', model: 'qwen-plus', created_at: new Date().toISOString() },
+        ],
+        model_pricing: PRICING,
+      }) as never,
+    )
+    const usage = await getTenantUsage()
+    expect(usage.a.calls30d).toBe(3)
+    expect(usage.b.calls30d).toBe(1)
   })
 
   // 4.8.17a/b：Key 来源决定成本归属——BYO 与来源未知都不计入平台成本
