@@ -6,6 +6,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
+// KpiCard 可点击跳转依赖 next/navigation useRouter，jsdom 无 router 上下文，mock 掉。
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+
 // recharts 在 jsdom 下依赖 ResizeObserver，测试聚焦渲染逻辑，故 mock 掉图表库。
 vi.mock('recharts', () => {
   const Stub = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>

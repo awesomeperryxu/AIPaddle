@@ -129,6 +129,7 @@ export type TenantUsage = {
   members: number       // 该租户成员数（users，未软删）
   agents: number        // 该租户 Agent 数（agents，未软删）
   tokens30d: number     // 近 30 天 Token 消耗（全部来源）
+  calls30d: number      // 近 30 天调用次数（call_logs 行数，全部来源）
   estCost30d: number    // 近 30 天平台侧估算成本（元）——**只算 platform 来源**，BYO 不计
   // 4.8.17a/b：按 Key 来源拆分。平台只为 platform 来源付钱；tenant 来源是租户自带 Key。
   platformTokens30d: number  // 其中：平台 Key 产生的 token
@@ -163,7 +164,7 @@ export async function getTenantUsage(): Promise<Record<string, TenantUsage>> {
 
   const usage: Record<string, TenantUsage> = {}
   const ensure = (org: string) => (usage[org] ??= {
-    members: 0, agents: 0, tokens30d: 0, estCost30d: 0,
+    members: 0, agents: 0, tokens30d: 0, calls30d: 0, estCost30d: 0,
     platformTokens30d: 0, byoTokens30d: 0, unknownTokens30d: 0, unpricedCalls30d: 0, keyMode: 'platform',
   })
 
@@ -178,6 +179,7 @@ export async function getTenantUsage(): Promise<Record<string, TenantUsage>> {
     const e = ensure(l.org_id)
     const tin = l.tokens_in ?? 0, tout = l.tokens_out ?? 0
     e.tokens30d += tin + tout
+    e.calls30d += 1   // 调用次数=call_logs 行数，不分来源
     if (l.key_source === 'tenant') {
       e.byoTokens30d += tin + tout
     } else if (l.key_source === 'platform') {
