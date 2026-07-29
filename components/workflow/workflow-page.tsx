@@ -539,6 +539,7 @@ function WorkflowPageInner({
               onDrop={onDrop}
             >
               <ReactFlow
+                data-testid="canvas"
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={onNodesChange}

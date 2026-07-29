@@ -33,8 +33,15 @@ test.describe('S0-AUTH 认证 @stage0', () => {
     await login(page, 'adminA');
     await expect(page.getByTestId('user-menu')).toContainText(USERS.adminA.name);
     await logout(page);
-    await page.goto('/'); // 再访问受保护页
-    await expect(page).toHaveURL(/login/);
+
+    // 退出后再访问受保护页应被回踢到登录页。
+    // 这里曾 flaky：logout() 内部已等过一次跳转，但那只保证「浏览器已到 /login」，
+    // 不保证**服务端会话已完全失效**；紧接着 goto('/') 可能仍被中间件放行到
+    // /dashboard。改为轮询到真正被回踢，而非赌单次跳转的时序。
+    await expect(async () => {
+      await page.goto('/');
+      expect(page.url()).toMatch(/login/);
+    }).toPass({ timeout: 15_000, intervals: [500, 1000, 2000] });
   });
 
   for (const cred of BAD_CREDENTIALS) {

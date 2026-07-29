@@ -740,11 +740,13 @@ export function WorkflowRunPanel({
       {/* Tab Content */}
       <ScrollArea className="flex-1">
         {activeTab === "result" && (
-          <ResultTab
-            status={status}
-            outputs={outputs}
-            errorMessage={errorMessage}
-          />
+          <div data-testid="run-result">
+            <ResultTab
+              status={status}
+              outputs={outputs}
+              errorMessage={errorMessage}
+            />
+          </div>
         )}
         {activeTab === "detail" && (
           <DetailTab

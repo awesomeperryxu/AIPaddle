@@ -295,10 +295,11 @@ export function KnowledgeQaView() {
                     return (
                       <div
                         key={c.documentId + i}
+                        data-testid="citation"
                         className="rounded-lg border border-border bg-muted/30 p-3.5"
                       >
                         <div className="mb-2 flex items-center gap-2.5">
-                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.badge}`}>
+                          <span data-testid="retrieval-score" className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone.badge}`}>
                             {c.similarity.toFixed(2)}
                           </span>
                           <span className="text-[13px] font-medium text-foreground">{c.filename}</span>
