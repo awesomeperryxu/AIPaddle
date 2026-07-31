@@ -75,6 +75,34 @@ async function main() {
     log(`✅ 租户已创建：${tenant.name} (${tenant.id.slice(0, 8)})`)
   }
 
+  // ── 首个管理员 ────────────────────────────────────────
+  // 必须有：agents/knowledge_bases 等表的 created_by 非空，没有用户就什么都建不了。
+  // 初版遗漏了这步，导致 RB-2 建 Agent 全部失败在 created_by 约束上。
+  const adminEmail = TENANT.contactEmail
+  let { data: adminUser } = await admin
+    .from('users').select('id,email').eq('email', adminEmail).is('deleted_at', null).maybeSingle()
+
+  if (adminUser) {
+    log(`· 管理员已存在，复用：${adminUser.email}`)
+  } else if (!DRY) {
+    const pwd = process.env.RB_ADMIN_PASSWORD
+    if (!pwd) throw new Error('缺少 RB_ADMIN_PASSWORD 环境变量（首个管理员密码，不硬编码进脚本）')
+    const { data: au, error: aErr } = await admin.auth.admin.createUser({
+      email: adminEmail, password: pwd, email_confirm: true,
+    })
+    if (aErr || !au?.user?.id) throw new Error(`建管理员 auth 账号失败：${aErr?.message}`)
+    const { error: pErr } = await admin.from('users').insert({
+      id: au.user.id, org_id: tenant.id, email: adminEmail, name: TENANT.contactName,
+    })
+    if (pErr) {
+      await admin.auth.admin.deleteUser(au.user.id).catch(() => {})
+      throw new Error(`建管理员档案失败：${pErr.message}`)
+    }
+    await admin.from('user_roles').insert({ user_id: au.user.id, org_id: tenant.id, role: 'Admin' })
+    adminUser = { id: au.user.id, email: adminEmail }
+    log(`✅ 管理员已创建：${adminEmail}`)
+  }
+
   // ── 知识库 ────────────────────────────────────────────
   const { data: existing } = await admin
     .from('knowledge_bases').select('name').eq('org_id', tenant.id).is('deleted_at', null)
