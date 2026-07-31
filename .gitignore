@@ -46,3 +46,4 @@ docs/SECURITY-机密与不同步清单.md
 playwright/.auth/
 test-results/
 playwright-report/
+tsconfig.tsbuildinfo
