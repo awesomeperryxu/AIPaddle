@@ -5,6 +5,7 @@ import { signOut } from '@/app/(dashboard)/actions';
 import {
   Bot,
   Boxes,
+  Plug,
   Database,
   FileText,
   GitBranch,
@@ -109,6 +110,13 @@ const navSections: NavSection[] = [
       { title: '安全管理', icon: <Shield className="h-4 w-4" />, href: 'security', badge: 3 },
       { title: 'MCP 管理', icon: <Server className="h-4 w-4" />, href: 'mcp' },
       { title: '成员管理', icon: <Users className="h-4 w-4" />, href: 'members' },
+    ]
+  },
+  {
+    title: '扩展能力',
+    defaultOpen: false,
+    items: [
+      { title: '扩展管理', icon: <Plug className="h-4 w-4" />, href: 'extensions' },
     ]
   },
   {
