@@ -57,6 +57,18 @@ function codeOnly(src: string): string {
     .replace(/'[^']*'|"[^"]*"|`[^`]*`/g, "''") // 字符串字面量
 }
 
+/**
+ * 只剥注释、**保留字符串字面量**。
+ * 与 codeOnly() 的区别：codeOnly 会把字符串换成 ''，适合判断「有没有调用某函数」；
+ * 但要读取 can(ctx,'xxx') 里的 action 名就必须保留字符串，否则拿到的永远是空串
+ * （初版正是这么写的，破坏性验证时故意塞进未登记 action 却依然全绿）。
+ */
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1 ')
+}
+
 describe('平台级 API 门控契约（4.8.10）', () => {
   it('扫描到的路由数量合理（守住扫描逻辑本身失效）', () => {
     expect(ROUTES.length).toBeGreaterThan(20)
@@ -114,5 +126,47 @@ describe('平台级 API 门控契约（4.8.10）', () => {
     expect(src).toContain("'provider:manage-any'")
     // 它是平台超管专属，矩阵里对所有角色留空 → 单靠角色永远拒绝
     expect(src).toMatch(/'provider:manage-any':\s*\[\s*\]/)
+  })
+
+  /**
+   * 🔴 通用守卫：API 里 can(ctx,'xxx') 用到的 action 必须已在 Action 类型与 MATRIX 登记。
+   *
+   * 缺口来由：ADR-007 约定「新增写操作先登记 action 再实现 API」，但此前**没有任何自动检查**——
+   * 漏登记只会在运行时静默 403（`hasPermission` 查不到即返回 false），CI 全绿、
+   * 开发本地也不报错，只有用户点到那个按钮才发现「没权限」。
+   * 逐个硬编码检查（如下方 provider:manage-any 那条）挡不住新增的，故加这条全量扫描。
+   */
+  it('🔴 API 中使用的 action 必须已在 permissions.ts 登记（防漏配静默 403）', () => {
+    const perm = fs.readFileSync(path.join(ROOT, 'lib/auth/permissions.ts'), 'utf8')
+    const registered = new Set([...perm.matchAll(/^\s*\|\s*'([a-z0-9:_-]+)'/gm)].map((m) => m[1]))
+
+    const offenders: string[] = []
+    for (const f of ROUTES) {
+      const src = stripComments(fs.readFileSync(f, 'utf8'))
+      for (const m of src.matchAll(/\bcan\s*\(\s*[A-Za-z_$][\w$]*\s*,\s*'([a-z0-9:_-]+)'/g)) {
+        if (!registered.has(m[1])) offenders.push(`${rel(f)} → '${m[1]}'`)
+      }
+    }
+    expect(
+      offenders,
+      offenders.length
+        ? `以下 action 在 API 中被使用但未登记进 permissions.ts 的 Action 类型：\n` +
+          [...new Set(offenders)].map((o) => `  · ${o}`).join('\n') +
+          `\n未登记的 action 在 hasPermission 中查不到映射，会**静默返回 403**——CI 不红、` +
+          `本地不报错，只有用户点到才发现。请先在 ADR-007 矩阵登记再实现 API。`
+        : '',
+    ).toEqual([])
+  })
+
+  it('V12-8.3：Extension 的 7 个 ext:* action 已登记，且写操作仅限 Admin', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'lib/auth/permissions.ts'), 'utf8')
+    for (const a of ['ext:read', 'ext:create', 'ext:update', 'ext:delete',
+                     'ext:publish', 'ext:key:manage', 'ext:call-log:read']) {
+      expect(src, `${a} 未登记`).toContain(`'${a}'`)
+    }
+    // 🔴 签发对外 Key = 对外授权，只能 Admin。放开给 Developer 等于让能建 Agent 的人
+    // 也能把它开放给公网。
+    expect(src).toMatch(/'ext:key:manage':\s*\['Admin'\]/)
+    expect(src).toMatch(/'ext:create':\s*\['Admin'\]/)
   })
 })

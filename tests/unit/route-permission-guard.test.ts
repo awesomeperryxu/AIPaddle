@@ -10,7 +10,15 @@ import { join } from 'node:path'
 
 const API_DIR = join(process.cwd(), 'app', 'api')
 const WRITE_RE = /export\s+(?:async\s+)?function\s+(POST|PUT|PATCH|DELETE)\b/
-const AUTH_RE = /getRequestContext\s*\(|CRON_SECRET|verifyApiKey\s*\(/
+// 三种合法鉴权入口：
+//   getRequestContext        —— 内部路由（Supabase 会话）
+//   CRON_SECRET              —— 定时作业入口
+//   verifyApiKey             —— 直接校验对外 Key
+//   withExtensionIdentity    —— 对外 Extension 端点（V12-8.7）：内部已做 verifyApiKey
+//                               + 机器用户身份绑定，是 Key 鉴权的封装形式
+// 🔴 新增鉴权方式时应扩这里，**不要往 ALLOWLIST 加豁免**——豁免等于开后门，
+//    而且下一个新路由抄了豁免写法就再也没人拦得住。
+const AUTH_RE = /getRequestContext\s*\(|CRON_SECRET|verifyApiKey\s*\(|withExtensionIdentity\s*\(/
 
 // 例外（自有鉴权机制，非登录会话）：认证端点本身（登录/注册/回调，此时用户尚未登录）。
 const ALLOWLIST: string[] = ['app/api/auth/']

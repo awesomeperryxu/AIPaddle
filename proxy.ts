@@ -40,7 +40,14 @@ export async function proxy(request: NextRequest) {
   const isCallback = pathname.startsWith('/auth/callback')
   const isPrototype = pathname.startsWith('/prototype')
   const isAuthApi = pathname.startsWith('/api/auth') // 登录/注册 API 路由（未登录须放行，#61 登录部署无关化）
-  const isPublic = isAuthPage || isCallback || isPrototype || isAuthApi
+  // 🔴 V12-8.11：对外 Extension API 必须放行会话检查。
+  // 它有**自己的一套鉴权**（API Key + 机器用户身份，见 ADR-020），外部系统不带
+  // Supabase 会话 Cookie。若在此处拦截，请求会被 307 重定向到 /login——外部拿到的是
+  // 一个跳转而不是 401，既调不通也看不出原因。
+  // 放行不等于不鉴权：guardExtensionRequest 在端点内做 Key 校验 / Origin 白名单 /
+  // Scope / 限流，未通过一样拒绝。
+  const isExtApi = pathname.startsWith('/api/ext/')
+  const isPublic = isAuthPage || isCallback || isPrototype || isAuthApi || isExtApi
 
   // 已登录：检查 24h 会话有效期
   if (user) {
