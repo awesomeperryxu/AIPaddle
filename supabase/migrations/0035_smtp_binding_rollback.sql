@@ -1,4 +1,4 @@
--- 回滚 0034_smtp_binding.sql —— 把 binding_type / kind 收回 4 类。
+-- 回滚 0035_smtp_binding.sql —— 把 binding_type / kind 收回 4 类。
 --
 -- 🔴 前置条件：库中不能已有 binding_type='smtp' 或 kind='smtp' 的行，
 --    否则 add constraint 会因既有数据违约而失败。回滚前先查：
