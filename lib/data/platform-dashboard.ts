@@ -29,6 +29,27 @@ type LogRow = {
 const DAY = 86_400_000
 function ymKey(d: Date) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 
+/**
+ * 生成「近 N 个自然月」的 YYYY-MM 序列（含当月，末位=当月）。
+ *
+ * 🔴 不能用 `now - i*30*DAY` 倒推——自然月长度是 28~31 天，30 天定长会串月：
+ * 2026-07-31 减 30 天仍是 2026-07-01，于是「上个月」和「本月」都算成 2026-07，
+ * 6 个桶里出现重复月份、实际只覆盖 5 个月，且当月成本在图上被画两遍。
+ * 该缺陷在每月 31 号（及 2 月前后）必现，属日期敏感型，平时跑测试看不见。
+ *
+ * 正确做法是按月份数做算术：用 setMonth 让 Date 自己处理跨年与月长。
+ */
+export function recentMonthKeys(now: number, count = 6): string[] {
+  const out: string[] = []
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(now)
+    d.setDate(1)                    // 先归到 1 号，避免 31 号 setMonth 溢出到下月
+    d.setMonth(d.getMonth() - i)
+    out.push(ymKey(d))
+  }
+  return out
+}
+
 /** 平台运营大盘真实聚合。仅平台超管可调用（入口已 isPlatformAdmin）。 */
 export async function getPlatformDashboard(): Promise<PlatformDashboard> {
   const admin = createAdminClient()
@@ -70,8 +91,7 @@ export async function getPlatformDashboard(): Promise<PlatformDashboard> {
   }
 
   // 近 6 个月 Token 趋势
-  const months: string[] = []
-  for (let i = 5; i >= 0; i--) months.push(ymKey(new Date(now - i * 30 * DAY)))
+  const months = recentMonthKeys(now)
   const trendMap = new Map(months.map((m) => [m, 0]))
   for (const l of logs) {
     if (!l.created_at) continue
@@ -231,8 +251,7 @@ export async function getPlatformRevenueTrend(): Promise<RevenuePoint[]> {
   if (error) throw new Error(error.message)
   const pricing = await loadPricingTable()
 
-  const months: string[] = []
-  for (let i = 5; i >= 0; i--) months.push(ymKey(new Date(now - i * 30 * DAY)))
+  const months = recentMonthKeys(now)
   const map = new Map(months.map((m) => [m, 0]))
   type TrendLog = {
     tokens_in: number | null; tokens_out: number | null; created_at: string | null
