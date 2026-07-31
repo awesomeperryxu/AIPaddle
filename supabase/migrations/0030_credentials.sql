@@ -18,7 +18,9 @@ create table public.credentials (
   org_id            uuid not null references public.tenants(id),
   name              text not null,                    -- 凭据名，如「GitHub-生产」
   description       text,
-  kind              text not null check (kind in ('oauth', 'api_key', 'jwt', 'db_secret')),
+  -- smtp（V12-2.3a，2026-07-31）：SMTP 发信账号。密码/授权码进 secret_ciphertext，
+  -- host/port/secure/user 这类非敏感连接参数进 meta。
+  kind              text not null check (kind in ('oauth', 'api_key', 'jwt', 'db_secret', 'smtp')),
   -- 🔴 AES-256-GCM 密文（v1:iv:tag:ct，base64）。绝不明文。
   secret_ciphertext text not null,
   -- 非敏感的辅助字段（如 OAuth 的 client_id、DB 的 host/port/database、只读账号名）
