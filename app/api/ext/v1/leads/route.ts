@@ -1,7 +1,7 @@
 import { guardExtensionRequest, corsHeaders, handleOptions } from '@/lib/auth/extension-guard'
 import { withExtensionIdentity } from '@/lib/auth/extension-context'
 import { createLead, LeadValidationError } from '@/lib/data/leads'
-import { sendLeadNotification } from '@/lib/notify'
+import { sendLeadNotification, LEAD_SOURCE } from '@/lib/notify'
 
 // V12-8.9 / ADR-020：外部留资提交。
 // 🔴 本文件禁止 import getRequestContext（内外身份入口分家，ADR-020 §2）
@@ -33,7 +33,8 @@ export async function POST(req: Request) {
     project: str(body.project),
     expectedTime: str(body.expectedTime),
     siteInfo: str(body.siteInfo),
-    source: str(body.source),
+    // 与官网表单通知共用版式，仅此一行不同（LEAD_SOURCE.form 是表单那条）
+    source: str(body.source) ?? LEAD_SOURCE.chat,
     conversationSummary: str(body.summary),
   }
 

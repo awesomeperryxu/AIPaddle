@@ -1,5 +1,5 @@
 import 'server-only'
-import { LEAD_FIELDS, type ChannelResult, type LeadPayload } from './types'
+import { LEAD_FIELDS, EMPTY_PLACEHOLDER, submittedAt, type ChannelResult, type LeadPayload } from './types'
 
 // V12-4.8：企业微信自建应用推送。
 //
@@ -45,18 +45,26 @@ async function getToken(cfg: WecomConfig): Promise<string> {
   return cached.token
 }
 
+// 字段与顺序对齐官网既有留资通知（同 email.ts），只有「来源渠道」不同。
 function buildMarkdown(lead: LeadPayload): string {
   const rows = LEAD_FIELDS
     .map(f => {
       const v = lead[f.key]
-      return v ? `>${f.label}：**${String(v)}**` : null
+      if (!v) return f.key === 'name' || f.key === 'contact' ? `>${f.label}：**${EMPTY_PLACEHOLDER}**` : null
+      const bold = f.key === 'name' || f.key === 'contact'
+      return bold ? `>${f.label}：**${String(v)}**` : `>${f.label}：${String(v)}`
     })
     .filter(Boolean)
     .join('\n')
-  const summary = lead.conversationSummary
-    ? `\n\n**咨询摘要**\n<font color="comment">${lead.conversationSummary}</font>`
-    : ''
-  return `**【黑围裙官网】新线索**\n${rows}${summary}\n\n来源：${lead.source ?? 'website'} · AIPaddle 智能顾问`
+
+  return [
+    '**🔔 官网新客户预约**',
+    rows,
+    `>来源渠道：<font color="info">${lead.source || '官网'}</font>`,
+    `>提交时间：${submittedAt()}`,
+    '',
+    '<font color="warning">请高润及时跟进！</font>',
+  ].join('\n')
 }
 
 /** 推送留资通知到企业微信。失败不抛，返回结果由调用方落库。 */

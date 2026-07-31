@@ -6,6 +6,7 @@ import { sendEmailLead } from './email'
 import type { LeadPayload, NotifyResult } from './types'
 
 export type { LeadPayload, NotifyResult, ChannelResult } from './types'
+export { LEAD_SOURCE } from './types'
 
 // V12-4.8（邮件道）：对外交付的唯一入口，契约见 PARALLEL_COORDINATION_v113 §5。
 // X 道在 /api/ext/v1/leads 与 /handoff 里调用本函数，不自己实现发信。

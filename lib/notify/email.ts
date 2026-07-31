@@ -1,6 +1,6 @@
 import 'server-only'
 import nodemailer from 'nodemailer'
-import { LEAD_FIELDS, type ChannelResult, type LeadPayload } from './types'
+import { LEAD_FIELDS, EMPTY_PLACEHOLDER, submittedAt, type ChannelResult, type LeadPayload } from './types'
 
 // V12-4.8：SMTP 邮件通知（腾讯企业邮，2026-07-31 实测打通）。
 //
@@ -32,36 +32,34 @@ function readConfig(): SmtpConfig | null {
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
 
+// 🔴 版式**逐像素对齐官网既有留资通知**（royalblack 官网 src/app/api/lead/route.js）：
+// 同样的标题、表格样式、底部提醒条。高润收到的两种通知只有「来源渠道」一行不同，
+// 不必先分辨这是表单来的还是 AI 客服来的。
 function buildHtml(lead: LeadPayload): string {
+  const row = (label: string, value: string, bold = false) => `
+        <tr><td style="padding:8px 0;color:#666;width:90px;">${label}</td><td style="padding:8px 0;${bold ? 'font-weight:600;' : ''}">${esc(value)}</td></tr>`
+
   const rows = LEAD_FIELDS
     .map(f => {
       const v = lead[f.key]
-      if (!v) return null
-      return `<tr>
-        <td style="padding:12px 16px;background:#fafafa;width:110px;color:#666;font-size:14px;border-top:1px solid #eee">${f.label}</td>
-        <td style="padding:12px 16px;font-size:15px;border-top:1px solid #eee">${esc(String(v))}</td>
-      </tr>`
+      // 姓名与联系方式即便为空也占位显示（同官网），其余无值则整行省略
+      if (!v) return f.key === 'name' || f.key === 'contact' ? row(f.label, EMPTY_PLACEHOLDER, true) : ''
+      return row(f.label, String(v), f.key === 'name' || f.key === 'contact')
     })
-    .filter(Boolean)
     .join('')
 
-  const summary = lead.conversationSummary
-    ? `<div style="padding:14px 16px;background:#fff;border:1px solid #e5e5e5;border-top:none;font-size:13px;line-height:1.8;color:#444">
-         <div style="color:#999;font-size:12px;margin-bottom:6px">咨询摘要</div>${esc(lead.conversationSummary)}
-       </div>`
-    : ''
-
-  return `<div style="font-family:-apple-system,'PingFang SC',sans-serif;max-width:600px;margin:0 auto">
-  <div style="background:#17171a;color:#c9a45c;padding:18px 24px;border-radius:8px 8px 0 0">
-    <div style="font-size:13px;letter-spacing:3px;opacity:.7">ROYALBLACK · 官网线索</div>
-    <div style="font-size:20px;font-weight:700;margin-top:6px">新客户咨询</div>
-  </div>
-  <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e5e5;border-top:none">${rows}</table>
-  ${summary}
-  <div style="padding:14px 16px;background:#fafafa;border:1px solid #e5e5e5;border-top:none;border-radius:0 0 8px 8px;font-size:12px;color:#999">
-    来源：${esc(lead.source ?? 'website')} · AIPaddle 智能顾问
-  </div>
-</div>`
+  return `
+    <div style="font-family:sans-serif;max-width:500px;padding:24px;border:1px solid #eee;border-radius:8px;">
+      <h2 style="color:#1a1a1a;margin-top:0;">🔔 官网新客户预约</h2>
+      <table style="width:100%;border-collapse:collapse;">${rows}
+        ${row('来源渠道', lead.source || '官网')}
+        ${row('提交时间', submittedAt())}
+      </table>
+      <div style="margin-top:20px;padding:12px 16px;background:#f5f0e8;border-radius:6px;color:#8b6914;font-weight:600;">
+        请高润及时跟进！
+      </div>
+    </div>
+  `
 }
 
 /** 发送留资通知邮件。失败不抛，返回结果由调用方落库。 */
@@ -79,7 +77,8 @@ export async function sendEmailLead(lead: LeadPayload): Promise<ChannelResult> {
       auth: { user: cfg.user, pass: cfg.pass },
       connectionTimeout: 15_000,
     })
-    const subject = `【黑围裙官网】新线索 · ${lead.name}${lead.project ? ` · ${lead.project}` : ''}`
+    // 主题同官网格式，便于邮箱里按规则归类
+    const subject = `【新预约】${lead.name || '客户'}${lead.project ? ` · ${lead.project}` : ''}`
     await transporter.sendMail({
       from: `"${cfg.fromName}" <${cfg.user}>`,
       to: cfg.to.join(', '),

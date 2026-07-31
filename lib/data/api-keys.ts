@@ -16,6 +16,10 @@ export type ApiKeyMasked = {
   status: 'active' | 'revoked'
   lastUsedAt: string | null
   createdAt: string
+  /** 绑定的 Extension；null = 平台级通用 Key（平台管理 → Key 管理签发的那种） */
+  extensionId: string | null
+  scopes: string[]
+  expiresAt: string | null
 }
 
 // ── 纯函数（可单测；randomBytes 可注入）────────────────────────
@@ -33,8 +37,10 @@ export function generateApiKey(rand: (n: number) => Buffer = randomBytes): { pla
 type Row = {
   id: string; name: string; key_prefix: string; scope: string
   last_used_at: string | null; revoked_at: string | null; created_at: string | null
+  // V12-8.10：0034 已给 api_keys 加了这三列（Key 归一），数据层此前未跟上
+  extension_id: string | null; scopes: unknown; expires_at: string | null
 }
-const COLS = 'id,name,key_prefix,scope,last_used_at,revoked_at,created_at'
+const COLS = 'id,name,key_prefix,scope,last_used_at,revoked_at,created_at,extension_id,scopes,expires_at'
 
 function toMasked(r: Row): ApiKeyMasked {
   return {
@@ -45,6 +51,9 @@ function toMasked(r: Row): ApiKeyMasked {
     status: r.revoked_at ? 'revoked' : 'active',
     lastUsedAt: r.last_used_at ? r.last_used_at.slice(0, 10) : null,
     createdAt: (r.created_at ?? '').slice(0, 10),
+    extensionId: r.extension_id,
+    scopes: Array.isArray(r.scopes) ? (r.scopes as string[]) : [],
+    expiresAt: r.expires_at ? r.expires_at.slice(0, 10) : null,
   }
 }
 
@@ -61,7 +70,13 @@ export async function listApiKeys(ctx: RequestContext): Promise<ApiKeyMasked[]> 
 /** 签发 Key：生成→哈希落库→**返回明文一次**（keyMasked + key 明文）。 */
 export async function createApiKey(
   ctx: RequestContext,
-  input: { name: string; scope: ApiKeyScope },
+  input: {
+    name: string; scope: ApiKeyScope
+    // V12-8.10：绑定到 Extension 时额外带这三项；不传即平台级通用 Key（4.8.6 原行为）
+    extensionId?: string | null
+    scopes?: string[]
+    expiresAt?: string | null
+  },
 ): Promise<{ key: string; masked: ApiKeyMasked }> {
   const { plaintext, hash, prefix } = generateApiKey()
   const supabase = await createClient()
@@ -70,6 +85,10 @@ export async function createApiKey(
     .insert({
       org_id: ctx.orgId, name: input.name, key_hash: hash, key_prefix: prefix,
       scope: input.scope, created_by: ctx.userId,
+      extension_id: input.extensionId ?? null,
+      // 默认最小授权：只给 chat，需要 leads 由调用方显式声明
+      scopes: input.scopes?.length ? input.scopes : ['chat'],
+      expires_at: input.expiresAt ?? null,
     })
     .select(COLS).single()
   if (error) throw new Error(error.message)

@@ -1,7 +1,7 @@
 import { guardExtensionRequest, corsHeaders, handleOptions } from '@/lib/auth/extension-guard'
 import { withExtensionIdentity } from '@/lib/auth/extension-context'
 import { createLead, LeadValidationError } from '@/lib/data/leads'
-import { sendLeadNotification } from '@/lib/notify'
+import { sendLeadNotification, LEAD_SOURCE } from '@/lib/notify'
 
 // V12-8.9 / ADR-020：转人工。
 //
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     project: str(body.project),
     expectedTime: str(body.expectedTime),
     siteInfo: str(body.siteInfo),
-    source: `${str(body.source) ?? 'website'}-转人工`,
+    source: LEAD_SOURCE.handoff,
     conversationSummary: str(body.summary),
   }
 
