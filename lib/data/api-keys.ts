@@ -126,6 +126,7 @@ type VerifyRow = {
     id: string; status: string; target_type: string; target_id: string
     service_user_id: string | null; deleted_at: string | null
     rate_limit_per_min: number | null
+    allowed_origins: unknown
   } | null
 }
 
@@ -146,7 +147,7 @@ export async function verifyApiKey(plaintext: string): Promise<VerifiedKey | nul
     .from('api_keys')
     .select(
       'id,org_id,extension_id,scopes,allowed_origins,rate_limit_per_min,revoked_at,expires_at,deleted_at,' +
-        'extensions(id,status,target_type,target_id,service_user_id,deleted_at,rate_limit_per_min)'
+        'extensions(id,status,target_type,target_id,service_user_id,deleted_at,rate_limit_per_min,allowed_origins)'
     )
     .eq('key_hash', hashApiKey(key))
     .maybeSingle()
@@ -169,7 +170,14 @@ export async function verifyApiKey(plaintext: string): Promise<VerifiedKey | nul
     orgId: row.org_id,
     extensionId: ext.id,
     scopes: toStringArray(row.scopes),
-    allowedOrigins: toStringArray(row.allowed_origins),
+    // 🔴 白名单优先取 Key 级覆盖，**回落到 Extension 级**。
+    // 治理配置（来源/限流）是配在 Extension 上的，Key 级只是可选覆盖；
+    // 初版只读 Key 的那一列，而它默认为空 → 白名单内的请求也被 403，
+    // 且日志只显示"来源不在白名单内"，看不出是取错了地方。
+    // 限流那行本就做了回落，白名单漏了——两者语义相同，应一致处理。
+    allowedOrigins: toStringArray(row.allowed_origins).length
+      ? toStringArray(row.allowed_origins)
+      : toStringArray(ext.allowed_origins),
     rateLimitPerMin: row.rate_limit_per_min ?? ext.rate_limit_per_min ?? null,
     serviceUserId: ext.service_user_id,
     extensionStatus: ext.status,
