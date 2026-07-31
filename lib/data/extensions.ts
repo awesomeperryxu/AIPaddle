@@ -1,6 +1,8 @@
 import 'server-only'
+import { randomBytes } from 'crypto'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import {
   EXT_TRANSITIONS, type ExtTransitionAction, type ExtensionStatus,
 } from '@/lib/extensions/status'
@@ -24,18 +26,20 @@ export type Extension = {
   allowedOrigins: string[]
   rateLimitPerMin: number
   status: ExtensionStatus
+  /** 是否已具备机器用户身份。只暴露有无，不外泄 id——它是签发令牌的依据，等同凭证 */
+  hasServiceUser: boolean
   createdAt: string
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const COLS =
-  'id,name,description,kind,target_type,target_id,target_version,allowed_origins,rate_limit_per_min,status,created_at'
+  'id,name,description,kind,target_type,target_id,target_version,allowed_origins,rate_limit_per_min,status,service_user_id,created_at'
 
 type Row = {
   id: string; name: string; description: string | null; kind: string
   target_type: string; target_id: string; target_version: string | null
   allowed_origins: unknown; rate_limit_per_min: number | null
-  status: string; created_at: string | null
+  status: string; service_user_id: string | null; created_at: string | null
 }
 
 function mapRow(r: Row): Extension {
@@ -50,6 +54,7 @@ function mapRow(r: Row): Extension {
     allowedOrigins: Array.isArray(r.allowed_origins) ? (r.allowed_origins as string[]) : [],
     rateLimitPerMin: r.rate_limit_per_min ?? 60,
     status: r.status as ExtensionStatus,
+    hasServiceUser: !!r.service_user_id,
     createdAt: (r.created_at ?? '').slice(0, 10),
   }
 }
@@ -125,6 +130,43 @@ export async function createExtension(
   const rate = input.rateLimitPerMin ?? 60
   if (!Number.isInteger(rate) || rate < 0) throw new ExtensionValidationError('限流值必须为非负整数')
 
+  // 🔴 机器用户（ADR-020 §3）——没有它，Extension 发布后外部调用必然 503。
+  // 全库 79 条 RLS 策略都走 current_org_id() = `select org_id from users where id = auth.uid()`，
+  // 外部 Key 调用没有 Supabase 会话，auth.uid() 为空则一条数据都查不到。
+  // 这里用 service_role 是 ADR-002 允许的「Auth 用户管理」用途：建 auth.users 只能由它完成，
+  // 且属管理操作而非应答外部请求。建完之后外部调用一律走请求级客户端，不再碰这把钥匙。
+  const admin = createAdminClient()
+  const email = `ext-${randomBytes(8).toString('hex')}@service.aipaddle.local`
+  const { data: created, error: authErr } = await admin.auth.admin.createUser({
+    email,
+    // 随机且不留存：本方案用自签短期令牌换身份，不走密码登录（ADR-020 §3 路径 A）
+    password: randomBytes(32).toString('hex'),
+    email_confirm: true,
+  })
+  if (authErr || !created?.user?.id) {
+    throw new Error(`创建机器用户失败：${authErr?.message ?? '未知错误'}`)
+  }
+  const serviceUserId = created.user.id
+
+  // 任一步失败都要清干净，否则会留下既登录不了又占位的孤儿账号
+  const rollback = async () => {
+    await admin.from('users').delete().eq('id', serviceUserId)
+    await admin.auth.admin.deleteUser(serviceUserId).catch(() => {})
+  }
+
+  // public.users 行必须有 —— current_org_id() 查的正是这张表，缺了 RLS 认不出身份
+  const { error: profileErr } = await admin.from('users').insert({
+    id: serviceUserId,
+    org_id: ctx.orgId,
+    email,
+    name: `[扩展] ${name}`,
+    is_service_account: true,   // 成员列表与计费口径须显式排除此标记
+  })
+  if (profileErr) {
+    await rollback()
+    throw new Error(`创建机器用户档案失败：${profileErr.message}`)
+  }
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('extensions')
@@ -140,9 +182,11 @@ export async function createExtension(
       allowed_origins: origins,
       rate_limit_per_min: rate,
       status: 'draft',                   // 一律 draft，发布须走状态机
+      service_user_id: serviceUserId,
     })
     .select(COLS).single()
   if (error) {
+    await rollback()
     if (error.code === '23505') throw new ExtensionValidationError('同名扩展已存在')
     throw new Error(error.message)
   }
@@ -198,9 +242,23 @@ export async function deleteExtension(ctx: RequestContext, id: string): Promise<
     .from('extensions').update({ deleted_at: now, updated_at: now })
     .eq('id', id).eq('org_id', ctx.orgId).is('deleted_at', null)
     .neq('status', 'published')
-    .select('id').maybeSingle()
+    .select('id,service_user_id').maybeSingle()
   if (error) throw new Error(error.message)
-  if (data) return 'deleted'
+  if (data) {
+    // 顺序要紧：先撤 Key 立刻断掉外部调用，再清机器用户身份。
+    // 反过来的话，Key 还有效而身份已没了，外部会收到一串 503 而不是干脆的 401。
+    await supabase.from('api_keys')
+      .update({ revoked_at: now, updated_at: now })
+      .eq('extension_id', id).eq('org_id', ctx.orgId).is('revoked_at', null)
+
+    const sid = (data as { id: string; service_user_id?: string | null }).service_user_id
+    if (sid) {
+      const admin = createAdminClient()
+      await admin.from('users').delete().eq('id', sid)
+      await admin.auth.admin.deleteUser(sid).catch(() => {})
+    }
+    return 'deleted'
+  }
 
   // 0 行有两种原因，回查仅用于区分错误码（不参与是否删除的判定）
   const { data: exist } = await supabase
@@ -213,7 +271,7 @@ export async function deleteExtension(ctx: RequestContext, id: string): Promise<
 /** 状态机流转。非法流转返回 illegal → 路由回 409（请求合法，是与当前状态冲突）。 */
 export type ExtTransitionResult =
   | { ok: true; status: ExtensionStatus }
-  | { ok: false; reason: 'not_found' | 'illegal' }
+  | { ok: false; reason: 'not_found' | 'illegal' | 'no_service_user' }
 
 export async function transitionExtension(
   ctx: RequestContext,
@@ -225,6 +283,17 @@ export async function transitionExtension(
   if (!UUID_RE.test(id)) return { ok: false, reason: 'not_found' }
 
   const supabase = await createClient()
+  // 🔴 发布前必须已有机器用户：没有它，上线后外部一调就是 503。
+  // 宁可在发布这一步挡住，也不让它"看起来发布成功"却对外不可用（ADR-020 §3）。
+  if (t.to === 'published') {
+    const { data: row } = await supabase
+      .from('extensions').select('service_user_id')
+      .eq('id', id).eq('org_id', ctx.orgId).is('deleted_at', null)
+      .maybeSingle()
+    if (row && !(row as { service_user_id: string | null }).service_user_id) {
+      return { ok: false, reason: 'no_service_user' }
+    }
+  }
   // 用 from 态作为 update 条件：当前态不符即 0 行 → 非法流转。
   // 单条语句关掉并发窗口（同 deleteAgent 的做法）。
   const { data, error } = await supabase
