@@ -39,6 +39,14 @@ export type Action =
   | 'apikey:manage'
   | 'department:read'
   | 'department:manage'
+  // ── V12-8.3 Extension 对外 API（任务包 8a，ADR-020）────────────────────
+  | 'ext:read'
+  | 'ext:create'
+  | 'ext:update'
+  | 'ext:delete'
+  | 'ext:publish'
+  | 'ext:key:manage'
+  | 'ext:call-log:read'
 
 // 每个 action 允许的角色集合；未列入矩阵的 action 视为无人允许（默认拒绝）。
 const MATRIX: Record<Action, Role[]> = {
@@ -87,6 +95,19 @@ const MATRIX: Record<Action, Role[]> = {
   // PRD 2.10.3 的「部门管理员」角色与「本部门及下级」数据权限尚未进 ADR-007，故本期不设部门级管理员。
   'department:read': ['Admin', 'Developer', 'User', 'Auditor'],
   'department:manage': ['Admin'],
+
+  // ── V12-8.3 Extension（ADR-020）────────────────────────────────────────
+  // Extension 是**外部系统调用 AIPaddle** 的入口，等同于对外授权，因此写操作
+  // 一律只给 Admin：Developer 能建 Agent 不代表能把它开放给公网。
+  'ext:read': ['Admin', 'Developer', 'Auditor'],
+  'ext:create': ['Admin'],
+  'ext:update': ['Admin'],
+  'ext:delete': ['Admin'],
+  'ext:publish': ['Admin'],
+  // 🔴 签发/撤销对外 Key = 对外授权，仅 Admin。Key 明文仅签发时一次性返回。
+  'ext:key:manage': ['Admin'],
+  // 调用日志含外部来源与调用量，Auditor 需要看得到
+  'ext:call-log:read': ['Admin', 'Auditor'],
 }
 
 /** 多角色取并集：任一角色被允许即允许。默认拒绝。 */

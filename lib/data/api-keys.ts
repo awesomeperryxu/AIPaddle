@@ -2,6 +2,7 @@ import 'server-only'
 import { createHash, randomBytes } from 'crypto'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 // 4.8.6：对外 API Key 数据层。铁律——明文只在签发时一次性返回；落库只存 sha256 哈希 + 展示前缀。
 export type ApiKeyScope = 'agent' | 'readonly' | 'full'
@@ -73,6 +74,95 @@ export async function createApiKey(
     .select(COLS).single()
   if (error) throw new Error(error.message)
   return { key: plaintext, masked: toMasked(data as Row) }
+}
+
+// ── V12-8.5：Extension 对外调用的 Key 校验（ADR-020 §4）────────────
+//
+// 🔴 为什么这里可以用 service_role（ADR-002 铁律的边界说明）：
+// 这是**身份识别**，不是业务查询——请求进来时还没有任何身份，而查 api_keys 表本身
+// 就需要 auth.uid()，鸡生蛋。和"登录时校验密码必须先查用户表"是同一类操作。
+// 边界卡死在三条上：
+//   ① 只查 api_keys 一张表，② 只按 key_hash 精确匹配单行，③ 拿到身份立刻切回
+//      请求级客户端（runWithExtensionToken）做业务查询。
+// 绝不允许用这把钥匙去读业务数据——那才是 ADR-002 明令禁止的。
+
+export type VerifiedKey = {
+  keyId: string
+  orgId: string
+  extensionId: string
+  scopes: string[]
+  allowedOrigins: string[]
+  rateLimitPerMin: number | null
+  serviceUserId: string | null
+  extensionStatus: string
+  targetType: string
+  targetId: string
+}
+
+type VerifyRow = {
+  id: string; org_id: string; extension_id: string | null
+  scopes: unknown; allowed_origins: unknown; rate_limit_per_min: number | null
+  revoked_at: string | null; expires_at: string | null; deleted_at: string | null
+  extensions: {
+    id: string; status: string; target_type: string; target_id: string
+    service_user_id: string | null; deleted_at: string | null
+    rate_limit_per_min: number | null
+  } | null
+}
+
+function toStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+}
+
+/**
+ * 校验外部 Key。通过返回身份与治理配置，任何一项不满足一律返回 null（默认拒绝）。
+ * 调用方只能得到"能不能进"，拿不到失败细节——不给探测者区分"Key 不存在"和"Key 已撤销"的机会。
+ */
+export async function verifyApiKey(plaintext: string): Promise<VerifiedKey | null> {
+  const key = plaintext.trim()
+  if (!key) return null
+
+  const admin = createAdminClient()
+  const { data, error } = await admin
+    .from('api_keys')
+    .select(
+      'id,org_id,extension_id,scopes,allowed_origins,rate_limit_per_min,revoked_at,expires_at,deleted_at,' +
+        'extensions(id,status,target_type,target_id,service_user_id,deleted_at,rate_limit_per_min)'
+    )
+    .eq('key_hash', hashApiKey(key))
+    .maybeSingle()
+
+  if (error || !data) return null
+  const row = data as unknown as VerifyRow
+
+  if (row.revoked_at || row.deleted_at) return null
+  if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) return null
+
+  // 必须绑定到 Extension —— 4.8.6 的租户通用 Key（extension_id 为空）不得走对外入口
+  const ext = row.extensions
+  if (!row.extension_id || !ext) return null
+  if (ext.deleted_at) return null
+  // 目标未发布 / 已下线 → 拒绝（ADR-020 §8，对齐 AC-17：发布过 ≠ 永久可用）
+  if (ext.status !== 'published') return null
+
+  return {
+    keyId: row.id,
+    orgId: row.org_id,
+    extensionId: ext.id,
+    scopes: toStringArray(row.scopes),
+    allowedOrigins: toStringArray(row.allowed_origins),
+    rateLimitPerMin: row.rate_limit_per_min ?? ext.rate_limit_per_min ?? null,
+    serviceUserId: ext.service_user_id,
+    extensionStatus: ext.status,
+    targetType: ext.target_type,
+    targetId: ext.target_id,
+  }
+}
+
+/** 记录 Key 最近使用时间（鉴权成功后异步调用，失败不影响主流程）。 */
+export async function touchApiKeyUsage(keyId: string): Promise<void> {
+  const admin = createAdminClient()
+  await admin.from('api_keys').update({ last_used_at: new Date().toISOString() }).eq('id', keyId)
 }
 
 /** 吊销 Key（软吊销：置 revoked_at）。 */
