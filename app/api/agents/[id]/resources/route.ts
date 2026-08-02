@@ -51,6 +51,30 @@ export async function PUT(req: Request, { params }: Ctx) {
     }
   }
 
+  // 🔴 V12-2.9 / ADR-019：入口区分——「谁在改」决定能不能挂下级 Agent。
+  //
+  // D-08 约束的是**普通 Agent 这一层**：它必须保持单层，不能引用别的 Agent。
+  // 数字员工是被允许的上一级（正因如此才能组合多个 Agent 并经 Workflow 串联）。
+  //
+  // 但两者共用这一个接口，服务端无从分辨请求来自哪个页面——
+  // 于是普通 Agent 的编排页也能提交 subAgentIds，等于绕过 D-08。
+  // 故要求调用方显式声明来源，缺省按最严（普通 Agent 入口）处理。
+  //
+  // ⚠️ 这不是"前端传什么就信什么"：source 只用来**收紧**，不能放宽——
+  // 声明为 digital-employee 仍要过下面全部校验（授权集、自引用、深度 1 层）。
+  const source = body?.source === 'digital-employee' ? 'digital-employee' : 'agent'
+  if (source === 'agent' && rawSubAgentIds.length > 0) {
+    return Response.json(
+      {
+        error: {
+          code: 'sub_agent_not_allowed',
+          message: 'Agent 不能引用其他 Agent（D-08）。若要组合多个 Agent，请在「数字员工」页创建数字员工。',
+        },
+      },
+      { status: 422 },
+    )
+  }
+
   // 子 Agent（数字员工，4.1.18 / ADR-014）：服务端裁定授权集 + 数字员工判定，不信前端。
   let subAgentIds: string[] = []
   let subAgentRejected: { id: string; reason: string }[] = []
