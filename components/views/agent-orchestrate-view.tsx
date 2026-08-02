@@ -133,7 +133,8 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
     const t = setTimeout(() => {
       void fetch(`/api/agents/${agent.id}/resources`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds, mcpServerIds: boundMcpIds, subAgentIds: boundSubAgentIds }),
+        // 不传 subAgentIds：普通 Agent 入口不得引用 Agent（D-08），服务端亦会拒绝
+        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds, mcpServerIds: boundMcpIds }),
       }).then(async (r) => {
         if (!r.ok) { showToast('直挂资源保存失败'); return; }
         // 子 Agent 被服务端拒绝（无权/嵌套）→ 明确提示每条原因，并回撤本地绑定与服务端一致
@@ -717,31 +718,18 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
             )}
           </section>
 
-          {/* 子 Agent（数字员工，4.1.18 / ADR-014）：引用 ≥1 个子 Agent 即为数字员工，嵌套仅 1 层 */}
-          <section className="rounded-xl border border-border p-4 space-y-3">
+          {/* V12-2.9 / ADR-019：普通 Agent 不能引用 Agent（D-08），组合能力属数字员工层。
+              保留入口说明而非直接删掉——用户在这里找过这个功能，无声消失会让人以为坏了。 */}
+          <section className="rounded-xl border border-dashed border-border p-4 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Users className="h-4 w-4 text-indigo-500" />
-              <Label className="text-sm font-medium">子 Agent（数字员工）</Label>
-              {boundSubAgentIds.length > 0 && (
-                <Badge className="bg-indigo-500/10 text-indigo-600 text-[10px] px-1.5 py-0 h-4">本 Agent 即为数字员工</Badge>
-              )}
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium text-muted-foreground">组合多个 Agent？</Label>
             </div>
             <p className="text-xs text-muted-foreground">
-              勾选下方 Agent 作为子 Agent，本 Agent 即成为「数字员工」，可调度所选子 Agent 协作。
-              子 Agent 须为你有权使用、且本身不是数字员工者（嵌套仅限一层）；无权或越权的选择将被服务端跳过并提示。
+              Agent 是最小自主执行单元，不能引用其他 Agent（保持单层结构、避免调用链难以追踪）。
+              若要让多个 Agent 协作，请到「<span className="text-foreground">数字员工</span>」页创建数字员工——
+              它是上一级角色，可组合多个 Agent 并经 Workflow 串联。
             </p>
-            {availableAgents.length === 0 ? (
-              <p className="text-xs text-muted-foreground">暂无其它可选 Agent。</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {availableAgents.map((a) => (
-                  <button
-                    key={a.id} type="button" disabled={!canEdit} onClick={() => toggleSubAgent(a.id)}
-                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${boundSubAgentIds.includes(a.id) ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600' : 'border-border text-muted-foreground hover:text-foreground'}`}
-                  >{a.name}</button>
-                ))}
-              </div>
-            )}
           </section>
         </div>
 

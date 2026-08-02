@@ -188,7 +188,7 @@ export function AgentsView({
           knowledgeBaseIds: current.resources.knowledgeBaseIds,
           skillIds: current.resources.skillIds,
           mcpServerIds: current.resources.mcpServerIds,
-          subAgentIds: deSubIds,
+          source: 'digital-employee', subAgentIds: deSubIds,
         }),
       });
       setDeSuccess(true);

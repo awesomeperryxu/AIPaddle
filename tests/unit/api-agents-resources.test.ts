@@ -68,6 +68,8 @@ describe('PUT /api/agents/[id]/resources', () => {
 })
 
 // 4.1.18 / ADR-014：子 Agent（数字员工）权限门控——授权集与数字员工判定在服务端
+// V12-2.9 起：普通 Agent 入口不得提交 subAgentIds（D-08），
+// 数字员工场景须显式声明 source='digital-employee'。本组测的是数字员工入口。
 describe('PUT 子 Agent（数字员工）门控', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -90,7 +92,7 @@ describe('PUT 子 Agent（数字员工）门控', () => {
     )
     mockSetRes.mockResolvedValueOnce({ knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: [SUB_OK] })
 
-    const res = await put({ subAgentIds: [SUB_OK, SUB_FOREIGN, SUB_DE] })
+    const res = await put({ source: 'digital-employee', subAgentIds: [SUB_OK, SUB_FOREIGN, SUB_DE] })
     expect(res.status).toBe(200)
     // 仅 accepted 透传给数据层
     expect(mockSetRes).toHaveBeenCalledWith(admin, ID, { knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: [SUB_OK] })
@@ -107,7 +109,7 @@ describe('PUT 子 Agent（数字员工）门控', () => {
     mockGetRes.mockResolvedValue({ knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: [] })
     mockSetRes.mockResolvedValueOnce({ knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: [] })
 
-    const res = await put({ subAgentIds: [ID] })
+    const res = await put({ source: 'digital-employee', subAgentIds: [ID] })
     expect(res.status).toBe(200)
     expect(mockSetRes).toHaveBeenCalledWith(admin, ID, { knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: [] })
     const body = await res.json()
