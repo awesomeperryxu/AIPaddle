@@ -1,7 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { listSkills, createSkill, type SkillConfig, type RiskLevel } from '@/lib/data/skills'
-import { isSkillType } from '@/lib/skills/status'
+import { isCreatableSkillType } from '@/lib/skills/status'
 import { listMyMcpServers } from '@/lib/data/mcp-servers'
 
 // GET /api/skills —— 列出本租户 Skill（RLS 隔离，登录即可读）。
@@ -24,9 +24,20 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({} as Record<string, unknown>))
   const name = String(body?.name ?? '').trim()
   if (!name) return Response.json({ error: { code: 'invalid', message: '名称不能为空' } }, { status: 400 })
-  if (!isSkillType(body?.type)) {
+  // 🔴 V12-3.5 / D-05：新建只允许可写子集，**不含 Workflow**。
+  // 存量的 Workflow 型 Skill（生产库 2 条）仍能正常读取——读用 SKILL_TYPES 全集，
+  // 写用 CREATABLE_SKILL_TYPES 子集，两者刻意分开。
+  if (!isCreatableSkillType(body?.type)) {
+    const isWorkflow = typeof body?.type === 'string' && body.type.toLowerCase() === 'workflow'
     return Response.json(
-      { error: { code: 'invalid', message: '类型必须是 MCP/API/DB/Workflow/Prompt 之一' } },
+      {
+        error: {
+          code: 'invalid',
+          message: isWorkflow
+            ? 'Skill 不能是 Workflow 类型（D-05）：Skill 是「怎么做这件事」的方法，Workflow 是「多步怎么编排」的流程。若要做流程编排，请到「工作流」创建。'
+            : '类型必须是 MCP/API/DB/Prompt 之一',
+        },
+      },
       { status: 400 },
     )
   }
