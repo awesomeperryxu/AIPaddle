@@ -3,6 +3,7 @@ import { withExtensionIdentity } from '@/lib/auth/extension-context'
 import { getAgentForChat } from '@/lib/data/agents'
 import { recordCall } from '@/lib/data/call-logs'
 import { chatStream, type ChatMessage } from '@/lib/ai'
+import { retrieveSegments } from '@/lib/kb/rag'
 
 // V12-8.7 / ADR-020：对外流式对话端点。
 // 🔴 本文件禁止 import getRequestContext —— 内外两条身份入口严格分家（ADR-020 §2）。
@@ -71,9 +72,33 @@ export async function POST(req: Request) {
     )
   }
 
+  // 🔴 注入知识库上下文——与内部对话（/api/agents/[id]/chat）保持同一套检索逻辑。
+  // 少了这一步，租户在后台辛苦上传的知识文件对官网访客完全不起作用：
+  // Agent 绑了知识库、库里也有内容，但对外这条路不检索，只能靠 systemPrompt 硬答。
+  // 检索走机器用户身份，RLS 保证只可能取到本租户的知识。
+  let ragContext = ''
+  const lastUserRaw = [...history].reverse().find(m => m.role === 'user')?.content
+  const lastUser = typeof lastUserRaw === 'string' ? lastUserRaw : ''
+  if (lastUser) {
+    try {
+      const segs = await withExtensionIdentity(ctx, () =>
+        retrieveSegments(ctx.request, lastUser, { agentId: agent.id }),
+      )
+      if (segs.length) {
+        // 对外场景不要求标注 [编号] 来源：访客看到「[1]」这种引用标记只会困惑
+        ragContext =
+          '\n\n以下是该 Agent 绑定知识库的相关资料，若与问题相关请据此作答，不相关则正常作答：\n' +
+          segs.map((sg, i) => `[${i + 1}] 《${sg.filename}》：${sg.snippet}`).join('\n')
+      }
+    } catch (e) {
+      // 检索失败不阻断对话——宁可少点知识也要把话接上
+      console.error('[ext/chat] 知识库检索失败，降级为无 RAG 作答:', e)
+    }
+  }
+
   const systemPrompt =
-    agent.systemPrompt?.trim() ||
-    `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`
+    (agent.systemPrompt?.trim() ||
+      `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`) + ragContext
 
   const startedAt = Date.now()
   const encoder = new TextEncoder()
