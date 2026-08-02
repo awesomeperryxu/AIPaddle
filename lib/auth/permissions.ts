@@ -47,6 +47,25 @@ export type Action =
   | 'ext:publish'
   | 'ext:key:manage'
   | 'ext:call-log:read'
+  // ── V12-2.x Plugin / Tool / Credential 底座（任务包 2，ADR-018）──────────
+  | 'plugin:read'
+  | 'plugin:create'
+  | 'plugin:update'
+  | 'plugin:delete'
+  | 'plugin:submit'
+  | 'plugin:review'
+  | 'plugin:install'
+  | 'plugin:manage-any'
+  | 'tool:read'
+  | 'tool:create'
+  | 'tool:update'
+  | 'tool:delete'
+  | 'tool:submit'
+  | 'tool:review'
+  | 'credential:read'
+  | 'credential:create'
+  | 'credential:update'
+  | 'credential:delete'
 
 // 每个 action 允许的角色集合；未列入矩阵的 action 视为无人允许（默认拒绝）。
 const MATRIX: Record<Action, Role[]> = {
@@ -108,6 +127,31 @@ const MATRIX: Record<Action, Role[]> = {
   'ext:key:manage': ['Admin'],
   // 调用日志含外部来源与调用量，Auditor 需要看得到
   'ext:call-log:read': ['Admin', 'Auditor'],
+
+  // ── V12-2.x Plugin / Tool / Credential（ADR-018 / RBAC_ACTIONS_v1.13）──
+  // 口径对齐 Agent：读放开全角色（RLS 兜租户隔离），写给 Admin + Developer，
+  // 审核给 Admin + Auditor。
+  'plugin:read': ['Admin', 'Developer', 'User', 'Auditor'],
+  'plugin:create': ['Admin', 'Developer'],
+  'plugin:update': ['Admin', 'Developer'],   // Developer 仅 own，归属校验在应用层附加
+  'plugin:delete': ['Admin', 'Developer'],
+  'plugin:submit': ['Admin', 'Developer'],
+  'plugin:review': ['Admin', 'Auditor'],
+  'plugin:install': ['Admin', 'Developer'],
+  // 🔴 平台超管专属，矩阵留空 ⇒ 单靠角色永远拒绝（同 provider:manage-any 模式）
+  'plugin:manage-any': [],
+  'tool:read': ['Admin', 'Developer', 'User', 'Auditor'],
+  'tool:create': ['Admin', 'Developer'],
+  'tool:update': ['Admin', 'Developer'],
+  'tool:delete': ['Admin', 'Developer'],
+  'tool:submit': ['Admin', 'Developer'],
+  'tool:review': ['Admin', 'Auditor'],
+  // 🔴 Credential 是最高敏感资产：User / Auditor 一律不给。
+  // Auditor 只能从审计日志看到「谁在何时配置了哪个凭据」，看不到凭据本身。
+  'credential:read': ['Admin', 'Developer'],   // 只返回脱敏值
+  'credential:create': ['Admin', 'Developer'],
+  'credential:update': ['Admin', 'Developer'],
+  'credential:delete': ['Admin', 'Developer'],
 }
 
 /** 多角色取并集：任一角色被允许即允许。默认拒绝。 */
