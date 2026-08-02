@@ -143,7 +143,11 @@ test.describe('S0-DAL 数据层与持久化 @stage0', () => {
   // 交互已随 4.1.13a 变更：点「创建 Agent」不再弹名称对话框，而是直接以
   // 「未命名 Agent」建草稿并跳转编排页，名称在顶栏输入框改、自动保存。
   // 本用例此前停留在旧交互上——因为 stages 从未在 CI 跑过，脱节一直没被发现。
+  // 多步链路：建 Agent → 跳编排页 → 改名 → 等 800ms debounce 自动保存 → 回列表刷新。
+  // 默认 30s 在 dev 冷编译或并发跑时不够（S1 里同类用例早已设 90s）。
+  // 给足超时而非降低断言——它验证的「真落库而非仅前端状态」是这条用例的全部价值。
   test('S0-DAL-02 操作后刷新数据仍在 @smoke', async ({ page }) => {
+    test.setTimeout(90_000);
     await login(page, 'devA');
     const marker = `持久化验证-${Date.now()}`;
 
