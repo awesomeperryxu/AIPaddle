@@ -10,23 +10,19 @@ import { USERS, BAD_CREDENTIALS, AGENTS, TENANTS } from '../fixtures/test-data';
 test.describe('S0-AUTH 认证 @stage0', () => {
   stageGate(0);
 
-  test('S0-AUTH-01 注册成功（新邮箱） @smoke', async ({ page }) => {
-    const email = `e2e.reg.${Date.now()}@aipaddle-test.local`;
+  // 🔴 自助注册已关闭（2026-08-03 用户拍板，BUG-93）。原 S0-AUTH-01/02 断言的是
+  // 「注册成功」与「重复注册被拒」，现在行为整个反过来了——这两条改为守住「注册确实关着」。
+  // 顺带治掉 BUG-95：旧用例每跑一次泄漏一个 auth 账号，累计已 40 个。
+  test('S0-AUTH-01 注册页已关闭，重定向到登录页 @smoke', async ({ page }) => {
     await page.goto('/register');
-    await page.getByLabel(/邮箱/).fill(email);
-    await page.getByLabel(/^密码/).fill('E2e!Register_2026');
-    await page.getByRole('button', { name: /注册/ }).click();
-    // 应用行为：注册成功后自动登录并跳转控制台（非弹「注册成功」提示）。
-    // 稳健判据：离开 /register 即视为注册成功。
-    await expect(page).not.toHaveURL(/\/register/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
+    await expect(page.getByText(/不开放自助注册/)).toBeVisible();
   });
 
-  test('S0-AUTH-02 重复注册被拒绝', async ({ page }) => {
-    await page.goto('/register');
-    await page.getByLabel(/邮箱/).fill(USERS.adminA.email);
-    await page.getByLabel(/^密码/).fill('E2e!Whatever_2026');
-    await page.getByRole('button', { name: /注册/ }).click();
-    await expect(page.getByText(/已注册|已存在/)).toBeVisible();
+  test('S0-AUTH-02 登录页不再提供注册入口', async ({ page }) => {
+    await page.goto('/login');
+    await expect(page.getByRole('link', { name: /^注册$/ })).toHaveCount(0);
+    await expect(page.getByText(/请联系企业管理员开通/)).toBeVisible();
   });
 
   test('S0-AUTH-03 登录→受保护页→退出→回踢 @smoke', async ({ page }) => {

@@ -37,6 +37,9 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl
   const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/register')
+  // 🔴 /no-access 必须放行：它正是「有会话但无组织」的落点，
+  // 若被当成受保护页面，它自己也会被踢去 /login，循环照旧
+  const isNoAccess = pathname.startsWith('/no-access')
   const isCallback = pathname.startsWith('/auth/callback')
   const isPrototype = pathname.startsWith('/prototype')
   const isAuthApi = pathname.startsWith('/api/auth') // 登录/注册 API 路由（未登录须放行，#61 登录部署无关化）
@@ -47,7 +50,7 @@ export async function proxy(request: NextRequest) {
   // 放行不等于不鉴权：guardExtensionRequest 在端点内做 Key 校验 / Origin 白名单 /
   // Scope / 限流，未通过一样拒绝。
   const isExtApi = pathname.startsWith('/api/ext/')
-  const isPublic = isAuthPage || isCallback || isPrototype || isAuthApi || isExtApi
+  const isPublic = isAuthPage || isNoAccess || isCallback || isPrototype || isAuthApi || isExtApi
 
   // 已登录：检查 24h 会话有效期
   if (user) {
@@ -72,10 +75,23 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // 🔴 有会话但账号无组织归属 → /no-access（BUG-93）。
+  // 原先只校验「有无 auth 会话」，不校验「有无组织」，于是这类账号在
+  // / → /dashboard → /login → / 之间死循环，浏览器报 ERR_TOO_MANY_REDIRECTS。
+  //
+  // 只在需要跳转的分支查库，不是每个请求都查——中间件跑在每次导航上，
+  // 无脑加一次 DB 往返会拖慢所有页面。
+  async function hasOrg(): Promise<boolean> {
+    if (!user) return false
+    if (typeof user.app_metadata?.org_id === 'string' && user.app_metadata.org_id) return true
+    const { data } = await supabase.from('users').select('org_id').eq('id', user.id).maybeSingle()
+    return !!(data as { org_id?: string } | null)?.org_id
+  }
+
   // 根路径：未登录 → /login，已登录 → 真实应用 /dashboard（不再落到静态原型 /console）
   if (pathname === '/') {
     const url = request.nextUrl.clone()
-    url.pathname = user ? '/dashboard' : '/login'
+    url.pathname = user ? (await hasOrg() ? '/dashboard' : '/no-access') : '/login'
     return NextResponse.redirect(url)
   }
 
@@ -86,10 +102,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // 已登录访问认证页 → 工作台首页
+  // 已登录访问认证页 → 工作台首页；无组织的直接送去 /no-access，
+  // 不再弹回 / 让它再绕一圈
   if (user && isAuthPage) {
     const url = request.nextUrl.clone()
-    url.pathname = '/'
+    url.pathname = await hasOrg() ? '/' : '/no-access'
     return NextResponse.redirect(url)
   }
 

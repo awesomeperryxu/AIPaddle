@@ -1,7 +1,6 @@
 'use client'
 
 import { Suspense, useState, type FormEvent } from 'react'
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
 const ERR_MAP: Record<string, string> = {
@@ -11,6 +10,7 @@ const ERR_MAP: Record<string, string> = {
   service: '登录服务暂不可用，请稍后重试或联系管理员',
   callback_failed: '认证回调失败，请重试',
   network: '网络异常，请重试',
+  registration_closed: '本平台不开放自助注册，账号请由企业管理员开通',
 }
 
 function LoginForm() {
@@ -97,11 +97,9 @@ function LoginForm() {
         </button>
       </form>
 
+      {/* 自助注册已关闭（BUG-93）：账号由平台开租户、租户管理员邀请成员产生 */}
       <p className="mt-6 text-center text-xs text-white/30">
-        没有账号？{' '}
-        <Link href="/register" className="text-indigo-400 hover:text-indigo-300 transition">
-          注册
-        </Link>
+        没有账号？请联系企业管理员开通
       </p>
     </div>
   )

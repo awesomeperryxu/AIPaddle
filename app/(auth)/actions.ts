@@ -28,9 +28,25 @@ export async function login(formData: FormData): Promise<void> {
   redirect('/dashboard')
 }
 
-// register：与 login 同构，普通 form action + 服务端 redirect（可靠导航）。
-// 关闭邮箱确认 → signUp 直接建 session → 跳 /dashboard；开启确认 → 跳 /register?registered=1 提示查收邮件。
+/**
+ * 🔴 自助注册已关闭（2026-08-03 用户拍板，BUG-93）。
+ *
+ * 为什么关：注册能建出 auth 用户，但**没有任何触发器为其建 public.users 档、
+ * 也不分配组织与角色**。这样的账号 getRequestContext() 返回 null，进不了系统，
+ * 且会在 / → /dashboard → /login 之间死循环（ERR_TOO_MANY_REDIRECTS）。
+ * PRD 也从未定义自助注册——入账路径只有「平台开租户 → 管理员邀请成员」。
+ *
+ * 🔴 光把页面重定向掉是不够的：Server Action 是独立可调的端点，
+ * 知道 action id 就能直接 POST，绕过任何前端隐藏。所以必须在这里挡。
+ *
+ * 要重新开放：把 SELF_REGISTRATION_ENABLED 置 true 之前，先补完
+ * 「注册 → 归属租户 → 分配角色」链路，否则放开的仍是一条死路。
+ */
+const SELF_REGISTRATION_ENABLED = false
+
 export async function register(formData: FormData): Promise<void> {
+  if (!SELF_REGISTRATION_ENABLED) redirect('/login?error=registration_closed')
+
   const email = String(formData.get('email') ?? '').trim()
   const password = String(formData.get('password') ?? '')
   const displayName = String(formData.get('displayName') ?? '').trim() || email.split('@')[0]
