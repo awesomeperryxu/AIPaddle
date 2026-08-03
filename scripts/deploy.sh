@@ -42,6 +42,16 @@ echo "当前版本：$(git log --oneline -1)"
 
 # 失败即回滚。半更新（新源码 + 旧构建产物）比「没更新」危险得多——
 # 它不会报错，只在某些路由上 500。
+# 🔴 显式 exit 不会触发 ERR trap（只有命令失败才会）。
+# 第一版在构建失败分支里直接 exit 1，于是回滚被自己的错误处理绕过，
+# 服务器停在「新 commit + 旧 .next」——正是本脚本要防的半更新状态。
+# 所以所有主动失败都必须走 die()，不许裸 exit。
+die() {
+  trap - ERR          # 防止 rollback 内部命令失败再次触发，递归
+  rollback
+  exit 1
+}
+
 rollback() {
   echo "🔴 部署失败，回滚到 $PREV"
   git reset --hard "$PREV"
@@ -59,21 +69,36 @@ echo "目标版本：$(git log --oneline -1)"
 pnpm install --frozen-lockfile 2>&1 | tail -2
 
 # 构建到临时目录 —— 线上此刻仍跑着旧 .next
-rm -rf .next.new
 # 全量日志落盘再摘要：早先把构建输出接进 tail 做摘要，结果失败时报错被吃掉，
 # 只剩一句 A previous build that didn't exit cleanly，等于没有信息。
+# 🔴 构建重试一次：这一步实测会抖——同样的输入 2 成 1 败，
+# 失败时报 .next.new/server/pages-manifest.json 不存在（server 目录整个是空的，
+# 即构建在写产物之前就断了）。没查出确定成因，故先按已知不稳定处理：
+# 重试一次并把两次日志都留着。若重试仍失败，多半是真问题而非抖动。
+build_once() {
+  rm -rf .next.new
+  NEXT_DIST_DIR=.next.new pnpm build > "$1" 2>&1
+}
 BUILD_LOG="/tmp/aipaddle-build-$(date +%s).log"
-if NEXT_DIST_DIR=.next.new pnpm build > "$BUILD_LOG" 2>&1; then
+if build_once "$BUILD_LOG"; then
   tail -3 "$BUILD_LOG"
 else
-  echo "🔴 构建失败，完整日志 $BUILD_LOG ——"
-  tail -40 "$BUILD_LOG"
-  exit 1
+  echo "⚠️ 构建失败，重试一次（该步骤已知不稳定）。首次日志：$BUILD_LOG"
+  tail -12 "$BUILD_LOG"
+  BUILD_LOG2="/tmp/aipaddle-build-$(date +%s)-retry.log"
+  if build_once "$BUILD_LOG2"; then
+    echo "✅ 重试成功"
+    tail -3 "$BUILD_LOG2"
+  else
+    echo "🔴 重试仍失败，完整日志 $BUILD_LOG2 ——"
+    tail -40 "$BUILD_LOG2"
+    die
+  fi
 fi
 
 # 产物完整性自检：缺了这些说明构建其实没成，别拿去替换线上
 for f in .next.new/BUILD_ID .next.new/server/app; do
-  if [ ! -e "$f" ]; then echo "🔴 构建产物缺 $f"; exit 1; fi
+  if [ ! -e "$f" ]; then echo "🔴 构建产物缺 $f"; die; fi
 done
 
 # 原子切换
