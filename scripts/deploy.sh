@@ -76,7 +76,21 @@ pnpm install --frozen-lockfile 2>&1 | tail -2
 # 即构建在写产物之前就断了）。没查出确定成因，故先按已知不稳定处理：
 # 重试一次并把两次日志都留着。若重试仍失败，多半是真问题而非抖动。
 build_once() {
+  # 🔴 先清掉可能残留的构建进程。BUG-97 的线索就在这里：某次部署被中断后，
+  # rm -rf .next.new 报了「Directory not empty」——那是**有进程还在往里写**的
+  # 典型症状。删不干净 → 构建在残缺目录上启动 → server/ 里缺 pages-manifest.json，
+  # 正是那次失败的表现。
+  pkill -f 'next-build|jest-worker' 2>/dev/null || true
+  sleep 1
+
   rm -rf .next.new
+  # 🔴 确认真的删掉了再往下走。rm -rf 失败时只往 stderr 写一行就返回，
+  # 在 set -e 下也未必中止；不验证的话就会拿一个半残目录去构建。
+  if [ -e .next.new ]; then
+    echo "🔴 .next.new 删除失败（可能有进程正在写入），中止"
+    return 1
+  fi
+
   NEXT_DIST_DIR=.next.new pnpm build > "$1" 2>&1
 }
 BUILD_LOG="/tmp/aipaddle-build-$(date +%s).log"

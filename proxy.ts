@@ -95,6 +95,23 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // 🔴 未登录访问 /api/* → 回 401 JSON，**不能重定向**（BUG-98）。
+  //
+  // 307 会保留请求方法：浏览器收到 307 后会拿原样的 POST 去请求 /login，
+  // 而那是个页面不是接口，于是回 405 —— 用户看到的是莫名其妙的
+  // 「Method Not Allowed」，完全指不到「登录过期」这个真实原因。
+  // 用户创建知识库时就是这么撞上的：
+  //   POST /api/knowledge-bases → 307 → POST /login → 405
+  //
+  // 这个道理在下面 /api/ext/ 的注释里早就写过（外部拿到跳转而非 401，
+  // 既调不通也看不出原因），却没意识到**内部 API 被 fetch 调用时完全一样**。
+  if (!user && pathname.startsWith('/api/') && !isAuthApi && !isExtApi) {
+    return NextResponse.json(
+      { error: { code: 'unauthenticated', message: '登录已过期，请重新登录' } },
+      { status: 401 },
+    )
+  }
+
   // 未登录访问受保护页面 → /login
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
