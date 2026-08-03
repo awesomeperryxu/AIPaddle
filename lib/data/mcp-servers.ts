@@ -3,6 +3,16 @@ import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
 import { TRANSITIONS, type McpTransitionAction, type McpStatus } from '@/lib/mcp/status'
 
+// ⚠️ 已弃用（V12-4.2 / ADR-021，2026-08-03）
+//
+// MCP Server 已并入 Plugin 模型：一个 MCP Server = 一个 plugins 行
+// （provider_type='mcp'），它提供的工具 = 若干 tools 行（binding_type='mcp'）。
+// 新代码请用 lib/data/plugins.ts + lib/data/tools.ts。
+//
+// 本文件与 mcp_servers 表**保留而非删除**：删表不可逆，而合并的收益不依赖于
+// 「表已消失」；观察期内若发现遗漏的读取路径，表还在只是功能降级，表没了就是 500。
+// 真正 drop 放到后续单独任务，届时先确认全库无引用。
+//
 // 数据层（ADR-008）：唯一访问 mcp_servers 表 / my_mcp_servers 视图的地方。
 // 首参 ctx、请求级客户端（RLS 生效）。auth_config（Vault 凭据引用）绝不出现在 SELECT，不外泄。
 

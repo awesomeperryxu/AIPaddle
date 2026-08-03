@@ -144,6 +144,33 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
     } finally { setBusy(null) }
   }
 
+  // Tool 白名单：停用即阻断新调用。服务端在下线时会检查依赖它的已发布 Skill，
+  // 有依赖时回 409 + 受影响清单，这里把清单摊给用户再让其确认（V12-3.6）
+  async function toggleTool(t: Tool, action: string) {
+    setBusy(t.id)
+    try {
+      await apiFetch(`/api/tools/${t.id}/transition`, {
+        method: 'POST', body: JSON.stringify({ action }),
+      })
+      if (toolPanel) await openTools(toolPanel)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '操作失败'
+      // 服务端返回「有 N 个已发布 Skill 依赖」时，让用户确认后再带 confirm 重试
+      if (/依赖/.test(msg) && window.confirm(`${msg}\n\n确定继续停用？`)) {
+        try {
+          await apiFetch(`/api/tools/${t.id}/transition`, {
+            method: 'POST', body: JSON.stringify({ action, confirm: true }),
+          })
+          if (toolPanel) await openTools(toolPanel)
+        } catch (e2) {
+          toast.error(e2 instanceof Error ? e2.message : '操作失败')
+        }
+      } else {
+        toast.error(msg)
+      }
+    } finally { setBusy(null) }
+  }
+
   async function openTools(p: Plugin) {
     setToolPanel(p); setTools([])
     try {
@@ -313,6 +340,7 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
                     <TableHead>Binding</TableHead>
                     <TableHead>风险</TableHead>
                     <TableHead>状态</TableHead>
+                    <TableHead className="text-right">白名单</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -329,6 +357,21 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
                         </TableCell>
                         <TableCell>
                           <Badge className={STATUS_META[t.status].cls}>{STATUS_META[t.status].label}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {/* Tool 白名单（V12-4.2）：用发布状态表达「是否允许被调用」，
+                              不另造一个 enabled 字段——两套开关必然出现「已发布但被禁用」
+                              这种没人说得清的状态 */}
+                          {t.status === 'published' ? (
+                            <Button variant="ghost" size="sm" disabled={busy === t.id}
+                              onClick={() => toggleTool(t, 'offline')}>停用</Button>
+                          ) : t.status === 'offline' ? (
+                            <Button variant="ghost" size="sm" disabled={busy === t.id}
+                              onClick={() => toggleTool(t, 'online')}>启用</Button>
+                          ) : (
+                            <Button variant="ghost" size="sm" disabled={busy === t.id}
+                              onClick={() => toggleTool(t, 'submit')}>提交审核</Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     )
