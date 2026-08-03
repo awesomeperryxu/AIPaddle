@@ -16,7 +16,7 @@ import {
 import { apiFetch } from '@/lib/api/client'
 import { OpenApiImportDialog, DbToolDialog } from '@/components/views/plugin-binding-dialogs'
 import {
-  Plus, Loader2, ShieldAlert, ExternalLink, Wrench, Star, FileJson,
+  Plus, Loader2, ShieldAlert, ExternalLink, Wrench, Star, FileJson, PlugZap,
 } from 'lucide-react'
 
 // V12-4.1/4.2/4.3/4.4：Plugin 的三个 Provider 页共用本组件，靠 providerType 区分。
@@ -92,6 +92,9 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
   const [toolPanel, setToolPanel] = useState<Plugin | null>(null)
   const [importOpen, setImportOpen] = useState(false)   // V12-4.3 OpenAPI 导入
   const [dbToolOpen, setDbToolOpen] = useState(false)   // V12-4.4 DB 查询 Tool
+  // V12-4.5 连通性测试结果，按 Tool id 存
+  const [testing, setTesting] = useState<string | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string }>>({})
   const [tools, setTools] = useState<Tool[]>([])
 
   // 首屏加载写在 effect 里用 .then 链，不抽成 useCallback 再 await——
@@ -172,6 +175,37 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
         toast.error(msg)
       }
     } finally { setBusy(null) }
+  }
+
+  /**
+   * V12-4.5：对该 Tool 的最新版本发起一次真实调用。
+   * 版本在服务端取不到时如实提示，不假装"没版本=测通了"。
+   */
+  async function runTest(t: Tool) {
+    setTesting(t.id)
+    try {
+      const vs = await apiFetch<{ versions: { id: string }[] }>(`/api/tools/${t.id}/versions`)
+      const versionId = vs?.versions?.[0]?.id
+      if (!versionId) {
+        setTestResults((s) => ({ ...s, [t.id]: { ok: false, message: '该 Tool 尚无版本，无连接配置可测' } }))
+        return
+      }
+      const r = await apiFetch<{ result: { ok: boolean; message: string; elapsedMs: number } }>(
+        `/api/tools/${t.id}/test`, { method: 'POST', body: JSON.stringify({ versionId }) })
+      if (r?.result) {
+        setTestResults((s) => ({
+          ...s, [t.id]: { ok: r.result.ok, message: `${r.result.message}（${r.result.elapsedMs}ms）` },
+        }))
+        if (r.result.ok) toast.success(r.result.message)
+        else toast.error(r.result.message)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '测试失败'
+      setTestResults((s) => ({ ...s, [t.id]: { ok: false, message: msg } }))
+      toast.error(msg)
+    } finally {
+      setTesting(null)
+    }
   }
 
   async function openTools(p: Plugin) {
@@ -360,6 +394,7 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
                     <TableHead>Binding</TableHead>
                     <TableHead>风险</TableHead>
                     <TableHead>状态</TableHead>
+                    <TableHead>连通性</TableHead>
                     <TableHead className="text-right">白名单</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -377,6 +412,23 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
                         </TableCell>
                         <TableCell>
                           <Badge className={STATUS_META[t.status].cls}>{STATUS_META[t.status].label}</Badge>
+                        </TableCell>
+                        {/* V12-4.5：真实调用测试。结果就地显示，失败原因原文带出——
+                            "测试失败"四个字帮不上任何忙 */}
+                        <TableCell className="max-w-[220px]">
+                          <Button variant="outline" size="sm" disabled={testing === t.id}
+                            onClick={() => runTest(t)}>
+                            {testing === t.id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <PlugZap className="h-3.5 w-3.5" />}
+                            <span className="ml-1">测试</span>
+                          </Button>
+                          {testResults[t.id] && (
+                            <p className={`mt-1 text-[11px] leading-snug ${
+                              testResults[t.id].ok ? 'text-green-600' : 'text-red-600'}`}>
+                              {testResults[t.id].message}
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           {/* Tool 白名单（V12-4.2）：用发布状态表达「是否允许被调用」，
