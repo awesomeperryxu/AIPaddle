@@ -1,24 +1,21 @@
 #!/usr/bin/env bash
 # 部署 main 到生产服务器。
 #
-# 🔴 为什么要有这个脚本：2026-08-03 手工部署踩了三个坑，每一个都是"知道但当时忘了"：
+# 🔴 2026-08-03 手工部署踩过的坑，逐条固化在这里：
 #   ① 用了 sudo —— 应用跑在 ubuntu 的 pm2 下，sudo pm2 是另一个上下文，
-#      结果起了个空的 root 守护进程，还报 "Process not found"。
-#      /opt/aipaddle 属主本就是 ubuntu，整个部署不需要 sudo。
+#      结果起了个空的 root 守护进程还报 Process not found。目录属主本就是 ubuntu。
 #   ② pnpm install 无 TTY 中止 —— 要 CI=true。
-#   ③ 🔴 最要命的：git reset 先执行、构建后失败，于是**新源码配旧 .next**，
-#      线上多条路由报 "client reference manifest does not exist" 500，
-#      而我当时只看到"构建失败"，没意识到线上已处于半更新状态。
+#   ③ git reset 先执行、构建后失败 → 线上处于「新源码 + 旧 .next」的半更新状态，
+#      多条路由 500，而日志里的 InvariantError 看着像 Next.js 自身的 bug。
 #      用户点创建知识库撞上的就是这个。
+#   ④ 🔴 heredoc 没加引号 —— 本地 shell 会先展开变量和反引号，
+#      连注释里的反引号也会被当成命令执行，下发到服务器的是**被改坏的脚本**。
+#      本脚本前两次实跑都栽在这，而报错（syntax error near |、usage: mv）
+#      看着像服务器出了问题，排查方向完全被带偏。
+#      故：heredoc 用单引号包住定界符，需要的值经 ssh 环境变量传入。
 #
-# 对策：
-#   · 先记录当前 commit，任何一步失败就回滚源码并重启回旧版本；
-#   · 🔴 构建到临时目录（NEXT_DIST_DIR=.next.new，next.config.mjs 已支持），
-#     构建成功后再原子切换成 .next。这样做有两个好处：
-#       - 构建期间线上照常跑旧 .next，**零停机**（直接 rm -rf .next 会让
-#         整个构建期 2~4 分钟内所有页面 500）；
-#       - 每次都是全新目录，不会有增量构建残留的不一致清单——
-#         "client reference manifest does not exist" 就是这么来的。
+# 零停机：构建到 .next.new（next.config.mjs 支持 NEXT_DIST_DIR），成功后原子切换。
+# 构建期间线上照跑旧产物；且每次全新目录，不会有增量构建残留的不一致清单。
 #
 # 用法：
 #   ./scripts/deploy.sh              # 部署 origin/main
@@ -32,23 +29,24 @@ PM2_NAME="${PM2_NAME:-aipaddle}"
 
 echo "=== 部署到 $HOST:$APP_DIR ==="
 
-# 🔴 不带 sudo：目录属主就是登录用户，用 sudo 会切到另一个 pm2 上下文
-ssh -o ConnectTimeout=20 -i "$KEY" "$HOST" "bash -s" <<REMOTE
+# 🔴 定界符加单引号：本地一律不展开，脚本原样送达。参数经环境变量传。
+# 🔴 不带 sudo：目录属主就是登录用户。
+ssh -o ConnectTimeout=20 -i "$KEY" "$HOST" \
+  "APP_DIR='$APP_DIR' PM2_NAME='$PM2_NAME' bash -s" <<'REMOTE'
 set -euo pipefail
 cd "$APP_DIR"
 export CI=true          # 无 TTY 时 pnpm 会中止删除 node_modules
 
-PREV=\$(git rev-parse HEAD)
-echo "当前版本：\$(git log --oneline -1)"
+PREV=$(git rev-parse HEAD)
+echo "当前版本：$(git log --oneline -1)"
 
-# 失败即回滚：把源码退回去并重启，让线上回到一个自洽的状态。
-# 半更新（新源码 + 旧构建产物）比"没更新"危险得多——它不会报错，只会在
-# 某些路由上 500，而日志里的 InvariantError 看着像 Next.js 自己的 bug。
+# 失败即回滚。半更新（新源码 + 旧构建产物）比「没更新」危险得多——
+# 它不会报错，只在某些路由上 500。
 rollback() {
-  echo "🔴 部署失败，回滚到 \$PREV"
-  git reset --hard "\$PREV"
+  echo "🔴 部署失败，回滚到 $PREV"
+  git reset --hard "$PREV"
   rm -rf .next.new
-  # 旧 .next 全程没动过，源码退回去即自洽，不必重建；重启只为确保进程加载的是旧码
+  # 旧 .next 全程没动过，源码退回去即自洽，不必重建
   pm2 restart "$PM2_NAME" --update-env || true
   echo "已回滚（旧构建产物未受影响）"
 }
@@ -56,36 +54,47 @@ trap rollback ERR
 
 git fetch origin main
 git reset --hard origin/main
-echo "目标版本：\$(git log --oneline -1)"
+echo "目标版本：$(git log --oneline -1)"
 
 pnpm install --frozen-lockfile 2>&1 | tail -2
 
 # 构建到临时目录 —— 线上此刻仍跑着旧 .next
 rm -rf .next.new
-NEXT_DIST_DIR=.next.new pnpm build 2>&1 | tail -4
+# 全量日志落盘再摘要：早先把构建输出接进 tail 做摘要，结果失败时报错被吃掉，
+# 只剩一句 A previous build that didn't exit cleanly，等于没有信息。
+BUILD_LOG="/tmp/aipaddle-build-$(date +%s).log"
+if NEXT_DIST_DIR=.next.new pnpm build > "$BUILD_LOG" 2>&1; then
+  tail -3 "$BUILD_LOG"
+else
+  echo "🔴 构建失败，完整日志 $BUILD_LOG ——"
+  tail -40 "$BUILD_LOG"
+  exit 1
+fi
 
-# 构建产物完整性自检：缺了这些文件说明构建其实没成，别拿去替换线上
+# 产物完整性自检：缺了这些说明构建其实没成，别拿去替换线上
 for f in .next.new/BUILD_ID .next.new/server/app; do
-  [ -e "\$f" ] || { echo "🔴 构建产物缺 \$f"; exit 1; }
+  if [ ! -e "$f" ]; then echo "🔴 构建产物缺 $f"; exit 1; fi
 done
 
-# 原子切换：旧的先挪走，成功后再删
+# 原子切换
 rm -rf .next.old
-# 🔴 不能写成 `[ -d .next ] && mv ...`：set -e 下目录不存在时整行返回 1，
-# 会误触发回滚 —— 首次部署就会莫名其妙"失败"
+# 注意：不能用 test -d 后接 && mv 的连写 —— set -e 下目录不存在时整行返回 1，
+# 会误触发回滚。用 if 块。
 if [ -d .next ]; then mv .next .next.old; fi
 mv .next.new .next
 pm2 restart "$PM2_NAME" --update-env
 trap - ERR
+
 sleep 5
 if pm2 list | grep "$PM2_NAME" | grep -q online; then
   rm -rf .next.old
   echo "✅ 进程 online，旧构建产物已清理"
 else
-  # 起不来就把旧产物换回去——这一步不能靠 trap，此时源码已是新的
+  # 起不来就把旧产物换回去。这一步不能靠 trap：此时源码已是新的
   echo "🔴 进程未起来，恢复旧构建产物"
-  rm -rf .next && mv .next.old .next
-  git reset --hard "\$PREV"
+  rm -rf .next
+  mv .next.old .next
+  git reset --hard "$PREV"
   pm2 restart "$PM2_NAME" --update-env || true
   exit 1
 fi
