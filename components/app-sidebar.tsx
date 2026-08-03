@@ -9,6 +9,7 @@ import {
   Database,
   FileText,
   GitBranch,
+  Globe,
   LayoutDashboard,
   MessageSquare,
   Settings,
@@ -84,6 +85,15 @@ const navSections: NavSection[] = [
     items: [
       { title: 'Skill Hub', icon: <Boxes className="h-4 w-4" />, href: 'skill-hub', badge: 8 },
       { title: '我的 Skill', icon: <Zap className="h-4 w-4" />, href: 'my-skills' },
+    ]
+  },
+  {
+    title: 'Plugin',
+    defaultOpen: false,
+    items: [
+      { title: 'MCP', icon: <Server className="h-4 w-4" />, href: 'plugins/mcp' },
+      { title: 'API', icon: <Globe className="h-4 w-4" />, href: 'plugins/api' },
+      { title: 'DB', icon: <Database className="h-4 w-4" />, href: 'plugins/db' },
     ]
   },
   {
