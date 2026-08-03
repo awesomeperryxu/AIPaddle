@@ -1,7 +1,7 @@
 import 'server-only'
 import { z } from 'zod'
 import { chat } from '@/lib/ai'
-import { SKILL_TYPES } from '@/lib/skills/status'
+import { CREATABLE_SKILL_TYPES } from '@/lib/skills/status'
 
 // Skill Copilot（4.3.3，ADR-005）：描述 → LLM 生成 Skill 配置草稿 → Schema 校验 → 落 draft。
 // CP-02：AI 只产出配置，绝不发布（createSkill 强制 draft）。
@@ -10,7 +10,10 @@ import { SKILL_TYPES } from '@/lib/skills/status'
 
 export const SkillDraftSchema = z.object({
   name: z.string().trim().min(1).max(40),
-  type: z.enum(SKILL_TYPES),
+  // 🔴 V12-3.5 / D-05：用 CREATABLE_SKILL_TYPES（不含 Workflow）而非 SKILL_TYPES。
+  // 这是硬防线——提示词只是引导，模型完全可能不听话产出 type:'Workflow'，
+  // Schema 校验失败才是真正拦得住的那一道。
+  type: z.enum(CREATABLE_SKILL_TYPES),
   description: z.string().trim().max(300).optional().default(''),
   riskLevel: z.enum(['low', 'medium', 'high']).optional().default('low'),
   mcpServerId: z.string().trim().optional().default(''),
@@ -47,7 +50,8 @@ function buildSystem(servers: { id: string; name: string }[]): string {
   return `你是企业 AI 平台的 Skill 配置助手。根据用户需求生成一个 Skill 配置草稿。
 只输出 JSON（无代码块围栏、无多余文字），字段：
 - name：Skill 名称（≤20 字）
-- type：MCP | API | DB | Workflow | Prompt 之一
+- type：MCP | API | DB | Prompt 之一（🔴 不含 Workflow：Skill 是「怎么做」的方法，
+  Workflow 是「多步怎么编排」的流程，Skill 不得承担编排职责）
 - description：一句话描述
 - riskLevel：low | medium | high
 - mcpServerId：仅当 type=MCP 时，从下列可用 Server 中选一个的 id；否则空字符串
@@ -61,7 +65,7 @@ ${list}
 // 对话向导逐步澄清需求，信息足够时在回复末尾附 ```skilldraft {json}``` 定稿块。
 export const SkillChatDraftSchema = z.object({
   name: z.string().trim().min(1).max(40),
-  type: z.enum(SKILL_TYPES),
+  type: z.enum(CREATABLE_SKILL_TYPES),
   description: z.string().trim().max(300).optional().default(''),
   riskLevel: z.enum(['low', 'medium', 'high']).optional().default('low'),
   documentation: z.string().optional().default(''),
@@ -70,7 +74,7 @@ export type SkillChatDraft = z.infer<typeof SkillChatDraftSchema>
 
 export const SKILL_CHAT_SYSTEM = `你是企业 AI 平台的「Skill 创建向导」，通过多轮对话帮用户明确并起草一个 Skill。
 规则：
-1. 逐步友好地澄清：用途/场景、类型（MCP | API | DB | Workflow | Prompt 之一）、关键行为与输入输出、风险等级。
+1. 逐步友好地澄清：用途/场景、类型（MCP | API | DB | Prompt 之一，**不含 Workflow**）、关键行为与输入输出、风险等级。
 2. 一次只问 1-2 个关键问题，不要一次抛出所有问题。
 3. 仅当信息足够起草时，在本轮回复的**最后**附一个定稿块（此前不要输出）：
 \`\`\`skilldraft

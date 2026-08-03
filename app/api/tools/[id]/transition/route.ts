@@ -3,6 +3,7 @@ import { can } from '@/lib/auth/permissions'
 import { transitionTool } from '@/lib/data/tools'
 import { TOOL_TRANSITIONS, type PluginTransitionAction } from '@/lib/plugins/status'
 import { writeAudit } from '@/lib/data/audit'
+import { listSkillsDependingOn } from '@/lib/data/skill-dependencies'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -19,6 +20,33 @@ export async function POST(req: Request, { params }: Ctx) {
   }
 
   const { id } = await params
+
+  // 🔴 V12-3.6 / AC-17：下线前先告知影响面。
+  //
+  // Tool 下线会让依赖它的 Skill 无法运行。若默默下线，用户要等到线上报错才知道
+  // 出了什么事，而报错信息里通常看不出「是某个 Tool 被下线了」。
+  // 故：有已发布的 Skill 依赖时，第一次请求返回 409 + 受影响清单；
+  // 调用方确认后带 confirm:true 再来，才真正执行。
+  //
+  // 只拦已发布的 Skill——草稿态的本就跑不起来，拦它只会让人以为下线被无故阻止。
+  if (action === 'offline') {
+    const confirmed = body?.confirm === true
+    const dependents = await listSkillsDependingOn(ctx, 'tool', id)
+    const publishedDeps = dependents.filter((d) => d.skillStatus === 'published')
+    if (publishedDeps.length > 0 && !confirmed) {
+      return Response.json(
+        {
+          error: {
+            code: 'has_dependents',
+            message: `有 ${publishedDeps.length} 个已发布的 Skill 正依赖此 Tool，下线后它们将无法运行。确认要下线请重新提交并带 confirm=true。`,
+          },
+          affectedSkills: publishedDeps,
+        },
+        { status: 409 },
+      )
+    }
+  }
+
   const r = await transitionTool(ctx, id, action)
   if (!r.ok) {
     if (r.reason === 'not_found') {
@@ -30,6 +58,13 @@ export async function POST(req: Request, { params }: Ctx) {
     )
   }
   // Tool 下线要阻断依赖它的资产的新运行（AC-17），流转必须留痕
-  await writeAudit(ctx, `tool.${action}`, 'tool', id, { to: r.status })
+  // 下线的审计要记下影响了谁——事后追查「这个 Skill 什么时候开始不能用的」时，
+  // 只有状态变更时间是不够的
+  const auditDetail: Record<string, unknown> = { to: r.status }
+  if (action === 'offline') {
+    const affected = await listSkillsDependingOn(ctx, 'tool', id)
+    if (affected.length > 0) auditDetail.affectedSkills = affected.map((a) => a.skillName)
+  }
+  await writeAudit(ctx, `tool.${action}`, 'tool', id, auditDetail)
   return Response.json({ status: r.status })
 }
