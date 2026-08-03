@@ -7,6 +7,7 @@ import {
   Boxes,
   Plug,
   Database,
+  Mail,
   FileText,
   GitBranch,
   Globe,
@@ -94,6 +95,7 @@ const navSections: NavSection[] = [
       { title: 'MCP', icon: <Server className="h-4 w-4" />, href: 'plugins/mcp' },
       { title: 'API', icon: <Globe className="h-4 w-4" />, href: 'plugins/api' },
       { title: 'DB', icon: <Database className="h-4 w-4" />, href: 'plugins/db' },
+      { title: 'SMTP', icon: <Mail className="h-4 w-4" />, href: 'plugins/smtp' },
     ]
   },
   {

@@ -25,7 +25,7 @@ import {
 // 差异只在文案与 Binding 配置的形状。复制三份会让「改一处忘两处」成为常态——
 // 这类分裂在本项目已发生过（Skill 类型枚举读写混用即是一例）。
 
-type ProviderType = 'mcp' | 'api' | 'db'
+type ProviderType = 'mcp' | 'api' | 'db' | 'smtp'
 type PluginStatus = 'draft' | 'pending' | 'published' | 'offline'
 
 type Plugin = {
@@ -54,6 +54,11 @@ const META: Record<ProviderType, { title: string; desc: string; nameHint: string
     title: 'DB',
     desc: '接入数据库，以查询模板的形式暴露为 Tool。仅只读账号、仅 select。',
     nameHint: '如：订单库只读、报表库',
+  },
+  smtp: {
+    title: 'SMTP',
+    desc: '接入邮件服务器，以模板的形式暴露发信 Tool。连接参数与密码全部存凭证，不进 Binding 配置。',
+    nameHint: '如：腾讯企业邮、阿里云邮推送',
   },
 }
 

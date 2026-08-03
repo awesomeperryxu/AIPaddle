@@ -2,8 +2,8 @@ import 'server-only'
 import { Client } from 'pg'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
-import { getCredentialPlaintext } from '@/lib/data/credentials'
-import { assertApiBinding, assertDbBinding, BindingConfigError } from '@/lib/plugins/binding'
+import { getCredentialPlaintext, getCredentialById } from '@/lib/data/credentials'
+import { assertApiBinding, assertDbBinding, assertSmtpBinding, BindingConfigError } from '@/lib/plugins/binding'
 import { guardedFetch, assertOutboundAllowed, NetGuardError } from '@/lib/tools/net-guard'
 import { runHandler } from '@/lib/tools/handlers'
 
@@ -288,6 +288,25 @@ export async function testToolVersion(
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
         if (!pv) return fail('该 Plugin 没有版本记录，缺少连接信息', started)
         return await testMcp(ctx, pv as never, row.credential_id, started)
+      }
+      case 'smtp': {
+        // V12-4.9。SMTP 的连接参数在凭证 meta 里（非敏感），密码在密文列。
+        // 两者都要取：只有密码没有 host 是连不上的
+        const cfg = assertSmtpBinding(row.binding_config)   // 🔴 调用期重校验
+        if (!row.credential_id) {
+          return fail('未绑定 SMTP 凭证——host/port/user 存凭证 meta，密码存密文列', started)
+        }
+        const [secret, cred] = await Promise.all([
+          getCredentialPlaintext(ctx, row.credential_id),
+          getCredentialById(ctx, row.credential_id),
+        ])
+        if (!secret) return fail('凭证不可用（不存在／已停用／已过期／解密失败）', started)
+        const r = await runHandler({
+          handlerId: 'smtp.send_mail',
+          config: { ...cfg, _credential_meta: cred?.meta ?? {} },
+          secret, probeOnly: true,
+        })
+        return { ok: r.ok, message: r.message, detail: r.detail, elapsedMs: now() - started }
       }
       case 'native': {
         // V12-4.7：内置 Handler（企微等）。probeOnly=true——连通性测试不产生真实副作用，

@@ -8,8 +8,9 @@ import { PLUGIN_TRANSITIONS, type PluginTransitionAction, type PluginStatus } fr
 // Plugin = 能力交付与 Provider 治理单元，是「包」；Tool 是包里的「原子操作」。
 // 一个 Plugin 可提供多个 Tool（AC-02）。
 
-export type ProviderType = 'mcp' | 'api' | 'db'
-export const PROVIDER_TYPES: readonly ProviderType[] = ['mcp', 'api', 'db'] as const
+export type ProviderType = 'mcp' | 'api' | 'db' | 'smtp'
+// smtp 由迁移 0037 加入枚举（V12-4.9）
+export const PROVIDER_TYPES: readonly ProviderType[] = ['mcp', 'api', 'db', 'smtp'] as const
 
 export type Plugin = {
   id: string

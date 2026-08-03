@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  assertApiBinding, assertDbBinding, deriveToolsFromOpenApi, BindingConfigError,
+  assertApiBinding, assertDbBinding, assertSmtpBinding, deriveToolsFromOpenApi, BindingConfigError,
 } from './binding'
 
 const okApi = {
@@ -350,5 +350,66 @@ describe('deriveToolsFromOpenApi', () => {
     expect(() => deriveToolsFromOpenApi({
       servers: [{ url: 'https://evil.com' }], paths: doc.paths,
     }, ['api.example.com'])).toThrow(/不在白名单内/)
+  })
+})
+
+describe('assertSmtpBinding', () => {
+  const okSmtp = {
+    from_address: 'marketing@example.com',
+    from_name: '官网线索',
+    to: ['a@example.com', 'b@example.com'],
+    subject_template: '新客户预约',
+    body_template: '<p>内容</p>',
+  }
+
+  it('接受合法配置', () => {
+    const c = assertSmtpBinding(okSmtp)
+    expect(c.to).toHaveLength(2)
+    expect(c.cc).toEqual([])
+  })
+
+  it('收件人支持逗号分隔的字符串', () => {
+    const c = assertSmtpBinding({ ...okSmtp, to: 'a@x.com, b@x.com; c@x.com' })
+    expect(c.to).toEqual(['a@x.com', 'b@x.com', 'c@x.com'])
+  })
+
+  it('发件地址与收件人不能为空', () => {
+    expect(() => assertSmtpBinding({ ...okSmtp, from_address: '' })).toThrow(/发件地址/)
+    expect(() => assertSmtpBinding({ ...okSmtp, to: [] })).toThrow(/收件人/)
+  })
+
+  it('邮箱格式无效时拒绝', () => {
+    expect(() => assertSmtpBinding({ ...okSmtp, from_address: 'not-an-email' })).toThrow(/发件地址无效/)
+    expect(() => assertSmtpBinding({ ...okSmtp, to: ['ok@x.com', 'bad'] })).toThrow(/收件人.*无效/)
+    expect(() => assertSmtpBinding({ ...okSmtp, reply_to: 'bad' })).toThrow(/回复地址无效/)
+  })
+
+  it('🔴 主题含换行被拒（邮件头注入）', () => {
+    // 换行会被 SMTP 解析成新的邮件头，能借此塞 Bcc 把邮件抄送到任意地址
+    expect(() => assertSmtpBinding({ ...okSmtp, subject_template: '正常\nBcc: evil@x.com' }))
+      .toThrow(/换行|头注入/)
+    expect(() => assertSmtpBinding({ ...okSmtp, subject_template: '正常\r\nBcc: evil@x.com' }))
+      .toThrow(/换行|头注入/)
+  })
+
+  it('🔴 发件人显示名含换行同样被拒（也进邮件头）', () => {
+    expect(() => assertSmtpBinding({ ...okSmtp, from_name: '甲\nBcc: evil@x.com' })).toThrow(/换行/)
+  })
+
+  it('🔴 配置里不含任何连接参数与密码', () => {
+    // host/port/user 进凭证 meta，密码进密文列——即便调用方传进来也不该被保留
+    const c = assertSmtpBinding({
+      ...okSmtp, host: 'smtp.evil.com', port: 25, user: 'u', pass: 'p', password: 'p2',
+    })
+    const keys = Object.keys(c)
+    for (const bad of ['host', 'port', 'user', 'pass', 'password']) {
+      expect(keys, `不该保留 ${bad}`).not.toContain(bad)
+    }
+  })
+
+  it('键名输出 snake_case，与表注释一致', () => {
+    expect(Object.keys(assertSmtpBinding(okSmtp)).sort()).toEqual(
+      ['body_template', 'cc', 'from_address', 'from_name', 'reply_to', 'subject_template', 'to'],
+    )
   })
 })

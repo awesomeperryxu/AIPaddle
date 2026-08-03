@@ -128,10 +128,93 @@ const wecomHandler: Handler = {
   },
 }
 
+// ── SMTP 发信（V12-4.9）────────────────────────────────────────────────
+
+/**
+ * 连接参数来自 credentials.meta（非敏感），密码来自 secret_ciphertext。
+ * 调用方把两者一起传进来：meta 放 ctx.config._credential_meta，密码放 ctx.secret。
+ */
+type SmtpConn = { host: string; port: number; secure: boolean; user: string }
+
+function readSmtpConn(meta: Record<string, unknown>): SmtpConn | string {
+  const host = String(meta.host ?? '').trim()
+  const user = String(meta.user ?? '').trim()
+  if (!host) return '凭证 meta 缺少 host'
+  if (!user) return '凭证 meta 缺少 user'
+  const port = Number(meta.port ?? 465)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return '凭证 meta 的 port 无效'
+  // 465 = 隐式 TLS；587 = STARTTLS。默认按端口推断，meta 显式给了就听它的
+  const secure = typeof meta.secure === 'boolean' ? meta.secure : port === 465
+  return { host, port, secure, user }
+}
+
+const smtpHandler: Handler = {
+  id: 'smtp.send_mail',
+  label: 'SMTP 邮件发送',
+  allowedHosts: [],   // SMTP 不走 HTTP，出站目标由凭证 meta 的 host 决定
+  async run({ config, secret, probeOnly }) {
+    const meta = (config._credential_meta ?? {}) as Record<string, unknown>
+    const conn = readSmtpConn(meta)
+    if (typeof conn === 'string') return { ok: false, message: conn }
+    // 🔴 腾讯企业邮要求「客户端专用密码」，不是邮箱登录密码——用登录密码会认证失败。
+    // 这条踩过，写在这里省得下次再查半天
+    if (!secret) return { ok: false, message: '未绑定凭证（SMTP 密码须存 credentials；腾讯企业邮请用客户端专用密码）' }
+
+    // nodemailer 只在真正要用时才载入：它体积不小，且只有 smtp Tool 会走到这里
+    const nodemailer = (await import('nodemailer')).default
+    const transporter = nodemailer.createTransport({
+      host: conn.host, port: conn.port, secure: conn.secure,
+      auth: { user: conn.user, pass: secret },
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
+    })
+
+    try {
+      // 🔴 连通性测试用 verify()：它做完整的连接+握手+认证，但**不发信**。
+      // 「测一下能不能发」不该真往收件人信箱里塞一封测试邮件——
+      // 收件人往往是客户或老板，发错一封的代价远大于测试本身的价值
+      if (probeOnly) {
+        await transporter.verify()
+        return {
+          ok: true,
+          message: `连通（${conn.host}:${conn.port} 认证通过；未发送邮件）`,
+          detail: { host: conn.host, port: conn.port, secure: conn.secure, user: conn.user },
+        }
+      }
+
+      const info = await transporter.sendMail({
+        from: config.from_name
+          ? { name: String(config.from_name), address: String(config.from_address) }
+          : String(config.from_address),
+        to: (config.to as string[])?.join(', '),
+        cc: (config.cc as string[])?.length ? (config.cc as string[]).join(', ') : undefined,
+        replyTo: config.reply_to ? String(config.reply_to) : undefined,
+        subject: String(config.subject_template ?? ''),
+        html: String(config.body_template ?? ''),
+      })
+      return { ok: true, message: '已投递', detail: { messageId: info.messageId } }
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e)
+      // 🔴 认证失败时 nodemailer 的报错可能带上用户名，密码不会带但也别赌——
+      // 只回结论 + 常见原因，不把原始报错整段抖出去
+      const hint = /auth|535|501/i.test(raw)
+        ? '（认证失败：腾讯企业邮请确认用的是「客户端专用密码」而非登录密码）'
+        : /timeout|ETIMEDOUT|ECONNREFUSED/i.test(raw)
+          ? '（连不上：确认端口未被出网策略拦截；本机直连 SMTP 常被代理劫持，需从服务器验证）'
+          : ''
+      return { ok: false, message: `SMTP ${probeOnly ? '连接' : '发送'}失败${hint}` }
+    } finally {
+      transporter.close()
+    }
+  },
+}
+
 // ── 注册表 ─────────────────────────────────────────────────────────────
 
 const HANDLERS: Record<string, Handler> = {
   [wecomHandler.id]: wecomHandler,
+  [smtpHandler.id]: smtpHandler,
 }
 
 export const HANDLER_IDS = Object.keys(HANDLERS)

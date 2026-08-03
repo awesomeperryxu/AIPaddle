@@ -248,6 +248,78 @@ export function assertDbBinding(raw: unknown): DbBindingConfig {
   }
 }
 
+// ── SMTP Binding（V12-4.9）─────────────────────────────────────────────
+
+export type SmtpBindingConfig = {
+  from_address: string
+  from_name: string
+  to: string[]
+  cc: string[]
+  subject_template: string
+  body_template: string
+  reply_to: string
+}
+
+// 收敛的邮箱格式判断：够挡住明显写错的，不追求 RFC 5322 完备
+// （真要完备就得上百行正则，而它挡不住的那些用真发一封信立刻就暴露了）
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/
+
+function assertEmailList(v: unknown, field: string, required: boolean): string[] {
+  const list = Array.isArray(v)
+    ? asStringList(v)
+    : typeof v === 'string' ? v.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean) : []
+  if (required && list.length === 0) throw new BindingConfigError(`${field} 不能为空`)
+  for (const e of list) {
+    if (!EMAIL_RE.test(e)) throw new BindingConfigError(`${field} 中的地址无效：${e}`)
+  }
+  return list
+}
+
+/**
+ * 🔴 这里**只有收件与模板**，没有 host/port/secure/user/pass。
+ * 连接参数与密码全部经 credential_id 引用 credentials（kind='smtp'）：
+ * 非敏感的 host/port/secure/user 进 credentials.meta，密码进 secret_ciphertext。
+ *
+ * 为什么连 host 都不放在这儿：binding_config 是 Tool 版本级的、会被列出来看的东西，
+ * 而 SMTP 的 host+user 合起来基本等同于「哪个邮箱账号」——那属于凭证的一部分，
+ * 拆开存会让「换个发信账号」变成要同时改两处，迟早改漏一处。
+ */
+export function assertSmtpBinding(raw: unknown): SmtpBindingConfig {
+  const c = (raw ?? {}) as Record<string, unknown>
+
+  const fromAddress = String(c.from_address ?? '').trim()
+  if (!fromAddress) throw new BindingConfigError('发件地址不能为空')
+  if (!EMAIL_RE.test(fromAddress)) throw new BindingConfigError(`发件地址无效：${fromAddress}`)
+
+  const to = assertEmailList(c.to, '收件人', true)
+  const cc = assertEmailList(c.cc, '抄送', false)
+
+  const replyTo = String(c.reply_to ?? '').trim()
+  if (replyTo && !EMAIL_RE.test(replyTo)) throw new BindingConfigError(`回复地址无效：${replyTo}`)
+
+  const subject = String(c.subject_template ?? '').trim()
+  if (!subject) throw new BindingConfigError('邮件主题不能为空')
+  // 主题里出现换行会被 SMTP 解析成新的邮件头 —— 这是邮件头注入
+  if (/[\r\n]/.test(subject)) {
+    throw new BindingConfigError('邮件主题不得包含换行——换行会被解析成新的邮件头（头注入）')
+  }
+
+  // 发件人显示名同理：它也会进邮件头
+  const fromName = String(c.from_name ?? '').trim()
+  if (/[\r\n]/.test(fromName)) {
+    throw new BindingConfigError('发件人显示名不得包含换行')
+  }
+
+  return {
+    from_address: fromAddress,
+    from_name: fromName,
+    to, cc,
+    subject_template: subject,
+    body_template: String(c.body_template ?? ''),
+    reply_to: replyTo,
+  }
+}
+
 // ── OpenAPI 导入（V12-4.3 · AC-02）─────────────────────────────────────
 
 export type DerivedTool = {

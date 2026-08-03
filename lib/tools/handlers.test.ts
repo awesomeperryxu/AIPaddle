@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('server-only', () => ({}))
+// nodemailer 用 mock：真连 SMTP 既慢又会真发信，而「不发信」正是要验的
+const mockVerify = vi.fn(async () => true)
+const mockSendMail = vi.fn(async (_opts: Record<string, unknown>) => ({ messageId: 'mid-1' }))
+const mockClose = vi.fn()
+vi.mock('nodemailer', () => ({
+  default: { createTransport: () => ({ verify: mockVerify, sendMail: mockSendMail, close: mockClose }) },
+}))
 vi.mock('@/lib/tools/net-guard', () => ({
   guardedFetch: vi.fn(),
   NetGuardError: class NetGuardError extends Error {},
@@ -20,7 +27,11 @@ const wecomCfg = {
   content: '测试消息',
 }
 
-beforeEach(() => { vi.clearAllMocks(); __resetHandlerTokenCache() })
+beforeEach(() => {
+  vi.clearAllMocks(); __resetHandlerTokenCache()
+  mockVerify.mockResolvedValue(true)
+  mockSendMail.mockResolvedValue({ messageId: 'mid-1' })
+})
 
 describe('Handler 注册表', () => {
   it('🔴 handler_id 只能取自白名单——它来自数据库', () => {
@@ -165,5 +176,94 @@ describe('企微 Handler', () => {
     const dump = JSON.stringify(r)
     expect(dump).not.toContain('SUPER_SECRET_VALUE')
     expect(dump).not.toContain('ACCESS_TOKEN_XYZ')
+  })
+})
+
+describe('SMTP Handler', () => {
+  const smtpCfg = {
+    handler_id: 'smtp.send_mail',
+    from_address: 'a@x.com', from_name: '发件人',
+    to: ['b@x.com'], cc: [], reply_to: '',
+    subject_template: '主题', body_template: '<p>正文</p>',
+    _credential_meta: { host: 'smtp.exmail.qq.com', port: 465, user: 'a@x.com' },
+  }
+
+  it('缺 host / user 时明确报出，而不是笼统失败', async () => {
+    for (const meta of [{ user: 'u' }, { host: 'h' }]) {
+      const r = await runHandler({
+        handlerId: 'smtp.send_mail', config: { ...smtpCfg, _credential_meta: meta },
+        secret: 'p', probeOnly: true,
+      })
+      expect(r.ok).toBe(false)
+      expect(r.message).toMatch(/host|user/)
+    }
+  })
+
+  it('未绑凭证时拒绝，并点出腾讯企业邮要用客户端专用密码', async () => {
+    const r = await runHandler({
+      handlerId: 'smtp.send_mail', config: smtpCfg, secret: null, probeOnly: true,
+    })
+    expect(r.ok).toBe(false)
+    expect(r.message).toMatch(/客户端专用密码/)
+  })
+
+  it('port 非法时拒绝', async () => {
+    const r = await runHandler({
+      handlerId: 'smtp.send_mail',
+      config: { ...smtpCfg, _credential_meta: { host: 'h', user: 'u', port: 99999 } },
+      secret: 'p', probeOnly: true,
+    })
+    expect(r.ok).toBe(false)
+    expect(r.message).toMatch(/port/)
+  })
+
+  it('🔴 失败信息里不含密码', async () => {
+    const r = await runHandler({
+      handlerId: 'smtp.send_mail',
+      config: { ...smtpCfg, _credential_meta: { host: 'h', user: 'u', port: 0 } },
+      secret: 'SUPER_SECRET_PASSWORD', probeOnly: true,
+    })
+    expect(JSON.stringify(r)).not.toContain('SUPER_SECRET_PASSWORD')
+  })
+
+  it('🔴 probeOnly 只做 verify()，绝不发信', async () => {
+    // 收件人往往是客户或老板。「测一下能不能发」真发出一封的代价，
+    // 远大于这次测试本身的价值
+    const r = await runHandler({
+      handlerId: 'smtp.send_mail', config: smtpCfg, secret: 'pw', probeOnly: true,
+    })
+    expect(r.ok).toBe(true)
+    expect(r.message).toMatch(/未发送邮件/)
+    expect(mockVerify).toHaveBeenCalledTimes(1)
+    expect(mockSendMail).not.toHaveBeenCalled()
+  })
+
+  it('非 probe 时才真发信，且带上收件人与主题', async () => {
+    const r = await runHandler({
+      handlerId: 'smtp.send_mail', config: smtpCfg, secret: 'pw', probeOnly: false,
+    })
+    expect(r.ok).toBe(true)
+    expect(mockSendMail).toHaveBeenCalledTimes(1)
+    expect(mockSendMail.mock.calls[0]?.[0]).toMatchObject({ to: 'b@x.com', subject: '主题' })
+  })
+
+  it('连接用完即关，不留连接泄漏', async () => {
+    await runHandler({ handlerId: 'smtp.send_mail', config: smtpCfg, secret: 'pw', probeOnly: true })
+    expect(mockClose).toHaveBeenCalled()
+  })
+
+  it('🔴 verify 失败时不含密码，且给出可操作提示', async () => {
+    mockVerify.mockRejectedValueOnce(new Error('535 Error: authentication failed for user@x.com'))
+    const r = await runHandler({
+      handlerId: 'smtp.send_mail', config: smtpCfg, secret: 'SUPER_SECRET_PASSWORD', probeOnly: true,
+    })
+    expect(r.ok).toBe(false)
+    expect(JSON.stringify(r)).not.toContain('SUPER_SECRET_PASSWORD')
+    expect(r.message).toMatch(/客户端专用密码/)
+  })
+
+  it('smtp.send_mail 已注册在白名单里', () => {
+    expect(HANDLER_IDS).toContain('smtp.send_mail')
+    expect(getHandler('smtp.send_mail')).not.toBeNull()
   })
 })
