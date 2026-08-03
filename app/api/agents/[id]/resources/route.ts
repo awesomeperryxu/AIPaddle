@@ -30,6 +30,7 @@ export async function PUT(req: Request, { params }: Ctx) {
   const skillIds = Array.isArray(body?.skillIds) ? body.skillIds.map(String) : []
   const rawMcpIds = Array.isArray(body?.mcpServerIds) ? body.mcpServerIds.map(String) : []
   const rawSubAgentIds = Array.isArray(body?.subAgentIds) ? body.subAgentIds.map(String) : []
+  const rawToolIds = Array.isArray(body?.toolIds) ? body.toolIds.map(String) : []
 
   // 校验每个 MCP Server 均为 approved 状态（安全边界：平台管理员已确认的才能绑定）
   let mcpServerIds: string[] = []
@@ -46,6 +47,26 @@ export async function PUT(req: Request, { params }: Ctx) {
     if (denied.length > 0) {
       return Response.json(
         { error: { code: 'mcp_not_approved', message: `以下 MCP Server 未经平台审批，无法绑定：${denied.join(', ')}` } },
+        { status: 422 },
+      )
+    }
+  }
+
+  // GAP-1：Tool 绑定。🔴 只允许 status='published' 的 Tool——
+  // Tool 白名单就是用发布状态表达的（V12-4.2），这里不校验那套治理就形同虚设。
+  // 与上面 MCP 的处理同构：服务端裁定，不信前端传什么就是什么。
+  let toolIds: string[] = []
+  if (rawToolIds.length > 0) {
+    const supabase = await createClient()
+    const { data: pub } = await supabase
+      .from('tools').select('id')
+      .in('id', rawToolIds).eq('org_id', ctx.orgId)
+      .eq('status', 'published').is('deleted_at', null)
+    toolIds = (pub as { id: string }[] ?? []).map((r) => r.id)
+    const denied = rawToolIds.filter((tid: string) => !toolIds.includes(tid))
+    if (denied.length > 0) {
+      return Response.json(
+        { error: { code: 'tool_not_published', message: `以下 Tool 未发布或无权访问，无法绑定：${denied.join(', ')}` } },
         { status: 422 },
       )
     }
@@ -97,6 +118,6 @@ export async function PUT(req: Request, { params }: Ctx) {
     subAgentRejected = rejected
   }
 
-  const resources = await setAgentResources(ctx, id, { knowledgeBaseIds, skillIds, mcpServerIds, subAgentIds })
+  const resources = await setAgentResources(ctx, id, { knowledgeBaseIds, skillIds, mcpServerIds, subAgentIds, toolIds })
   return Response.json({ resources, subAgentRejected })
 }

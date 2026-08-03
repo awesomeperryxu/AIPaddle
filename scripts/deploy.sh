@@ -70,6 +70,25 @@ rollback() {
 }
 trap rollback ERR
 
+# 🔴 清掉陈旧的 git 锁。被中断的部署（ssh 断开、任务被杀）会让 git 半途退出，
+# 留下 .git/index.lock，之后所有 git 操作都报
+# 「Another git process seems to be running in this repository」——实测踩到过。
+# 与 Next 构建锁同一类问题：中断留下的锁挡住后续操作。
+# 🔴 只在确实没有 git 进程在本目录跑时才删——正在跑的操作不能动。
+if [ -f .git/index.lock ]; then
+  running=0
+  for pid in $(pgrep -x git 2>/dev/null); do
+    if [ "$(readlink -f "/proc/$pid/cwd" 2>/dev/null)" = "$PWD" ]; then running=1; break; fi
+  done
+  if [ "$running" = "0" ]; then
+    echo "  清理陈旧的 .git/index.lock"
+    rm -f .git/index.lock
+  else
+    echo "🔴 有 git 进程正在本仓库运行，本次退出"
+    exit 1
+  fi
+fi
+
 git fetch origin main
 git reset --hard origin/main
 echo "目标版本：$(git log --oneline -1)"

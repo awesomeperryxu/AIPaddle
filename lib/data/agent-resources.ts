@@ -10,19 +10,26 @@ export type AgentResources = {
   skillIds: string[]
   mcpServerIds: string[]
   subAgentIds: string[] // 4.1.18/ADR-014：数字员工引用的子 Agent
+  toolIds: string[]     // GAP-1：Agent 直挂 Plugin 提供的 Tool（迁移 0038）
 }
+
+// 一处定义，读写共用。此前读与写各写一份数组字面量，加类型时改一处漏一处的风险很高
+const RESOURCE_TYPES = ['knowledge_base', 'skill', 'mcp_server', 'agent', 'tool'] as const
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+const EMPTY = (): AgentResources =>
+  ({ knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: [], toolIds: [] })
+
 /** 读取某 Agent 直挂的知识库 / Skill / MCP Server id。 */
 export async function getAgentResources(_ctx: RequestContext, agentId: string): Promise<AgentResources> {
-  if (!UUID_RE.test(agentId)) return { knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: [] }
+  if (!UUID_RE.test(agentId)) return EMPTY()
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('agent_resources')
     .select('resource_type,resource_id')
     .eq('agent_id', agentId)
-    .in('resource_type', ['knowledge_base', 'skill', 'mcp_server', 'agent'])
+    .in('resource_type', RESOURCE_TYPES as unknown as string[])
     .is('deleted_at', null)
   if (error) throw new Error(error.message)
   const rows = (data as { resource_type: string; resource_id: string }[] | null) ?? []
@@ -31,6 +38,7 @@ export async function getAgentResources(_ctx: RequestContext, agentId: string): 
     skillIds: rows.filter((r) => r.resource_type === 'skill').map((r) => r.resource_id),
     mcpServerIds: rows.filter((r) => r.resource_type === 'mcp_server').map((r) => r.resource_id),
     subAgentIds: rows.filter((r) => r.resource_type === 'agent').map((r) => r.resource_id),
+    toolIds: rows.filter((r) => r.resource_type === 'tool').map((r) => r.resource_id),
   }
 }
 
@@ -53,9 +61,12 @@ export async function listDigitalEmployeeIds(_ctx: RequestContext): Promise<stri
 export async function setAgentResources(
   ctx: RequestContext,
   agentId: string,
-  next: { knowledgeBaseIds: string[]; skillIds: string[]; mcpServerIds: string[]; subAgentIds?: string[] },
+  next: {
+    knowledgeBaseIds: string[]; skillIds: string[]; mcpServerIds: string[]
+    subAgentIds?: string[]; toolIds?: string[]
+  },
 ): Promise<AgentResources> {
-  if (!UUID_RE.test(agentId)) return { knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: [] }
+  if (!UUID_RE.test(agentId)) return EMPTY()
   const supabase = await createClient()
 
   // 软删该 Agent 现有 kb + skill + mcp_server 关联
@@ -63,7 +74,7 @@ export async function setAgentResources(
     .from('agent_resources')
     .update({ deleted_at: new Date().toISOString() })
     .eq('agent_id', agentId)
-    .in('resource_type', ['knowledge_base', 'skill', 'mcp_server', 'agent'])
+    .in('resource_type', RESOURCE_TYPES as unknown as string[])
     .is('deleted_at', null)
   if (delErr) throw new Error(delErr.message)
 
@@ -71,16 +82,18 @@ export async function setAgentResources(
   const skillIds = [...new Set(next.skillIds.filter((x) => UUID_RE.test(x)))]
   const mcpIds = [...new Set(next.mcpServerIds.filter((x) => UUID_RE.test(x)))]
   const subAgentIds = [...new Set((next.subAgentIds ?? []).filter((x) => UUID_RE.test(x) && x !== agentId))] // 不自引
+  const toolIds = [...new Set((next.toolIds ?? []).filter((x) => UUID_RE.test(x)))]
 
   const rows = [
     ...kbIds.map((id) => ({ org_id: ctx.orgId, agent_id: agentId, resource_type: 'knowledge_base', resource_id: id })),
     ...skillIds.map((id) => ({ org_id: ctx.orgId, agent_id: agentId, resource_type: 'skill', resource_id: id })),
     ...mcpIds.map((id) => ({ org_id: ctx.orgId, agent_id: agentId, resource_type: 'mcp_server', resource_id: id })),
     ...subAgentIds.map((id) => ({ org_id: ctx.orgId, agent_id: agentId, resource_type: 'agent', resource_id: id })),
+    ...toolIds.map((id) => ({ org_id: ctx.orgId, agent_id: agentId, resource_type: 'tool', resource_id: id })),
   ]
   if (rows.length > 0) {
     const { error: insErr } = await supabase.from('agent_resources').insert(rows)
     if (insErr) throw new Error(insErr.message)
   }
-  return { knowledgeBaseIds: kbIds, skillIds, mcpServerIds: mcpIds, subAgentIds }
+  return { knowledgeBaseIds: kbIds, skillIds, mcpServerIds: mcpIds, subAgentIds, toolIds }
 }
