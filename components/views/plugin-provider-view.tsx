@@ -14,8 +14,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { apiFetch } from '@/lib/api/client'
+import { OpenApiImportDialog, DbToolDialog } from '@/components/views/plugin-binding-dialogs'
 import {
-  Plus, Loader2, ShieldAlert, ExternalLink, Wrench, Star, ChevronRight,
+  Plus, Loader2, ShieldAlert, ExternalLink, Wrench, Star, FileJson,
 } from 'lucide-react'
 
 // V12-4.1/4.2/4.3/4.4：Plugin 的三个 Provider 页共用本组件，靠 providerType 区分。
@@ -89,6 +90,8 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
 
   // Tool 面板
   const [toolPanel, setToolPanel] = useState<Plugin | null>(null)
+  const [importOpen, setImportOpen] = useState(false)   // V12-4.3 OpenAPI 导入
+  const [dbToolOpen, setDbToolOpen] = useState(false)   // V12-4.4 DB 查询 Tool
   const [tools, setTools] = useState<Tool[]>([])
 
   // 首屏加载写在 effect 里用 .then 链，不抽成 useCallback 再 await——
@@ -329,6 +332,23 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
               一个 Plugin 可提供多个 Tool。只有<strong>已发布</strong>的 Tool 才能被 Skill 依赖与调用。
             </DialogDescription>
           </DialogHeader>
+          {/* Binding 配置入口按 Provider 类型分流（V12-4.3 / V12-4.4）。
+              MCP 的 Tool 由 Server 声明后同步，不在此手工建 */}
+          {toolPanel && providerType === 'api' && (
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+                <FileJson className="mr-1 h-4 w-4" />导入 OpenAPI
+              </Button>
+            </div>
+          )}
+          {toolPanel && providerType === 'db' && (
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setDbToolOpen(true)}>
+                <Plus className="mr-1 h-4 w-4" />新建查询 Tool
+              </Button>
+            </div>
+          )}
+
           {tools.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">该 Plugin 下暂无 Tool。</p>
           ) : (
@@ -382,6 +402,19 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
           )}
         </DialogContent>
       </Dialog>
+
+      {toolPanel && (
+        <>
+          <OpenApiImportDialog
+            pluginId={toolPanel.id} open={importOpen} onOpenChange={setImportOpen}
+            onDone={() => { void openTools(toolPanel) }}
+          />
+          <DbToolDialog
+            pluginId={toolPanel.id} open={dbToolOpen} onOpenChange={setDbToolOpen}
+            onDone={() => { void openTools(toolPanel) }}
+          />
+        </>
+      )}
     </div>
   )
 }
