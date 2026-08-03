@@ -7,8 +7,10 @@ import {
   Boxes,
   Plug,
   Database,
+  Mail,
   FileText,
   GitBranch,
+  Globe,
   LayoutDashboard,
   MessageSquare,
   Settings,
@@ -87,6 +89,16 @@ const navSections: NavSection[] = [
     ]
   },
   {
+    title: 'Plugin',
+    defaultOpen: false,
+    items: [
+      { title: 'MCP', icon: <Server className="h-4 w-4" />, href: 'plugins/mcp' },
+      { title: 'API', icon: <Globe className="h-4 w-4" />, href: 'plugins/api' },
+      { title: 'DB', icon: <Database className="h-4 w-4" />, href: 'plugins/db' },
+      { title: 'SMTP', icon: <Mail className="h-4 w-4" />, href: 'plugins/smtp' },
+    ]
+  },
+  {
     title: '知识库',
     defaultOpen: false,
     items: [
@@ -108,7 +120,6 @@ const navSections: NavSection[] = [
     defaultOpen: false,
     items: [
       { title: '安全管理', icon: <Shield className="h-4 w-4" />, href: 'security', badge: 3 },
-      { title: 'MCP 管理', icon: <Server className="h-4 w-4" />, href: 'mcp' },
       { title: '成员管理', icon: <Users className="h-4 w-4" />, href: 'members' },
     ]
   },
