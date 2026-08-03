@@ -27,6 +27,17 @@ code() {
   fi
 }
 
+# redir <关键字> <路径> <说明>；重定向目标须含关键字
+redir() {
+  local kw="$1" path="$2" desc="$3" loc
+  loc=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 15 "$BASE$path" 2>/dev/null)
+  if printf '%s' "$loc" | grep -q "$kw"; then
+    printf '  ✅ %-38s → %s\n' "$desc" "$loc"
+  else
+    printf '  ❌ %-38s 期望含「%s」，实际 %s\n' "$desc" "$kw" "${loc:-无跳转}"; fail=$((fail+1))
+  fi
+}
+
 # body <关键字> <路径> <说明>；关键字必须出现
 body() {
   local kw="$1" path="$2" desc="$3"
@@ -45,7 +56,12 @@ code 200 /login "登录页"
 echo "② 自助注册已关闭（BUG-93）"
 # 未登录访问受保护页应回登录页而不是 500/死循环
 code 307 /register "注册页重定向"
-body "请联系企业管理员开通" /login "登录页无注册入口"
+redir "registration_closed" /register "注册关闭的原因码"
+# 🔴 不断言登录页正文里的「请联系企业管理员开通」：
+# 该页是 Suspense 包裹的客户端组件，SSR 输出里连 email/password 字段都没有，
+# curl 拿到的只是骨架 —— 这条断言即便代码完全正确也永远是红的（部署验证时踩到）。
+# 前端文案交给 e2e（S0-AUTH-02 已覆盖），这里只验服务端能定的事实。
+code 200 /no-access "无组织兜底页（BUG-93）"
 
 echo "③ 受保护页面未登录时回踢"
 for p in /dashboard /plugins/mcp /plugins/smtp /agents; do
