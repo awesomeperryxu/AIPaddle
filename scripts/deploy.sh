@@ -37,6 +37,14 @@ set -euo pipefail
 cd "$APP_DIR"
 export CI=true          # 无 TTY 时 pnpm 会中止删除 node_modules
 
+# 🔴 部署级互斥：两次部署重叠会同时跑 next build，直接撞上 Next 的构建锁。
+# 宁可第二次立刻退出，也不要两边互相破坏对方的产物。
+exec 9>/tmp/aipaddle-deploy.lock
+if ! flock -n 9; then
+  echo "🔴 已有另一次部署在进行中（/tmp/aipaddle-deploy.lock），本次退出"
+  exit 1
+fi
+
 PREV=$(git rev-parse HEAD)
 echo "当前版本：$(git log --oneline -1)"
 
@@ -75,12 +83,28 @@ pnpm install --frozen-lockfile 2>&1 | tail -2
 # 失败时报 .next.new/server/pages-manifest.json 不存在（server 目录整个是空的，
 # 即构建在写产物之前就断了）。没查出确定成因，故先按已知不稳定处理：
 # 重试一次并把两次日志都留着。若重试仍失败，多半是真问题而非抖动。
+# 🔴 只杀本项目的 next build 进程，**绝不碰 next-server**——那是正在对外服务的应用。
+# 用 cwd 精确匹配：这台机器上还跑着别的 Next 应用（含 Docker 里的），
+# 按进程名粗暴 pkill 会误伤。排查时就见过一个存活 12.9 天的 next-server，
+# 查了 /proc/<pid>/cwd 才确认它属于另一个容器——先查再动。
+kill_stale_builds() {
+  local me="$PWD" pid cwd
+  for pid in $(pgrep -f 'next build|next-build' 2>/dev/null); do
+    cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+    if [ "$cwd" = "$me" ]; then
+      echo "  清理陈旧构建进程 pid=$pid"
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+  done
+}
+
 build_once() {
-  # 🔴 先清掉可能残留的构建进程。BUG-97 的线索就在这里：某次部署被中断后，
-  # rm -rf .next.new 报了「Directory not empty」——那是**有进程还在往里写**的
-  # 典型症状。删不干净 → 构建在残缺目录上启动 → server/ 里缺 pages-manifest.json，
-  # 正是那次失败的表现。
-  pkill -f 'next-build|jest-worker' 2>/dev/null || true
+  # 🔴 BUG-97 真因：Next.js 有构建锁，报的是
+  #    「Another next build process is already running」。
+  # 一次被中断的构建会留下未释放的锁/进程，之后的构建一律拒绝启动——
+  # 这正好解释「同样输入 2 成 1 败」：失败那次总是紧跟在一次被打断的构建之后。
+  # （此前误以为是 rm -rf 的竞态，那只是表象。）
+  kill_stale_builds
   sleep 1
 
   rm -rf .next.new
