@@ -112,7 +112,7 @@ describe('guardedFetch', () => {
   })
 
   it('🔴 传给 fetch 的 redirect 必须是 manual', async () => {
-    const spy = vi.fn(async (_u: string, _i?: RequestInit) => okRes())
+    const spy = vi.fn(async (...args: unknown[]) => { void args; return okRes() })
     vi.stubGlobal('fetch', spy)
     await guardedFetch('https://api.example.com/x', ['api.example.com'], { timeoutMs: 5000, resolver })
     expect(spy.mock.calls[0]?.[1]).toMatchObject({ redirect: 'manual' })

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCredentialPlaintext } from '@/lib/data/credentials'
 import { assertApiBinding, assertDbBinding, BindingConfigError } from '@/lib/plugins/binding'
 import { guardedFetch, assertOutboundAllowed, NetGuardError } from '@/lib/tools/net-guard'
+import { runHandler } from '@/lib/tools/handlers'
 
 // V12-4.5 / AC-01：Tool 的真实调用。
 //
@@ -23,6 +24,9 @@ export type ToolTestResult = {
 }
 
 const now = () => Date.now()
+
+const obj = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 
 /** 统一收口错误：把内部异常翻成可读结论，且不外泄凭证与堆栈 */
 function fail(message: string, started: number, detail?: Record<string, unknown>): ToolTestResult {
@@ -284,6 +288,18 @@ export async function testToolVersion(
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
         if (!pv) return fail('该 Plugin 没有版本记录，缺少连接信息', started)
         return await testMcp(ctx, pv as never, row.credential_id, started)
+      }
+      case 'native': {
+        // V12-4.7：内置 Handler（企微等）。probeOnly=true——连通性测试不产生真实副作用，
+        // 否则「点一下测试」会让所有成员收到一条消息
+        const cfg = obj(row.binding_config)
+        const secret = row.credential_id
+          ? await getCredentialPlaintext(ctx, row.credential_id)
+          : null
+        const r = await runHandler({
+          handlerId: cfg.handler_id, config: cfg, secret, probeOnly: true,
+        })
+        return { ok: r.ok, message: r.message, detail: r.detail, elapsedMs: now() - started }
       }
       default:
         return fail(`Binding 类型「${bindingType || '未知'}」暂不支持连通性测试`, started)
