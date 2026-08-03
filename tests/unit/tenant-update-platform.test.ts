@@ -8,12 +8,23 @@ const state = vi.hoisted(() => ({ updated: null as Record<string, unknown> | nul
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: vi.fn(() => ({
-    from() {
+    auth: { admin: {
+      createUser: vi.fn(async () => ({ data: { user: { id: 'new-admin' } }, error: null })),
+      updateUserById: vi.fn(async () => ({ error: null })),
+      deleteUser: vi.fn(async () => ({ error: null })),
+    } },
+    from(table: string) {
       const chain: Record<string, unknown> = {
-        update(row: Record<string, unknown>) { state.updated = row; return chain },
+        // 只记录 tenants 的落库内容——BUG-90 的同步逻辑也会 update users，
+        // 不区分表的话断言会被后一次覆盖
+        update(row: Record<string, unknown>) { if (table === 'tenants') state.updated = row; return chain },
         eq() { return chain },
         is() { return chain },
         select() { return chain },
+        // BUG-90 起：改 contactEmail 会顺带同步管理员账号，因而多了对 users 表的查询。
+        // 这里返回「查无此人 + 本租户无管理员」，让同步逻辑走到 createFirstAdmin 分支后被下面的
+        // auth mock 接住 —— 本文件只关心校验与落库，不断言同步行为（那在 tenant-member-bugs 里测）。
+        maybeSingle() { return Promise.resolve({ data: null, error: null }) },
         then(res: (v: unknown) => void) { return res({ data: state.returnRows, error: null }) },
       }
       return chain

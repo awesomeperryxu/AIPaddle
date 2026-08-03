@@ -48,7 +48,8 @@ export async function getTenant(ctx: RequestContext): Promise<TenantInfo> {
 
   // 并行拉三张表的 COUNT
   const [{ count: members }, { count: agents }, { count: kbs }] = await Promise.all([
-    supabase.from('users').select('id', { count: 'exact', head: true }).eq('org_id', ctx.orgId),
+    // 排除机器用户，口径与租户管理页一致（ADR-020 §3）
+    supabase.from('users').select('id', { count: 'exact', head: true }).eq('org_id', ctx.orgId).eq('is_service_account', false),
     supabase.from('agents').select('id', { count: 'exact', head: true }).eq('org_id', ctx.orgId).is('deleted_at', null),
     supabase.from('knowledge_bases').select('id', { count: 'exact', head: true }).eq('org_id', ctx.orgId).is('deleted_at', null),
   ])
