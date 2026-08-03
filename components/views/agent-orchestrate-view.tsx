@@ -73,6 +73,9 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   const [boundSkillIds, setBoundSkillIds] = useState<string[]>([]);
   // MCP Server 直连（Path B）
   const [availableMcpServers, setAvailableMcpServers] = useState<{ id: string; name: string; description?: string; security_level?: string; type?: string }[]>([]);
+  // GAP-1：Plugin 提供的 Tool。只列已发布的——Tool 白名单就是用发布状态表达的
+  const [availableTools, setAvailableTools] = useState<{ id: string; name: string; displayName?: string; bindingType?: string; riskLevel?: string }[]>([]);
+  const [boundToolIds, setBoundToolIds] = useState<string[]>([]);
   const [boundMcpIds, setBoundMcpIds] = useState<string[]>([]);
   // 子 Agent（数字员工，4.1.18 / ADR-014）：引用 ≥1 个子 Agent 即为数字员工
   const [availableAgents, setAvailableAgents] = useState<{ id: string; name: string; department?: string }[]>([]);
@@ -95,8 +98,14 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
           setBoundSkillIds(resources?.skillIds ?? []);
           setBoundMcpIds(resources?.mcpServerIds ?? []);
           setBoundSubAgentIds(resources?.subAgentIds ?? []);
+          setBoundToolIds(resources?.toolIds ?? []);
         }
         if (active && mcpRes.ok) setAvailableMcpServers((await mcpRes.json()).mcpServers ?? []);
+        // 可绑的 Tool：只取已发布的（服务端也会再校验一次，前端过滤只为少列几个点不动的）
+        try {
+          const tRes = await fetch('/api/tools?status=published');
+          if (active && tRes.ok) setAvailableTools((await tRes.json()).tools ?? []);
+        } catch { /* 拉不到工具列表不影响其它资源绑定 */ }
         // 可选子 Agent：本租户全部 Agent，排除自己
         if (active && agRes.ok) setAvailableAgents(((await agRes.json()).agents ?? []).filter((a: { id: string }) => a.id !== agent.id));
       } catch { /* 列表拉取失败不阻断编辑 */ }
@@ -134,7 +143,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
       void fetch(`/api/agents/${agent.id}/resources`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         // 不传 subAgentIds：普通 Agent 入口不得引用 Agent（D-08），服务端亦会拒绝
-        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds, mcpServerIds: boundMcpIds }),
+        body: JSON.stringify({ knowledgeBaseIds: boundKbIds, skillIds: boundSkillIds, mcpServerIds: boundMcpIds, toolIds: boundToolIds }),
       }).then(async (r) => {
         if (!r.ok) { showToast('直挂资源保存失败'); return; }
         // 子 Agent 被服务端拒绝（无权/嵌套）→ 明确提示每条原因，并回撤本地绑定与服务端一致
@@ -149,7 +158,9 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
       });
     }, 600);
     return () => clearTimeout(t);
-  }, [boundKbIds, boundSkillIds, boundMcpIds, boundSubAgentIds, canEdit, agent.id, showToast, availableAgents]);
+  }, [boundKbIds, boundSkillIds, boundMcpIds, boundSubAgentIds, boundToolIds, canEdit, agent.id, showToast, availableAgents]);
+  // 🔴 boundToolIds 必须进依赖数组：漏了的话勾选 Tool 不触发这个 effect，
+  // 界面上看着已选中、实际从未保存——这类"看着生效其实没存"最难被发现
 
   // 组装当前 config
   const buildConfig = useCallback((): AgentConfig => ({
@@ -674,6 +685,55 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                     className={`rounded-full border px-3 py-1 text-xs transition-colors ${boundSkillIds.includes(s.id) ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
                   >{s.name}</button>
                 ))}
+              </div>
+            )}
+          </section>
+
+          {/* GAP-1：Plugin 提供的 Tool。在此之前 Agent 只能绑 mcp_servers，
+              而那张表在 ADR-021 之后是 0 行——161 个已发布 Tool 一个都够不着。 */}
+          <section className="rounded-xl border border-border p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-indigo-500" />
+              <Label className="text-sm font-medium">Plugin 工具</Label>
+              <Badge className="bg-indigo-500/10 text-indigo-600 text-[10px] px-1.5 py-0 h-4">推荐</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              绑定 Plugin 提供的 Tool，Agent 对话时经 Function Calling 调用。
+              仅 <span className="text-foreground font-medium">已发布</span> 的 Tool 可绑定；
+              Tool 一旦下线，调用会被即时拒绝。
+            </p>
+            {availableTools.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                暂无已发布的 Tool。请到「Plugin」菜单下创建并发布，或联系管理员。
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                {availableTools.map((t) => {
+                  const bound = boundToolIds.includes(t.id);
+                  const riskColor = t.riskLevel === 'high'
+                    ? 'text-red-500' : t.riskLevel === 'medium' ? 'text-amber-500' : 'text-emerald-500';
+                  return (
+                    <button
+                      key={t.id} type="button" disabled={!canEdit}
+                      onClick={() => setBoundToolIds((prev) =>
+                        prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id])}
+                      className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${bound ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-border hover:border-border/80'}`}
+                    >
+                      <div className={`h-2 w-2 shrink-0 rounded-full ${bound ? 'bg-indigo-500' : 'bg-muted-foreground/30'}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-medium truncate ${bound ? 'text-indigo-600' : 'text-foreground'}`}>
+                            {t.displayName || t.name}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">{t.bindingType}</span>
+                          {/* 高风险要在选之前就看见，不能等调用时才知道 */}
+                          {t.riskLevel === 'high' && <span className={`text-[10px] ${riskColor}`}>高风险</span>}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground truncate mt-0.5 font-mono">{t.name}</p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </section>

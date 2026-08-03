@@ -178,8 +178,10 @@ export function AgentsView({
     setDeCreating(true);
     setDeError('');
     try {
-      // 读取当前资源（保留 kb/skill/mcp），仅覆盖 subAgentIds
-      const current = await apiFetch<{ resources: { knowledgeBaseIds: string[]; skillIds: string[]; mcpServerIds: string[] } }>(
+      // 读取当前资源（保留 kb/skill/mcp/tool），仅覆盖 subAgentIds。
+      // 🔴 PUT 是覆盖语义：漏带任何一类，那类已绑的资源就被清空。
+      // 加 toolIds 时这里必须同步，否则「建数字员工」会静默清掉已绑的 Tool。
+      const current = await apiFetch<{ resources: { knowledgeBaseIds: string[]; skillIds: string[]; mcpServerIds: string[]; toolIds?: string[] } }>(
         `/api/agents/${deBaseId}/resources`
       );
       await apiFetch(`/api/agents/${deBaseId}/resources`, {
@@ -188,6 +190,7 @@ export function AgentsView({
           knowledgeBaseIds: current.resources.knowledgeBaseIds,
           skillIds: current.resources.skillIds,
           mcpServerIds: current.resources.mcpServerIds,
+          toolIds: current.resources.toolIds ?? [],
           source: 'digital-employee', subAgentIds: deSubIds,
         }),
       });

@@ -13,6 +13,7 @@ import { enforceLlmQuota } from '@/lib/data/quota'
 import { chatWithUsage, chatWithTools, type ChatMessage, type FunctionTool } from '@/lib/ai'
 import { resolveModelClient } from '@/lib/ai/resolve'
 import { getAgentResources } from '@/lib/data/agent-resources'
+import { listAgentTools, runToolVersion, type RunnableTool } from '@/lib/tools/run'
 import { createClient } from '@/lib/supabase/server'
 import { listMcpTools, callMcpTool } from '@/lib/mcp/client'
 
@@ -134,10 +135,16 @@ export async function POST(req: Request, { params }: Ctx) {
     : `你是企业 AI 数字员工「${agent.name}」。${agent.description}\n请围绕职责，用简洁专业的中文回答。`
   const systemPrompt = basePrompt + ragContext
 
-  // Path B：检查是否绑定了直连 MCP Server
+  // GAP-1：Agent 直挂的 Plugin Tool。
+  //
+  // 🔴 在此之前这段只读 mcp_servers 表，而 ADR-021 把 MCP 并入 Plugin 后
+  // 那张表是 **0 行** —— 库里 161 个已发布 Tool，Agent 一个都够不着。
+  // Plugin 体系整套建完了，能力却传导不到对话链路，这就是 GAP-1。
+  let pluginTools: RunnableTool[] = []
   let mcpServers: McpServerRecord[] = []
   try {
     const resources = await getAgentResources(ctx, agent.id)
+    pluginTools = await listAgentTools(ctx, resources.toolIds)
     if (resources.mcpServerIds.length > 0) {
       const supabase = await createClient()
       const { data } = await supabase
@@ -150,9 +157,34 @@ export async function POST(req: Request, { params }: Ctx) {
     }
   } catch { /* 获取 MCP Server 失败不阻断对话 */ }
 
-  // 若有直连 MCP Server → 收集工具定义，使用 Function Calling 路径
-  if (mcpServers.length > 0) {
+  // 有 Plugin Tool 或直连 MCP Server → 走 Function Calling 路径
+  if (pluginTools.length > 0 || mcpServers.length > 0) {
     const tools: FunctionTool[] = []
+    // Plugin Tool：函数名前缀 pt__，与 MCP 的 {serverId前6位}__ 区分开，
+    // 分发时据此判断走哪条执行路径
+    const pluginByName = new Map<string, RunnableTool>()
+    for (const t of pluginTools) {
+      const qualifiedName = `pt__${t.name}`.slice(0, 64)
+      pluginByName.set(qualifiedName, t)
+      tools.push({
+        type: 'function',
+        function: {
+          name: qualifiedName,
+          // 高风险 Tool 在描述里点明，让模型在调用前更谨慎（PRD §14 的人工确认是另一层）
+          description: t.riskLevel === 'high' ? `[高风险] ${t.description}` : t.description,
+          // input_schema 是自由 jsonb，不保证形状。归一化成 Function Calling
+          // 要求的结构——缺 type 会让部分模型直接拒绝整个工具列表，
+          // 表现是「工具没被调用」而非报错，很难查
+          parameters: {
+            type: 'object',
+            properties: (t.inputSchema.properties && typeof t.inputSchema.properties === 'object'
+              ? t.inputSchema.properties : {}) as Record<string, unknown>,
+            ...(Array.isArray(t.inputSchema.required)
+              ? { required: t.inputSchema.required as string[] } : {}),
+          },
+        },
+      })
+    }
     // mcpServerName → {endpoint, auth_type, auth_config} 映射，工具名带 server 前缀区分
     const toolServerMap = new Map<string, { server: McpServerRecord; originalName: string }>()
 
@@ -177,6 +209,14 @@ export async function POST(req: Request, { params }: Ctx) {
 
     if (tools.length > 0) {
       const handler = async (toolName: string, args: Record<string, unknown>) => {
+        // Plugin Tool 优先：它是现行模型，mcp_servers 是待下线的旧路径
+        const pt = pluginByName.get(toolName)
+        if (pt) {
+          const r = await runToolVersion(ctx, pt.versionId, args)
+          // 🔴 失败也把结论回给模型而不是抛异常：模型据此可以换个问法或告知用户，
+          // 抛出去则整轮对话直接 502，用户只看到「工具调用失败」
+          return r.content
+        }
         const mapping = toolServerMap.get(toolName)
         if (!mapping) throw new Error(`未知工具：${toolName}`)
         return callMcpTool(
@@ -196,7 +236,7 @@ export async function POST(req: Request, { params }: Ctx) {
           { model: agent.model, temperature: agent.temperature, maxIterations: 5, client: llmClient },
         )
         await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: true })
-        return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model, brain: 'mcp_direct' } })
+        return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model, brain: pluginTools.length > 0 ? 'plugin_tools' : 'mcp_direct' } })
       } catch (e) {
         console.error('[chat] MCP Function Calling 失败:', e)
         await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: false, errorCode: 'mcp_error' })
