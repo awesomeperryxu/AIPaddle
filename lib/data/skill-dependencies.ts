@@ -254,3 +254,47 @@ export async function listSkillsDependingOn(
     .filter((r) => r.skills)
     .map((r) => ({ skillId: r.skills!.id, skillName: r.skills!.name, skillStatus: r.skills!.status }))
 }
+
+/**
+ * 🔴 V12-3.6 / AC-17：运行前检查 —— Skill 的依赖是否都还可用。
+ *
+ * 「下线」不能只是列表里看不见，必须**真正阻断新运行**。
+ * 一个被下线的 Tool 若仍能被已发布的 Skill 调用，下线就等于没做。
+ *
+ * 只拦 required 依赖：可选依赖缺失时降级运行（少点能力总比整个 Skill 跑不起来好）。
+ */
+export type RunnableCheck = {
+  runnable: boolean
+  blockedBy: { objectType: DepObjectType; objectId: string; name: string; reason: string }[]
+}
+
+export async function checkSkillRunnable(ctx: RequestContext, skillId: string): Promise<RunnableCheck> {
+  const deps = await listSkillPluginDeps(ctx, skillId)
+  const requiredTools = deps.filter((d) => d.objectType === 'tool' && d.required)
+  if (requiredTools.length === 0) return { runnable: true, blockedBy: [] }
+
+  const supabase = await createClient()
+  const { data } = await supabase.from('tools')
+    .select('id,name,status')
+    .in('id', requiredTools.map((d) => d.objectId))
+    .eq('org_id', ctx.orgId).is('deleted_at', null)
+  const found = (data as { id: string; name: string; status: string }[] | null) ?? []
+  const byId = new Map(found.map((t) => [t.id, t]))
+
+  const blockedBy: RunnableCheck['blockedBy'] = []
+  for (const d of requiredTools) {
+    const tool = byId.get(d.objectId)
+    if (!tool) {
+      blockedBy.push({
+        objectType: 'tool', objectId: d.objectId, name: '(已删除)',
+        reason: '依赖的 Tool 已不存在',
+      })
+    } else if (tool.status !== 'published') {
+      blockedBy.push({
+        objectType: 'tool', objectId: d.objectId, name: tool.name,
+        reason: tool.status === 'offline' ? '依赖的 Tool 已下线' : `依赖的 Tool 尚未发布（当前 ${tool.status}）`,
+      })
+    }
+  }
+  return { runnable: blockedBy.length === 0, blockedBy }
+}
