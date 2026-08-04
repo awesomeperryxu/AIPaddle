@@ -23,7 +23,39 @@ export type ChunkConfig = {
   separator: string
   removeUrls?: boolean  // 是否删除 URL 和电子邮件（JSONB 扩展字段，无迁移）
 }
-export const DEFAULT_CHUNK_CONFIG: ChunkConfig = { chunkSize: 1024, chunkOverlap: 50, separator: '\n\n', removeUrls: false }
+export const DEFAULT_CHUNK_CONFIG: ChunkConfig = { chunkSize: 800, chunkOverlap: 50, separator: '\n\n', removeUrls: false }
+
+// BUG-91：切块只按字符数算，6MB PDF（嵌字体、文本 2000 字）只切 1 块，
+// 向量被稀释（实测相似度 0.42 接近阈值 0.28）。
+// 1536 维嵌入模型对超过 512 token 的文本分辨力显著下降，所以上限设 512。
+const MAX_CHUNK_TOKENS = 512
+
+/** 粗略估算 token 数 */
+export function estimateTokens(text: string): number {
+  const cjk = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g) ?? []).length
+  const nonCjk = text.replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g, '')
+  const words = (nonCjk.match(/[a-zA-Z0-9]+/g) ?? []).length
+  return Math.ceil(cjk * 2 + words * 1.3)
+}
+
+/** 按句子边界拆超过 token 上限的块 */
+function enforceTokenLimit(chunks: string[]): string[] {
+  const result: string[] = []
+  for (const chunk of chunks) {
+    if (estimateTokens(chunk) <= MAX_CHUNK_TOKENS) { result.push(chunk); continue }
+    const sentences = chunk.split(/(?<=[。！？.!?])\s*/).filter(Boolean)
+    let buf = ''
+    for (const s of sentences) {
+      if (estimateTokens(buf + s) > MAX_CHUNK_TOKENS && buf) {
+        result.push(buf.trim())
+        buf = ''
+      }
+      buf += s
+    }
+    if (buf.trim()) result.push(buf.trim())
+  }
+  return result
+}
 
 /** 规整切块参数：夹取合法区间，重叠恒小于长度，防跑飞/死循环。 */
 export function normalizeChunkConfig(c?: Partial<ChunkConfig> | null): ChunkConfig {
@@ -110,13 +142,17 @@ export function chunkText(text: string, config?: Partial<ChunkConfig> | null): s
   const rawSegments = splitHierarchically(processed, seps, chunkSize)
 
   if (rawSegments.length === 0) return []
-  if (chunkOverlap === 0) return rawSegments
+
+  // BUG-91：在 overlap 之前按 token 上限拆
+  const capped = enforceTokenLimit(rawSegments)
+
+  if (chunkOverlap === 0) return capped
 
   // 在相邻块之间插入上一块的尾部作为 overlap，对齐 Dify 跨块上下文连续性
-  const result: string[] = [rawSegments[0]]
-  for (let i = 1; i < rawSegments.length; i++) {
-    const prev = rawSegments[i - 1]
-    const curr = rawSegments[i]
+  const result: string[] = [capped[0]]
+  for (let i = 1; i < capped.length; i++) {
+    const prev = capped[i - 1]
+    const curr = capped[i]
     const tail = prev.slice(-chunkOverlap)
     const withOverlap = (tail + ' ' + curr).trim().slice(0, chunkSize)
     result.push(withOverlap)

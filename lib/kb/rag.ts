@@ -9,6 +9,24 @@ import { getKbRetrievalConfig, listAccessibleKbIds, DEFAULT_KB_RETRIEVAL_CONFIG 
 const MIN_SIMILARITY = DEFAULT_KB_RETRIEVAL_CONFIG.scoreThreshold
 const TOP_K = DEFAULT_KB_RETRIEVAL_CONFIG.topK
 
+// BUG-92：多库检索时单库的高相似度结果会把其他库完全挤掉。
+// 改为按库分组取 topK 后再合并排序，每库至少保底 ceil(topK / 库数) 条。
+import type { MatchedChunk } from '@/lib/data/chunks'
+
+async function searchPerKb(
+  ctx: RequestContext,
+  qEmbedding: number[],
+  topK: number,
+  kbIds: string[],
+): Promise<MatchedChunk[]> {
+  if (kbIds.length <= 1) return searchChunks(ctx, qEmbedding, topK, kbIds)
+  const perKb = Math.max(Math.ceil(topK / kbIds.length), 2)
+  const all = await Promise.all(
+    kbIds.map((id) => searchChunks(ctx, qEmbedding, perKb, [id])),
+  )
+  return all.flat().sort((a, b) => b.similarity - a.similarity).slice(0, topK)
+}
+
 export type Citation = {
   documentId: string
   filename: string
@@ -51,7 +69,7 @@ export async function retrieveSegments(
   const topK = opts?.topK ?? kbConfig?.topK ?? TOP_K
   const threshold = opts?.scoreThreshold ?? kbConfig?.scoreThreshold ?? MIN_SIMILARITY
   const qEmbedding = await embedOne(q)
-  const matches = await searchChunks(ctx, qEmbedding, topK, kbIds)
+  const matches = await searchPerKb(ctx, qEmbedding, topK, kbIds)
   const passed = matches.filter((m) => m.similarity >= threshold)
   if (passed.length === 0) return []
   const filenames = await getDocumentFilenames(
@@ -103,7 +121,7 @@ export async function answerQuestion(
   const topK = opts?.topK ?? cfg?.topK ?? TOP_K
   const threshold = opts?.scoreThreshold ?? cfg?.scoreThreshold ?? MIN_SIMILARITY
   const qEmbedding = await embedOne(q)
-  const matches = await searchChunks(ctx, qEmbedding, topK, kbIds)
+  const matches = await searchPerKb(ctx, qEmbedding, topK, kbIds)
   const relevant = matches.filter((m) => m.similarity >= threshold)
 
   if (relevant.length === 0) {
