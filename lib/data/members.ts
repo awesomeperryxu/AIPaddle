@@ -40,6 +40,8 @@ export async function listMembers(ctx: RequestContext): Promise<Member[]> {
     .select('id,name,email,department,status,last_active_at,created_at,user_roles(role)')
     .eq('org_id', ctx.orgId)
     .is('deleted_at', null)
+    // 机器用户不是人，不进成员列表（ADR-020 §3）
+    .eq('is_service_account', false)
     .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return (data as UserRow[] | null ?? []).map(mapRow)

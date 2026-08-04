@@ -1,4 +1,5 @@
 import 'server-only'
+import { randomBytes } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { findAuthUserByEmail } from '@/lib/data/members'
 
@@ -276,7 +277,9 @@ export async function getTenantDetail(id: string): Promise<TenantDetail | null> 
 
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
   const [members, agents, logs, docs] = await Promise.all([
-    admin.from('users').select('id', { count: 'exact', head: true }).eq('org_id', id).is('deleted_at', null),
+    // 🔴 机器用户（Extension 身份）不是成员：不占席位、不计费、不出现在成员列表（ADR-020 §3）。
+    // 漏掉这个过滤会让租户看到「2 个成员」却只找得到 1 个人。
+    admin.from('users').select('id', { count: 'exact', head: true }).eq('org_id', id).is('deleted_at', null).eq('is_service_account', false),
     admin.from('agents').select('id', { count: 'exact', head: true }).eq('org_id', id).is('deleted_at', null),
     admin.from('call_logs').select('tokens_in,tokens_out').eq('org_id', id).is('deleted_at', null).gte('created_at', since),
     admin.from('documents').select('size_bytes').eq('org_id', id).is('deleted_at', null),
@@ -347,6 +350,62 @@ export async function updateTenantByPlatform(id: string, patch: TenantPatch): Pr
     .from('tenants').update(row).eq('id', id).is('deleted_at', null).select('id')
   if (error) throw new Error(error.message)
   if (!((data as { id: string }[] | null) ?? []).length) throw new Error('租户不存在或已注销')
+
+  // 🔴 BUG-90：改了联系邮箱要同步管理员账号。
+  // 此前 contact_email 只是 tenants 表的一个字段，与 users 表毫无关联——
+  // 平台管理员在租户管理页改完邮箱，成员管理页却查无此人，租户方也登不进来。
+  // 页面上那一栏叫「管理员邮箱」，用户自然期待改了就能用它登录，这个期待是合理的。
+  if (patch.contactEmail !== undefined) {
+    await syncTenantAdminAccount(admin, id, patch.contactEmail.trim())
+  }
+}
+
+/**
+ * 把租户的联系邮箱与其管理员账号对齐。
+ *
+ * 三种情形：
+ *   ① 该邮箱已是本租户成员 → 什么都不做（可能只是把联系人指向已有成员）
+ *   ② 本租户已有管理员，但邮箱不同 → 改这个管理员的邮箱（认账号不认人，避免越改越多）
+ *   ③ 本租户还没有任何管理员 → 新开一个，密码随机（平台方随后走重置流程告知租户）
+ *
+ * 🔴 邮箱被别的租户占用时抛错而非静默跳过：一个邮箱只能属于一个租户，
+ * 静默失败会让平台管理员以为改成功了。
+ */
+async function syncTenantAdminAccount(admin: AdminClient, orgId: string, email: string): Promise<void> {
+  if (!EMAIL_RE.test(email)) return
+
+  const { data: existing } = await admin
+    .from('users').select('id,org_id,deleted_at').eq('email', email).maybeSingle()
+  const hit = existing as { id: string; org_id: string; deleted_at: string | null } | null
+  if (hit && !hit.deleted_at) {
+    if (hit.org_id !== orgId) throw new Error(`邮箱 ${email} 已被其他企业占用，无法设为本企业管理员`)
+    return // 情形 ①
+  }
+
+  // 找本租户在册的管理员（排除机器用户）
+  const { data: admins } = await admin
+    .from('users')
+    .select('id,email,user_roles(role)')
+    .eq('org_id', orgId).is('deleted_at', null).eq('is_service_account', false)
+  const rows = (admins as { id: string; email: string; user_roles?: { role: string }[] }[] | null) ?? []
+  const current = rows.find(u => (u.user_roles ?? []).some(r => r.role === 'Admin')) ?? rows[0]
+
+  if (current) {
+    // 情形 ②：认账号不认人——改现有管理员的邮箱，而不是再开一个
+    const { error: authErr } = await admin.auth.admin.updateUserById(current.id, { email, email_confirm: true })
+    if (authErr) throw new Error(`更新管理员登录邮箱失败：${authErr.message}`)
+    const { error: profErr } = await admin.from('users').update({ email, updated_at: new Date().toISOString() }).eq('id', current.id)
+    if (profErr) throw new Error(profErr.message)
+    return
+  }
+
+  // 情形 ③：一个管理员都没有 → 建号。密码随机且不返回，由平台方走重置流程告知
+  await createFirstAdmin(admin, {
+    orgId,
+    name: '企业管理员',
+    email,
+    password: randomBytes(24).toString('base64url'),
+  })
 }
 
 /** 停用 / 启用租户。 */

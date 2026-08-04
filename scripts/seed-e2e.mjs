@@ -82,16 +82,15 @@ async function findAuthUser(email) {
 
 // 🔴 幂等策略（2026-07-28 修）：**已存在的账号不再覆盖密码**。
 // 事故：seed 每次 CI 都把这批账号的密码强制重设为 SEED_PASSWORD，而 admin-demo
-// 同时是人日常登录的管理账号——修 BUG-85 让 push 到 main 也跑 e2e 后，seed 执行
-// 频率翻倍，本人密码被反复覆盖，直接登不进去。
-// 现在只在**首次创建**时设密码；已存在则仅补齐 metadata 与邮箱确认态。
-// 副作用是若有人改了测试账号密码，e2e 会登录失败——那本就该报错让人知道，
-// 而不是静默覆盖掉别人的密码。
+// 🔴 BUG-99：必须始终同步密码。
+// 此前不碰密码是为了不覆盖真人的日常登录密码（BUG-85），但 e2e 共用同一个库、
+// 需要密码可预测——不设就永远登不进去（2026-08-04 连续 3 次 CI 红即此原因）。
+// 真人日常登录应该用独立于 seed 账号的个人账号，而不是反过来让 e2e 迁就。
 async function ensureAuthUser(email, orgId, name) {
   const existing = await findAuthUser(email)
   if (existing) {
     await admin.auth.admin.updateUserById(existing.id, {
-      email_confirm: true, user_metadata: { org_id: orgId, name },
+      password: PASSWORD, email_confirm: true, user_metadata: { org_id: orgId, name },
     })
     return existing.id
   }
