@@ -4,7 +4,7 @@ import { chunkText, normalizeChunkConfig, DEFAULT_CHUNK_CONFIG } from '@/lib/kb/
 // 4.2.7：切块参数可配。纯函数（不触发 supabase/嵌入）。
 
 describe('normalizeChunkConfig 规整', () => {
-  it('缺省回落默认 1024/50', () => {
+  it('缺省回落默认 800/50', () => {
     expect(normalizeChunkConfig(undefined)).toEqual(DEFAULT_CHUNK_CONFIG)
     expect(normalizeChunkConfig(null)).toEqual(DEFAULT_CHUNK_CONFIG)
   })
@@ -41,10 +41,14 @@ describe('chunkText 按参数切块', () => {
     expect(parts[1]).toContain('第二段')
   })
 
-  it('默认参数（不传 config）按 1024 切窗口', () => {
+  it('默认参数（不传 config）按 800 切窗口（BUG-91 降低默认值）', () => {
     const text = '字'.repeat(2000)
     const parts = chunkText(text)
-    expect(parts[0].length).toBe(1024)
+    // BUG-91：原 1024 字符的中文约 2000 token，远超嵌入最佳区间。
+    // 降到 800 后，enforceTokenLimit 还会按 512 token 上限再拆，
+    // 所以第一块可能短于 800——但绝不应该是 1024
+    expect(parts[0].length).toBeLessThanOrEqual(800)
+    expect(parts.length).toBeGreaterThan(1)
   })
 
   it('空文本 → 空数组', () => {
