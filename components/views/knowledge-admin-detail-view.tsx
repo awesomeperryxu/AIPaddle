@@ -642,9 +642,16 @@ export function KnowledgeAdminDetailView({
                   <span className="text-xs text-muted-foreground">{rQuery.length}/200</span>
                 </div>
                 <Textarea
-                  placeholder="请输入文本，建议使用简短的陈述句。"
+                  placeholder="请输入文本，建议使用简短的陈述句。回车直接提交。"
                   value={rQuery}
                   onChange={e => setRQuery(e.target.value.slice(0, 200))}
+                  onKeyDown={e => {
+                    // 回车直接提交（Shift+回车换行）
+                    if (e.key === 'Enter' && !e.shiftKey && !rLoading && rQuery.trim()) {
+                      e.preventDefault()
+                      runRetrieve()
+                    }
+                  }}
                   disabled={rLoading}
                   rows={6}
                   className="resize-none text-sm"
