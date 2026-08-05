@@ -107,9 +107,12 @@ export function AgentsView({
   const allAgents = agents ?? [];
   const deIdSet = new Set(digitalEmployeeIds);
 
-  // 数字员工：已是 DE 的已发布 Agent
-  const digitalEmployees = allAgents.filter(a => deIdSet.has(a.id));
-  // 可选为 base 的 Agent：已发布且还不是 DE
+  // 🔴 区分数字员工与数字团队：
+  // 数字团队 = 在 digitalEmployeeIds 里的（引用了子 Agent 的上级，如「内容创作专家团」）
+  // 数字员工 = 已发布但不是团队上级的普通 Agent（如「文博凯」「律守正」）
+  const digitalTeams = allAgents.filter(a => deIdSet.has(a.id));
+  const digitalEmployees = allAgents.filter(a => !deIdSet.has(a.id));
+  // 可选为 base 的 Agent（建团队时的候选）
   const baseAgentCandidates = allAgents.filter(a => !deIdSet.has(a.id));
 
   const filteredDe = digitalEmployees.filter(a =>
@@ -305,11 +308,11 @@ export function AgentsView({
         <TabsList className="h-9">
           <TabsTrigger value="de" className="gap-1.5 text-sm px-4">
             <Bot className="h-3.5 w-3.5" />
-            数字员工
+            数字员工 ({digitalEmployees.length})
           </TabsTrigger>
           <TabsTrigger value="teams" className="gap-1.5 text-sm px-4">
             <Users className="h-3.5 w-3.5" />
-            团队
+            数字团队 ({digitalTeams.length})
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -554,55 +557,42 @@ export function AgentsView({
         </div>
       )}
 
-      {/* ── 团队 Tab ── */}
+      {/* ── 数字团队 Tab ── */}
       {activeTab === 'teams' && (
         <div className="flex-1 overflow-y-auto">
-          {teamsLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : teams.length === 0 ? (
+          {digitalTeams.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3">
               <div className="w-12 h-12 rounded-full bg-muted/30 flex items-center justify-center">
                 <Users className="h-6 w-6 text-muted-foreground" />
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium text-foreground">暂无团队</p>
-                {canManage && <p className="text-xs text-muted-foreground mt-1">点击「创建团队」新建一个数字员工团队</p>}
+                <p className="text-sm font-medium text-foreground">暂无数字团队</p>
+                {canManage && <p className="text-xs text-muted-foreground mt-1">数字团队由多个数字员工组成，点击「创建团队」</p>}
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 content-start">
-              {teams.map((team) => {
-                const memberAgents = allAgents.filter(a => team.memberIds.includes(a.id));
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 content-start">
+              {digitalTeams.map((team) => {
+                // 团队的成员 = 它引用的子 Agent（从 digitalEmployees 里匹配）
+                // 这里暂用同 department 的个体 Agent 作为成员显示（与导入时的绑定逻辑一致）
+                const memberAgents = digitalEmployees.filter(a => a.department === team.department);
                 const isExpanded = expandedTeamId === team.id;
                 return (
-                  <Card key={team.id} className="bg-card border-border shadow-sm hover:shadow-md transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-9 h-9 rounded-xl bg-violet-500/20 flex items-center justify-center shrink-0">
-                            <Users className="h-5 w-5 text-violet-500" />
-                          </div>
-                          <div className="min-w-0">
-                            <h3 className="font-medium text-foreground truncate text-sm">{team.name}</h3>
-                            <p className="text-xs text-muted-foreground">{team.memberIds.length} 名成员</p>
-                          </div>
+                  <Card key={team.id} className="bg-card border-border shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => router.push(`/agents-admin/${team.id}`)}>
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center shrink-0`}>
+                          <Users className="h-6 w-6 text-white" />
                         </div>
-                        {canManage && (
-                          <div className="flex items-center gap-1 shrink-0">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTeam(team)}>
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDeleteTeam(team.id, team.name)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {team.department && <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground">{team.department}</span>}
+                        </div>
                       </div>
-
+                      <h3 className="font-semibold text-foreground leading-snug mb-1 line-clamp-1">{team.name}</h3>
+                      <p className="text-xs text-primary/80 font-medium mb-1">{memberAgents.length} 名数字员工</p>
                       {team.description && (
-                        <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{team.description}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{team.description}</p>
                       )}
 
                       {/* 成员展开 */}
