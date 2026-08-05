@@ -37,6 +37,7 @@ export type Action =
   | 'provider:manage'
   | 'provider:manage-any'
   | 'apikey:manage'
+  | 'apikey:manage-any'
   | 'department:read'
   | 'department:manage'
   // ── V12-8.3 Extension 对外 API（任务包 8a，ADR-020）────────────────────
@@ -110,6 +111,10 @@ const MATRIX: Record<Action, Role[]> = {
   'provider:manage-any': [],
   // 对外 API Key（4.8.6）：签发/吊销本租户对外调用凭证，仅 Admin。
   'apikey:manage': ['Admin'],
+  // Key-2：跨租户 Key 总览/吊销。同 provider:manage-any 模式——**矩阵留空**，
+  // 单靠角色永远拒绝；入口须再过 isPlatformAdmin(ctx)。
+  // 🔴 租户 Admin 绝不可跨租户看 Key：那是 ADR-002 隔离铁律的正面违反。
+  'apikey:manage-any': [],
   // 组织架构（4.8.14a）：部门树全员可读（成员编辑/资源授权都要选部门）；增删改仅 Admin。
   // PRD 2.10.3 的「部门管理员」角色与「本部门及下级」数据权限尚未进 ADR-007，故本期不设部门级管理员。
   'department:read': ['Admin', 'Developer', 'User', 'Auditor'],
