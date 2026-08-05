@@ -70,6 +70,11 @@ export function ExtensionsView() {
   const [newKeyName, setNewKeyName] = useState('')
   const [issued, setIssued] = useState<string | null>(null)
 
+  // 🔴 BUG-101：编辑白名单/限流（此前只能在创建时填，创建后没有入口修改）
+  const [editPanel, setEditPanel] = useState<Extension | null>(null)
+  const [editOrigins, setEditOrigins] = useState('')
+  const [editRate, setEditRate] = useState('60')
+
   // 刷新用（由用户操作触发，不在 effect 内同步调用）
   const reload = useCallback(async () => {
     try {
@@ -119,6 +124,32 @@ export function ExtensionsView() {
       await reload()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '创建失败')
+    } finally { setBusy(null) }
+  }
+
+  function openEdit(ext: Extension) {
+    setEditPanel(ext)
+    setEditOrigins(ext.allowedOrigins.join('\n'))
+    setEditRate(String(ext.rateLimitPerMin))
+  }
+
+  async function handleEdit() {
+    if (!editPanel) return
+    setBusy('edit')
+    try {
+      const origins = editOrigins.split('\n').map(s => s.trim()).filter(Boolean)
+      await apiFetch(`/api/extensions/${editPanel.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          allowedOrigins: origins,
+          rateLimitPerMin: Number(editRate) || 60,
+        }),
+      })
+      toast.success('已更新')
+      setEditPanel(null)
+      await reload()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '更新失败')
     } finally { setBusy(null) }
   }
 
@@ -267,6 +298,9 @@ export function ExtensionsView() {
                         <Badge className={st.cls}>{st.label}</Badge>
                       </TableCell>
                       <TableCell className="text-right space-x-2">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(ext)}>
+                          <Globe className="h-4 w-4 mr-1" />设置
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => openKeys(ext)}>
                           <Key className="h-4 w-4 mr-1" />密钥
                         </Button>
@@ -414,6 +448,37 @@ export function ExtensionsView() {
               </TableBody>
             </Table>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 编辑白名单/限流（BUG-101：创建后无法修改的缺失功能） */}
+      <Dialog open={!!editPanel} onOpenChange={(o) => { if (!o) setEditPanel(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editPanel?.name} · 设置</DialogTitle>
+            <DialogDescription>修改来源白名单与限流配置。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>来源白名单（一行一个域名）</Label>
+              <Textarea rows={4} value={editOrigins} onChange={(e) => setEditOrigins(e.target.value)}
+                placeholder={'https://www.royalblack-hotel.com\n留空 = 仅允许服务端调用'} />
+              <p className="text-xs text-muted-foreground mt-1">
+                只填 协议+域名（如 https://example.com），不要带路径。不接受通配符 *。
+                留空表示仅允许服务端调用（BFF 代理），浏览器直连将被拒绝。
+              </p>
+            </div>
+            <div>
+              <Label>限流（次/分钟）</Label>
+              <Input type="number" value={editRate} onChange={(e) => setEditRate(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPanel(null)}>取消</Button>
+            <Button onClick={handleEdit} disabled={busy === 'edit'}>
+              {busy === 'edit' ? '保存中...' : '保存'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
