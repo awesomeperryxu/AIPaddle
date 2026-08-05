@@ -58,7 +58,6 @@ function LoginForm() {
 
       <form
         onSubmit={onSubmit}
-        onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault(); }} /* 回车在输入框内不提交，须点按钮 */
         noValidate
         className="space-y-4"
       >
@@ -68,7 +67,7 @@ function LoginForm() {
             id="email"
             name="email"
             type="email"
-            autoComplete="email"
+            autoComplete="username"
             required
             placeholder="you@company.com"
             className="w-full rounded-lg border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition"
