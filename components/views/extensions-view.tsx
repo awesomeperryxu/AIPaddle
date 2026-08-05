@@ -407,7 +407,7 @@ export function ExtensionsView() {
 
           <div className="flex gap-2">
             <Input value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)}
-              placeholder="密钥用途，如：黑围裙官网" />
+              placeholder="密钥用途，如：官网生产环境" />
             <Button onClick={handleIssueKey} disabled={busy === 'key' || !newKeyName.trim()}>
               {busy === 'key' ? '签发中...' : '签发密钥'}
             </Button>
@@ -462,7 +462,7 @@ export function ExtensionsView() {
             <div>
               <Label>来源白名单（一行一个域名）</Label>
               <Textarea rows={4} value={editOrigins} onChange={(e) => setEditOrigins(e.target.value)}
-                placeholder={'https://www.royalblack-hotel.com\n留空 = 仅允许服务端调用'} />
+                placeholder={'https://www.example.com\n留空 = 仅允许服务端调用'} />
               <p className="text-xs text-muted-foreground mt-1">
                 只填 协议+域名（如 https://example.com），不要带路径。不接受通配符 *。
                 留空表示仅允许服务端调用（BFF 代理），浏览器直连将被拒绝。
