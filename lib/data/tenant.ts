@@ -35,6 +35,17 @@ export type TenantUpdateInput = {
   contactPhone?: string
 }
 
+/**
+ * Key-1：只取当前租户名（单行单列）。
+ * 页头标注归属用，不值得为一个名字跑 getTenant 里的三次 COUNT。
+ */
+export async function getTenantName(ctx: RequestContext): Promise<string | null> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('tenants').select('name').eq('id', ctx.orgId).maybeSingle()
+  return (data as { name: string } | null)?.name ?? null
+}
+
 export async function getTenant(ctx: RequestContext): Promise<TenantInfo> {
   const supabase = await createClient()
 

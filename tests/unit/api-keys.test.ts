@@ -32,28 +32,38 @@ vi.mock('@/lib/data/api-keys', async (orig) => {
   return {
     ...real, // 保留 API_KEY_SCOPES 等纯导出
     listApiKeys: vi.fn(),
+    listApiKeysWithExtension: vi.fn(),
     createApiKey: vi.fn(),
     revokeApiKey: vi.fn(),
   }
 })
+// Key-1：GET 现在还要取租户名做页头标注，不 mock 会真去连 Supabase
+vi.mock('@/lib/data/tenant', () => ({ getTenantName: vi.fn() }))
 
 import { getRequestContext } from '@/lib/context'
 import { GET, POST } from '@/app/api/keys/route'
 import { DELETE } from '@/app/api/keys/[id]/route'
-import { listApiKeys, createApiKey, revokeApiKey } from '@/lib/data/api-keys'
+import { listApiKeysWithExtension, createApiKey, revokeApiKey } from '@/lib/data/api-keys'
+import { getTenantName } from '@/lib/data/tenant'
 
 const mockCtx = vi.mocked(getRequestContext)
-const mockList = vi.mocked(listApiKeys)
+const mockList = vi.mocked(listApiKeysWithExtension)
+const mockTenantName = vi.mocked(getTenantName)
 const mockCreate = vi.mocked(createApiKey)
 const mockRevoke = vi.mocked(revokeApiKey)
 
 const adminCtx: RequestContext = { userId: 'u1', orgId: 'o1', roles: ['Admin'] }
 const userCtx: RequestContext = { userId: 'u2', orgId: 'o1', roles: ['User'] }
-const masked = { id: 'k1', name: 'CRM', keyPrefix: 'ap_sk_live_a1f3********', scope: 'agent' as const, status: 'active' as const, lastUsedAt: null, createdAt: '2026-07-27' }
+const masked = {
+  id: 'k1', name: 'CRM', keyPrefix: 'ap_sk_live_a1f3********', scope: 'agent' as const,
+  status: 'active' as const, lastUsedAt: null, createdAt: '2026-07-27',
+  extensionId: null, scopes: ['chat'], expiresAt: null,
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockList.mockResolvedValue([masked])
+  mockList.mockResolvedValue([{ ...masked, extensionName: null }])
+  mockTenantName.mockResolvedValue('测试租户')
   mockCreate.mockResolvedValue({ key: 'ap_sk_live_PLAINTEXT_ONCE', masked })
   mockRevoke.mockResolvedValue(true)
 })
@@ -72,6 +82,18 @@ describe('GET /api/keys', () => {
     const body = await (await GET()).json()
     expect(body.keys[0].keyPrefix).toContain('****')
     expect(JSON.stringify(body)).not.toMatch(/PLAINTEXT|key_hash/)
+  })
+  // Key-1：归属信息必须回给前端，否则页面无法区分「通用 Key」与「某扩展的 Key」
+  it('200 带回租户名与所属扩展，区分通用/绑定两类 Key', async () => {
+    mockCtx.mockResolvedValue(adminCtx)
+    mockList.mockResolvedValue([
+      { ...masked, extensionName: null },
+      { ...masked, id: 'k2', extensionId: 'e1', extensionName: '官网在线咨询' },
+    ])
+    const body = await (await GET()).json()
+    expect(body.orgName).toBe('测试租户')
+    expect(body.keys[0].extensionId).toBeNull()          // 租户通用
+    expect(body.keys[1].extensionName).toBe('官网在线咨询') // 绑定扩展
   })
 })
 

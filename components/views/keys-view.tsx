@@ -17,12 +17,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { apiFetch } from '@/lib/api/client'
-import { Plus, Key, CheckCircle2, Ban, Loader2, Copy } from 'lucide-react'
+import { Plus, Key, CheckCircle2, Ban, Loader2, Copy, Puzzle, Building2 } from 'lucide-react'
 
 type ApiKeyScope = 'agent' | 'readonly' | 'full'
 type ApiKeyMasked = {
   id: string; name: string; keyPrefix: string; scope: ApiKeyScope
   status: 'active' | 'revoked'; lastUsedAt: string | null; createdAt: string
+  // Key-1：区分归属——extensionId 为空 = 租户通用 Key，有值 = 绑定某扩展
+  extensionId: string | null; extensionName: string | null
 }
 
 const SCOPE_LABEL: Record<ApiKeyScope, string> = {
@@ -33,8 +35,11 @@ const statusConfig = {
   revoked: { label: '已吊销', className: 'bg-destructive/10 text-destructive' },
 } as const
 
+type KeysResponse = { keys: ApiKeyMasked[]; orgName: string | null }
+
 export function KeysView() {
   const [keys, setKeys] = useState<ApiKeyMasked[]>([])
+  const [orgName, setOrgName] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
 
@@ -46,8 +51,8 @@ export function KeysView() {
 
   const load = useCallback(async () => {
     try {
-      const data = await apiFetch<{ keys: ApiKeyMasked[] }>('/api/keys')
-      setKeys(data.keys)
+      const data = await apiFetch<KeysResponse>('/api/keys')
+      setKeys(data.keys); setOrgName(data.orgName)
     } catch (e) {
       if (e instanceof Error && /无权限|forbidden|403/i.test(e.message)) setForbidden(true)
     } finally {
@@ -56,8 +61,8 @@ export function KeysView() {
   }, [])
 
   useEffect(() => {
-    apiFetch<{ keys: ApiKeyMasked[] }>('/api/keys')
-      .then((d) => setKeys(d.keys))
+    apiFetch<KeysResponse>('/api/keys')
+      .then((d) => { setKeys(d.keys); setOrgName(d.orgName) })
       .catch((e) => { if (e instanceof Error && /无权限|forbidden|403/i.test(e.message)) setForbidden(true) })
       .finally(() => setLoading(false))
   }, [])
@@ -65,6 +70,7 @@ export function KeysView() {
   const nTotal = keys.length
   const nActive = keys.filter((k) => k.status === 'active').length
   const nRevoked = keys.length - nActive
+  const nBound = keys.filter((k) => k.extensionId).length
 
   async function copyText(text: string) {
     try { await navigator.clipboard.writeText(text); toast.success('已复制到剪贴板') }
@@ -120,6 +126,14 @@ export function KeysView() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Key 管理</h1>
           <p className="text-muted-foreground">签发与管理对外 API 密钥（明文仅签发时显示一次）</p>
+          {/* Key-1：明确标注归属租户——本页只列本租户 Key，多租户切换时不至于张冠李戴 */}
+          {orgName && (
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Building2 className="h-3.5 w-3.5" />
+              当前租户：<span className="text-foreground">{orgName}</span>
+              <span className="text-muted-foreground/70">· 仅显示本租户 Key</span>
+            </p>
+          )}
         </div>
         <Button className="gap-2" data-testid="create-key" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />创建 Key
@@ -127,10 +141,11 @@ export function KeysView() {
       </div>
 
       {/* 真实统计 */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <Stat icon={<Key className="h-5 w-5 text-primary" />} bg="bg-primary/10" n={nTotal} label="全部 Key" />
         <Stat icon={<CheckCircle2 className="h-5 w-5 text-green-500" />} bg="bg-green-500/10" n={nActive} label="生效中" />
         <Stat icon={<Ban className="h-5 w-5 text-destructive" />} bg="bg-destructive/10" n={nRevoked} label="已吊销" />
+        <Stat icon={<Puzzle className="h-5 w-5 text-accent" />} bg="bg-accent/10" n={nBound} label="绑定扩展" />
       </div>
 
       <Card className="bg-card border-border">
@@ -139,6 +154,7 @@ export function KeysView() {
             <TableHeader>
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead className="text-muted-foreground">名称 / Key</TableHead>
+                <TableHead className="text-muted-foreground">类型 / 所属</TableHead>
                 <TableHead className="text-muted-foreground">权限范围</TableHead>
                 <TableHead className="text-muted-foreground">最近使用</TableHead>
                 <TableHead className="text-muted-foreground">创建时间</TableHead>
@@ -148,13 +164,23 @@ export function KeysView() {
             </TableHeader>
             <TableBody>
               {keys.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">还没有 API Key，点击右上角创建</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">还没有 API Key，点击右上角创建</TableCell></TableRow>
               )}
               {keys.map((k) => (
                 <TableRow key={k.id} className="border-border" data-testid="key-row">
                   <TableCell>
                     <p className="font-medium text-foreground">{k.name}</p>
                     <p className="text-xs text-muted-foreground font-mono">{k.keyPrefix}</p>
+                  </TableCell>
+                  <TableCell>
+                    {k.extensionId ? (
+                      <div className="flex items-center gap-1.5" title={`绑定扩展：${k.extensionName ?? ''}`}>
+                        <Puzzle className="h-3.5 w-3.5 text-accent shrink-0" />
+                        <span className="text-sm text-foreground truncate max-w-[12rem]">{k.extensionName}</span>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">租户通用</span>
+                    )}
                   </TableCell>
                   <TableCell><Badge className="bg-muted text-foreground">{SCOPE_LABEL[k.scope]}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{k.lastUsedAt ?? '尚未使用'}</TableCell>
