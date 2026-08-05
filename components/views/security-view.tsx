@@ -19,9 +19,14 @@ import {
   GitBranch,
   Clock,
   User,
-  ChevronRight
+  ChevronRight,
+  Loader2,
+  ShieldCheck,
+  Wrench,
+  MinusCircle
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import type { ScanResult, SecurityFinding, SecurityCheckCode } from '@/lib/security/scanners';
 
 const riskConfig = {
   low: { label: '低风险', className: 'bg-green-500/10 text-green-500', icon: CheckCircle2 },
@@ -54,6 +59,125 @@ type AuditLog = {
   createdAt: string | null;
 };
 
+// SEC-2/SEC-3：核查结果面板。抽成独立组件，避免 SecurityView 继续膨胀。
+function SecurityScanPanel({
+  review, scan, loading, error, fixing, onAutoFix,
+}: {
+  review: SecurityReview
+  scan: ScanResult | null
+  loading: boolean
+  error: string | null
+  fixing: boolean
+  onAutoFix: (codes: SecurityCheckCode[]) => void
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+        <Loader2 className="h-4 w-4 animate-spin" />正在核查 AI 安全项...
+      </div>
+    )
+  }
+  if (error) {
+    return <div className="text-sm text-destructive py-2">安全核查失败：{error}</div>
+  }
+  if (!scan) {
+    // workflow 暂不支持扫描；如实说明，不假装"全部通过"
+    return (
+      <div className="text-sm text-muted-foreground py-2">
+        {review.resourceType === 'workflow'
+          ? '工作流的自动安全核查尚未支持，请人工审阅节点配置。'
+          : '未能读取该资源配置，无法自动核查。'}
+      </div>
+    )
+  }
+
+  const hits = scan.findings.filter((f) => f.status === 'hit')
+  const passed = scan.findings.filter((f) => f.status === 'pass')
+  const na = scan.findings.filter((f) => f.status === 'n/a')
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-primary" />
+          AI 安全自动核查
+        </h4>
+        <Badge className={riskConfig[scan.riskLevel].className}>
+          建议：{riskConfig[scan.riskLevel].label}
+        </Badge>
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-xs">
+        {scan.summary.high > 0 && <span className="px-2 py-1 rounded bg-destructive/10 text-destructive">高危 {scan.summary.high}</span>}
+        {scan.summary.medium > 0 && <span className="px-2 py-1 rounded bg-yellow-500/10 text-yellow-600">中危 {scan.summary.medium}</span>}
+        {scan.summary.low > 0 && <span className="px-2 py-1 rounded bg-muted text-muted-foreground">低危 {scan.summary.low}</span>}
+        <span className="px-2 py-1 rounded bg-green-500/10 text-green-600">通过 {scan.summary.passed}</span>
+        {scan.summary.na > 0 && <span className="px-2 py-1 rounded bg-muted text-muted-foreground">不适用 {scan.summary.na}</span>}
+      </div>
+
+      {scan.autoFixable.length > 0 && (
+        <Button size="sm" className="w-full gap-2" disabled={fixing}
+          onClick={() => onAutoFix(scan.autoFixable)}>
+          {fixing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
+          确认并自动处理 {scan.autoFixable.length} 项
+        </Button>
+      )}
+
+      {hits.map((f) => <FindingRow key={f.code} f={f} />)}
+
+      {hits.length === 0 && (
+        <div className="p-3 rounded-lg bg-green-500/5 border border-green-500/20 text-sm text-green-600 flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4" />全部核查项通过
+        </div>
+      )}
+
+      {(passed.length > 0 || na.length > 0) && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+            查看已通过 / 不适用的 {passed.length + na.length} 项
+          </summary>
+          <div className="mt-2 space-y-1.5">
+            {passed.map((f) => (
+              <div key={f.code} className="flex items-start gap-2 text-muted-foreground">
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-500 mt-0.5 shrink-0" />
+                <span><span className="text-foreground">{f.title}</span> — {f.detail}</span>
+              </div>
+            ))}
+            {na.map((f) => (
+              <div key={f.code} className="flex items-start gap-2 text-muted-foreground">
+                <MinusCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span><span className="text-foreground">{f.title}</span> — {f.detail}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
+function FindingRow({ f }: { f: SecurityFinding }) {
+  const tone = f.severity === 'high'
+    ? { box: 'bg-destructive/5 border-destructive/20', icon: <XCircle className="h-4 w-4 text-destructive" />, label: 'bg-destructive/10 text-destructive' }
+    : f.severity === 'medium'
+      ? { box: 'bg-yellow-500/5 border-yellow-500/20', icon: <AlertTriangle className="h-4 w-4 text-yellow-500" />, label: 'bg-yellow-500/10 text-yellow-600' }
+      : { box: 'bg-muted/40 border-border', icon: <AlertTriangle className="h-4 w-4 text-muted-foreground" />, label: 'bg-muted text-muted-foreground' }
+  return (
+    <div className={`p-3 rounded-lg border space-y-1.5 ${tone.box}`}>
+      <div className="flex items-center gap-2">
+        {tone.icon}
+        <span className="text-sm font-medium text-foreground flex-1">{f.title}</span>
+        <Badge className={`text-[10px] ${tone.label}`}>
+          {f.severity === 'high' ? '高危' : f.severity === 'medium' ? '中危' : '低危'}
+        </Badge>
+        {f.autoFixable && <Badge variant="outline" className="text-[10px]">可自动处理</Badge>}
+      </div>
+      <p className="text-xs text-foreground/90">{f.detail}</p>
+      <p className="text-xs text-muted-foreground">建议：{f.suggestion}</p>
+    </div>
+  )
+}
+
 export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
   const [selectedReview, setSelectedReview] = useState<SecurityReview | null>(null);
   // 真实审批记录（4.1.3）——本地副本，裁决后就地更新
@@ -66,11 +190,61 @@ export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
   const [logs, setLogs] = useState<AuditLog[] | null>(null);
   const [logsError, setLogsError] = useState<string | null>(null);
 
+  // SEC-2：选中待审记录时自动核查
+  const [scan, setScan] = useState<ScanResult | null>(null);
+  const [scanLoadedKey, setScanLoadedKey] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [fixing, setFixing] = useState(false);
+
   useEffect(() => {
     apiFetch<{ logs: AuditLog[] }>('/api/audit')
       .then(res => setLogs(res.logs))
       .catch(err => { setLogsError(err instanceof Error ? err.message : '加载失败'); setLogs([]); });
   }, []);
+
+  const scanId = selectedReview?.status === 'pending' ? selectedReview.resourceId : undefined;
+  const scanType = selectedReview?.resourceType;
+  // 全部 setState 都落在 promise 链里，不放 effect 同步路径——
+  // 后者会被 React 编译器判为可能触发级联渲染（react-hooks/set-state-in-effect），
+  // 与 extensions-view / model-providers-view 同款写法。
+  // loading 由 scanKey 变化推导，不再单独同步置位。
+  const scanKey = scanId && scanType ? `${scanType}:${scanId}` : null;
+  useEffect(() => {
+    if (!scanKey) return;
+    let cancelled = false;
+    const [type, id] = scanKey.split(':');
+    apiFetch<{ scan: ScanResult | null }>(`/api/reviews/scan?resourceType=${type}&resourceId=${id}`)
+      .then(r => { if (!cancelled) { setScan(r.scan); setScanError(null); } })
+      .catch(e => { if (!cancelled) { setScanError(e instanceof Error ? e.message : '核查失败'); setScan(null); } })
+      .finally(() => { if (!cancelled) setScanLoadedKey(scanKey); });
+    // 快速切换记录时，先发的请求可能后返回——用 cancelled 挡住，避免把 A 的结论显示在 B 上
+    return () => { cancelled = true; };
+  }, [scanKey]);
+  // 已加载完成的 key 与当前 key 不一致 = 正在核查中
+  const scanLoading = !!scanKey && scanLoadedKey !== scanKey;
+
+  async function handleAutoFix(codes: SecurityCheckCode[]) {
+    if (!selectedReview?.resourceId || fixing) return;
+    setFixing(true); setScanError(null);
+    try {
+      const r = await apiFetch<{ changes: { description: string }[]; skipped: string[]; scan: ScanResult | null }>(
+        '/api/reviews/autofix',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            resourceType: selectedReview.resourceType,
+            resourceId: selectedReview.resourceId,
+            codes,
+          }),
+        },
+      );
+      setScan(r.scan);
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : '自动处理失败');
+    } finally {
+      setFixing(false);
+    }
+  }
 
   const pendingReviews = allReviews.filter(r => r.status === 'pending');
   const completedReviews = allReviews.filter(r => r.status !== 'pending');
@@ -219,23 +393,8 @@ export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
                             {riskConfig[review.riskLevel].label}
                           </Badge>
                         </div>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {review.sensitiveDataFound.length > 0 && (
-                            <span className="text-xs px-2 py-1 rounded bg-destructive/10 text-destructive">
-                              敏感数据: {review.sensitiveDataFound.length}
-                            </span>
-                          )}
-                          {review.illegalInstructions.length > 0 && (
-                            <span className="text-xs px-2 py-1 rounded bg-destructive/10 text-destructive">
-                              非法指令: {review.illegalInstructions.length}
-                            </span>
-                          )}
-                          {review.dbRisks.length > 0 && (
-                            <span className="text-xs px-2 py-1 rounded bg-yellow-500/10 text-yellow-500">
-                              DB风险: {review.dbRisks.length}
-                            </span>
-                          )}
-                        </div>
+                        {/* SEC-2：列表不再展示静态计数徽标（那三个字段从无数据），
+                            具体命中项在右侧详情面板由实时核查给出 */}
                         <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <User className="h-3 w-3" />
@@ -373,65 +532,15 @@ export function SecurityView({ reviews }: { reviews?: SecurityReview[] }) {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Sensitive Data */}
-              {selectedReview.sensitiveDataFound.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-destructive" />
-                    敏感信息检测
-                  </h4>
-                  <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-                    <ul className="space-y-1">
-                      {selectedReview.sensitiveDataFound.map((item, index) => (
-                        <li key={index} className="text-sm text-foreground flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full bg-destructive" />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
-
-              {/* Illegal Instructions */}
-              {selectedReview.illegalInstructions.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
-                    <XCircle className="h-4 w-4 text-destructive" />
-                    非法指令检测
-                  </h4>
-                  <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-                    <ul className="space-y-1">
-                      {selectedReview.illegalInstructions.map((item, index) => (
-                        <li key={index} className="text-sm text-foreground flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full bg-destructive" />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
-
-              {/* DB Risks */}
-              {selectedReview.dbRisks.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
-                    <Database className="h-4 w-4 text-yellow-500" />
-                    数据库接口风险
-                  </h4>
-                  <div className="p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
-                    <ul className="space-y-1">
-                      {selectedReview.dbRisks.map((item, index) => (
-                        <li key={index} className="text-sm text-foreground flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
+              {/* SEC-2：AI 安全自动核查（替代原三块从未有数据的静态占位） */}
+              <SecurityScanPanel
+                review={selectedReview}
+                scan={scan}
+                loading={scanLoading}
+                error={scanError}
+                fixing={fixing}
+                onAutoFix={handleAutoFix}
+              />
 
               {/* Review Comment */}
               <div className="space-y-2">
