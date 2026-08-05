@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getRequestContext } from '@/lib/context'
 import { isPlatformAdmin } from '@/lib/auth/platform'
 import { listAllTenants } from '@/lib/data/tenants'
+import { getTenantUsage } from '@/lib/data/platform-dashboard'
 import { TenantsView } from '@/components/views/tenants-view'
 
 export default async function Page() {
@@ -20,6 +21,6 @@ export default async function Page() {
     )
   }
 
-  const tenants = await listAllTenants()
-  return <TenantsView tenants={tenants} canManage />
+  const [tenants, initialUsage] = await Promise.all([listAllTenants(), getTenantUsage()])
+  return <TenantsView tenants={tenants} canManage initialUsage={initialUsage} />
 }

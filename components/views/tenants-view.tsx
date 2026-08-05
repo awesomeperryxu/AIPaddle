@@ -103,9 +103,11 @@ type UsageResp = { usage: Record<string, TenantUsage>; revenueTrend: RevenuePoin
 export function TenantsView({
   tenants = [],
   canManage = false,
+  initialUsage,
 }: {
   tenants?: PlatformTenant[];
   canManage?: boolean;
+  initialUsage?: Record<string, { members: number; agents: number; tokens30d: number; calls30d: number; estCost30d: number }>;
 }) {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -121,7 +123,10 @@ export function TenantsView({
   const [pErr, setPErr] = useState<string | null>(null);
 
   // 真实用量聚合（客户端拉取，ADR-008 只经 apiFetch）
-  const [usage, setUsage] = useState<Record<string, TenantUsage>>({});
+  // 🔴 用服务端传入的 initialUsage 初始化，避免页面打开时先显示 0 再刷新
+  const [usage, setUsage] = useState<Record<string, TenantUsage>>(
+    (initialUsage as Record<string, TenantUsage> | undefined) ?? {}
+  );
   const [revenueTrend, setRevenueTrend] = useState<RevenuePoint[]>([]);
 
   // 4.8.17c/d：模型定价维护 + 陈旧告警

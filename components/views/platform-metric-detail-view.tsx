@@ -1,5 +1,6 @@
 'use client'
 
+import React, { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -7,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
+import { apiFetch } from '@/lib/api/client'
 import { METRIC_TITLE, type PlatformMetric } from '@/lib/platform-metrics'
 
 // ADR-008：本视图为 client 组件，只接收服务端页传入的可序列化真实数据，绝不直连 DB。
@@ -159,6 +161,25 @@ function NumericTable({
     .sort((a, b) => b.value - a.value)
   const total = rows.reduce((s, r) => s + r.value, 0)
 
+  // members 指标：点击可展开查看具体账号
+  type Member = { id: string; name: string; email: string; roles: string[]; department: string; status: string }
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [members, setMembers] = useState<Member[]>([])
+  const [loading, setLoading] = useState(false)
+  const toggleExpand = useCallback(async (tenantId: string) => {
+    if (expandedId === tenantId) { setExpandedId(null); return }
+    setExpandedId(tenantId)
+    setMembers([])
+    setLoading(true)
+    try {
+      const r = await apiFetch<{ members: Member[] }>(`/api/tenants/${tenantId}/members`)
+      setMembers(r.members ?? [])
+    } catch { setMembers([]) }
+    finally { setLoading(false) }
+  }, [expandedId])
+
+  const canExpand = metric === 'members'
+
   return (
     <Card className="bg-card border-border shadow-sm">
       <CardContent className="p-0">
@@ -177,10 +198,60 @@ function NumericTable({
             ) : (
               <>
                 {rows.map((r) => (
-                  <TableRow key={r.id} className="border-border">
-                    <TableCell className="font-medium text-foreground">{r.name}</TableCell>
-                    <TableCell className="text-right tabular-nums text-foreground">{cfg.fmt(r.value)}</TableCell>
-                  </TableRow>
+                  <React.Fragment key={r.id}>
+                    <TableRow className={`border-border ${canExpand ? 'cursor-pointer hover:bg-muted/30' : ''}`}
+                      onClick={canExpand ? () => toggleExpand(r.id) : undefined}>
+                      <TableCell className="font-medium text-foreground">{r.name}</TableCell>
+                      <TableCell className={`text-right tabular-nums ${canExpand ? 'text-primary underline decoration-dotted underline-offset-4' : 'text-foreground'}`}>
+                        {cfg.fmt(r.value)}
+                      </TableCell>
+                    </TableRow>
+                    {expandedId === r.id && (
+                      <TableRow className="bg-muted/20 hover:bg-muted/20">
+                        <TableCell colSpan={2} className="p-0">
+                          <div className="px-6 py-3">
+                            {loading ? (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                                <Loader2 className="h-3 w-3 animate-spin" /> 加载中...
+                              </div>
+                            ) : members.length === 0 ? (
+                              <p className="text-xs text-muted-foreground py-2">暂无成员</p>
+                            ) : (
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-muted-foreground">
+                                    <th className="text-left py-1 pr-4 font-medium">姓名</th>
+                                    <th className="text-left py-1 pr-4 font-medium">邮箱</th>
+                                    <th className="text-left py-1 pr-4 font-medium">角色</th>
+                                    <th className="text-left py-1 pr-4 font-medium">部门</th>
+                                    <th className="text-left py-1 font-medium">状态</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {members.map(m => (
+                                    <tr key={m.id} className="border-t border-border/30">
+                                      <td className="py-1.5 pr-4 text-foreground">{m.name || '—'}</td>
+                                      <td className="py-1.5 pr-4 text-muted-foreground">{m.email}</td>
+                                      <td className="py-1.5 pr-4">
+                                        {m.roles.map(role => <Badge key={role} variant="outline" className="text-[10px] px-1.5 py-0 h-4 mr-1">{role}</Badge>)}
+                                      </td>
+                                      <td className="py-1.5 pr-4 text-muted-foreground">{m.department || '—'}</td>
+                                      <td className="py-1.5">
+                                        <span className={`inline-flex items-center gap-1 ${m.status === 'active' ? 'text-green-600' : 'text-muted-foreground'}`}>
+                                          <span className={`w-1.5 h-1.5 rounded-full ${m.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                                          {m.status === 'active' ? '正常' : m.status}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
                 ))}
                 <TableRow className="border-t-2 border-border hover:bg-transparent">
                   <TableCell className="font-semibold text-foreground">合计</TableCell>
