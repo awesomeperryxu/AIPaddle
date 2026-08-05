@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -174,6 +174,22 @@ export function TenantsView({
     } catch (e) {
       setPvErr(e instanceof Error ? e.message : '新增定价失败');
     } finally { setPvBusy(false); }
+  }
+
+  // 租户成员展开
+  type TenantMember = { id: string; name: string; email: string; department: string; status: string; roles: string[]; createdAt: string }
+  const [expandedMembersId, setExpandedMembersId] = useState<string | null>(null);
+  const [tenantMembers, setTenantMembers] = useState<TenantMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  async function toggleMembers(tenantId: string) {
+    if (expandedMembersId === tenantId) { setExpandedMembersId(null); return; }
+    setExpandedMembersId(tenantId);
+    setMembersLoading(true);
+    try {
+      const r = await apiFetch<{ members: TenantMember[] }>(`/api/tenants/${tenantId}/members`);
+      setTenantMembers(r.members ?? []);
+    } catch { setTenantMembers([]); }
+    finally { setMembersLoading(false); }
   }
 
   // 4.8.15a/b：租户详情抽屉（承载查看详情 / 编辑信息 / 配额管理三项）
@@ -423,7 +439,8 @@ export function TenantsView({
             </TableHeader>
             <TableBody>
               {filteredTenants.map((tenant) => (
-                <TableRow key={tenant.id} className="border-border">
+                <React.Fragment key={tenant.id}>
+                <TableRow className="border-border">
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
@@ -448,7 +465,14 @@ export function TenantsView({
                       return <Badge className={c.className} title={c.hint}>{c.label}</Badge>;
                     })()}
                   </TableCell>
-                  <TableCell className="text-foreground">{tenant.members.toLocaleString()}</TableCell>
+                  <TableCell>
+                    <button
+                      className="text-foreground hover:text-primary underline decoration-dotted underline-offset-4 transition-colors"
+                      onClick={(e) => { e.stopPropagation(); toggleMembers(tenant.id); }}
+                    >
+                      {tenant.members.toLocaleString()} 人
+                    </button>
+                  </TableCell>
                   <TableCell className="text-foreground">{tenant.agents}</TableCell>
                   <TableCell>
                     <div className="space-y-1">
@@ -503,6 +527,55 @@ export function TenantsView({
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
+                {/* 展开的成员列表 */}
+                {expandedMembersId === tenant.id && (
+                  <TableRow className="bg-muted/30 hover:bg-muted/30">
+                    <TableCell colSpan={8} className="p-0">
+                      <div className="px-6 py-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-2">
+                          {tenant.name} 的成员 {membersLoading && '（加载中...）'}
+                        </p>
+                        {!membersLoading && tenantMembers.length === 0 && (
+                          <p className="text-xs text-muted-foreground">暂无成员</p>
+                        )}
+                        {tenantMembers.length > 0 && (
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-muted-foreground">
+                                <th className="text-left py-1 pr-4 font-medium">姓名</th>
+                                <th className="text-left py-1 pr-4 font-medium">邮箱</th>
+                                <th className="text-left py-1 pr-4 font-medium">角色</th>
+                                <th className="text-left py-1 pr-4 font-medium">部门</th>
+                                <th className="text-left py-1 font-medium">状态</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tenantMembers.map(m => (
+                                <tr key={m.id} className="border-t border-border/30">
+                                  <td className="py-1.5 pr-4 text-foreground">{m.name || '—'}</td>
+                                  <td className="py-1.5 pr-4 text-muted-foreground">{m.email}</td>
+                                  <td className="py-1.5 pr-4">
+                                    {m.roles.map(r => (
+                                      <Badge key={r} variant="outline" className="text-[10px] px-1.5 py-0 h-4 mr-1">{r}</Badge>
+                                    ))}
+                                  </td>
+                                  <td className="py-1.5 pr-4 text-muted-foreground">{m.department || '—'}</td>
+                                  <td className="py-1.5">
+                                    <span className={`inline-flex items-center gap-1 ${m.status === 'active' ? 'text-green-600' : 'text-muted-foreground'}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${m.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                                      {m.status === 'active' ? '正常' : m.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
