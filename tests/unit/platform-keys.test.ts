@@ -32,9 +32,10 @@ const adminCtx: RequestContext = { userId: 'u1', orgId: 'o1', roles: ['Admin'] }
 
 const key = {
   id: 'k1', name: '官网接入', keyPrefix: 'ap_ext_8b4bf30********', scope: 'agent',
-  status: 'active' as const, lastUsedAt: null, createdAt: '2026-08-01', expiresAt: null,
+  status: 'active' as const, lastUsedAt: null, createdAt: '2026-08-01 09:22', expiresAt: null,
   orgId: 'o2', orgName: '深圳市黑围裙酒店管理有限公司', orgStatus: 'active',
   extensionId: 'e1', extensionName: '官网在线咨询',
+  createdByName: '黑围裙管理员', createdByEmail: 'admin@royalblack.aipaddle.net',
 }
 
 beforeEach(() => {

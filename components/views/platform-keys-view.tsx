@@ -18,6 +18,7 @@ export type PlatformApiKey = {
   expiresAt: string | null
   orgId: string; orgName: string; orgStatus: string
   extensionId: string | null; extensionName: string | null
+  createdByName: string | null; createdByEmail: string | null
 }
 
 const SCOPE_LABEL: Record<string, string> = {
@@ -37,7 +38,8 @@ export function PlatformKeysView({ initialKeys }: { initialKeys: PlatformApiKey[
     const s = q.trim().toLowerCase()
     if (!s) return keys
     return keys.filter((k) =>
-      [k.orgName, k.name, k.keyPrefix, k.extensionName ?? ''].some((v) => v.toLowerCase().includes(s)),
+      [k.orgName, k.name, k.keyPrefix, k.extensionName ?? '', k.createdByName ?? '', k.createdByEmail ?? '']
+        .some((v) => v.toLowerCase().includes(s)),
     )
   }, [keys, q])
 
@@ -91,7 +93,7 @@ export function PlatformKeysView({ initialKeys }: { initialKeys: PlatformApiKey[
 
       <div className="relative max-w-sm">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-8" placeholder="搜索租户 / Key 名称 / 前缀 / 扩展"
+        <Input className="pl-8" placeholder="搜索租户 / Key 名称 / 前缀 / 扩展 / 创建人"
           value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
 
@@ -104,6 +106,7 @@ export function PlatformKeysView({ initialKeys }: { initialKeys: PlatformApiKey[
                 <TableHead className="text-muted-foreground">名称 / Key</TableHead>
                 <TableHead className="text-muted-foreground">类型 / 所属</TableHead>
                 <TableHead className="text-muted-foreground">权限范围</TableHead>
+                <TableHead className="text-muted-foreground">创建人 / 时间</TableHead>
                 <TableHead className="text-muted-foreground">最近使用</TableHead>
                 <TableHead className="text-muted-foreground">状态</TableHead>
                 <TableHead className="text-muted-foreground text-right">操作</TableHead>
@@ -112,7 +115,7 @@ export function PlatformKeysView({ initialKeys }: { initialKeys: PlatformApiKey[
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     {keys.length === 0 ? '全平台尚无任何 API Key' : '没有匹配的 Key'}
                   </TableCell>
                 </TableRow>
@@ -142,7 +145,13 @@ export function PlatformKeysView({ initialKeys }: { initialKeys: PlatformApiKey[
                   <TableCell>
                     <Badge className="bg-muted text-foreground">{SCOPE_LABEL[k.scope] ?? k.scope}</Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{k.lastUsedAt ?? '尚未使用'}</TableCell>
+                  <TableCell>
+                    <p className="text-sm text-foreground" title={k.createdByEmail ?? ''}>
+                      {k.createdByName ?? '—'}
+                    </p>
+                    <p className="text-xs text-muted-foreground whitespace-nowrap">{k.createdAt || '—'}</p>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground whitespace-nowrap">{k.lastUsedAt ?? '尚未使用'}</TableCell>
                   <TableCell>
                     <Badge className={k.status === 'active'
                       ? 'bg-green-500/10 text-green-500' : 'bg-destructive/10 text-destructive'}>
