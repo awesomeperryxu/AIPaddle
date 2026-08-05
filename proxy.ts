@@ -1,16 +1,18 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const SESSION_MAX_MS = 24 * 60 * 60 * 1000 // 24 小时绝对上限，超过强制重登
+// 🔴 用户要求 12 小时内免登录（包括关浏览器后重开）。
+// 之前设成了会话 cookie（剥离 maxAge/expires）→ 关浏览器就清除 → 每次都要登录。
+// 现在改为持久 cookie（maxAge=12h）：关浏览器再打开 12 小时内仍在。
+// 24h 绝对上限由 SESSION_START_COOKIE 控制（见下方），这里只管 cookie 持久化。
+const SESSION_MAX_MS = 12 * 60 * 60 * 1000 // 12 小时免登录（用户要求）
 const SESSION_START_COOKIE = 'aipaddle_session_start'
+const COOKIE_MAX_AGE_S = Math.floor(SESSION_MAX_MS / 1000) // 秒，给 cookie 用
 
-// 将 Supabase 认证 cookie 设为**会话 cookie**（不设 maxAge/expires）：
-// - 浏览器不关：cookie 一直在，24 小时内免密（token 到期自动刷新），达 24h 上限强制重登；
-// - 浏览器关闭：会话 cookie 被清除 → 下次访问需重新输入密码。
-// 剥离 Supabase 可能自带的 maxAge/expires，确保是纯会话 cookie。
+/** 给 Supabase cookie 设 maxAge，使其在关浏览器后仍然保留。 */
 export function toSessionCookieOptions(options: Record<string, unknown> = {}) {
   const { expires: _e, maxAge: _m, ...rest } = options
-  return rest
+  return { ...rest, maxAge: COOKIE_MAX_AGE_S }
 }
 
 // _next/* 请求直接放行，不建 Supabase 客户端、不打远程调用。
@@ -66,15 +68,16 @@ export async function proxy(request: NextRequest) {
   const isExtApi = pathname.startsWith('/api/ext/')
   const isPublic = isAuthPage || isNoAccess || isCallback || isPrototype || isAuthApi || isExtApi
 
-  // 已登录：检查 24h 会话有效期
+  // 已登录：检查 12h 会话有效期
   if (user) {
     const sessionStart = request.cookies.get(SESSION_START_COOKIE)?.value
     const now = Date.now()
 
     if (!sessionStart) {
-      // 首次请求，打上登录时间戳（会话 cookie，不设 maxAge → 关浏览器即清除）
+      // 首次请求，打上登录时间戳。maxAge 与 Supabase cookie 一致（12h）
       supabaseResponse.cookies.set(SESSION_START_COOKIE, String(now), {
         httpOnly: true,
+        maxAge: COOKIE_MAX_AGE_S,
         sameSite: 'lax',
         path: '/',
       })

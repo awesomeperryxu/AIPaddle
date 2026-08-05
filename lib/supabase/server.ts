@@ -30,8 +30,10 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
-              // 去掉 maxAge/expires，使 Supabase cookie 成为 session cookie
-              const { maxAge: _m, expires: _e, ...sessionOpts } = (options ?? {}) as Record<string, unknown>
+              // 🔴 给 cookie 设 maxAge=12h，关浏览器后重开仍在（用户要求 12 小时免登录）。
+              // 之前剥离 maxAge/expires → 会话 cookie → 关浏览器就清 → 每次都要登录。
+              const { maxAge: _m, expires: _e, ...rest } = (options ?? {}) as Record<string, unknown>
+              const sessionOpts = { ...rest, maxAge: 12 * 60 * 60 } // 12 小时（秒）
               cookieStore.set(name, value, sessionOpts as Parameters<typeof cookieStore.set>[2])
             })
           } catch {} // Server Component 中 set 会抛出，忽略即可
