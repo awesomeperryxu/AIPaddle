@@ -136,6 +136,7 @@ const navSections: NavSection[] = [
     items: [
       { title: '运营看板', icon: <BarChart3 className="h-4 w-4" />, href: 'saas-dashboard' },
       { title: '租户管理', icon: <Building2 className="h-4 w-4" />, href: 'tenants' },
+      // Key 管理单一入口：平台超管看全平台，租户 Admin 看本租户（分流在 /keys 服务端做）
       { title: 'Key 管理', icon: <Key className="h-4 w-4" />, href: 'keys' },
     ]
   },

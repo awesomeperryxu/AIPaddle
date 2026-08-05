@@ -67,6 +67,34 @@ export async function listApiKeys(ctx: RequestContext): Promise<ApiKeyMasked[]> 
   return ((data as Row[] | null) ?? []).map(toMasked)
 }
 
+/**
+ * Key-1：列表附带「所属扩展名」。
+ *
+ * 为什么不用 PostgREST 嵌套 select（`extensions(name)`）：api_keys.extension_id 指向的
+ * 扩展可能已软删，嵌套 join 会把整行 Key 的关联字段抹成 null，看上去与「租户通用 Key」
+ * 无法区分——而这两者的安全含义完全不同。这里显式二次查询，软删扩展仍能标出归属。
+ */
+export async function listApiKeysWithExtension(
+  ctx: RequestContext,
+): Promise<(ApiKeyMasked & { extensionName: string | null })[]> {
+  const keys = await listApiKeys(ctx)
+  const ids = [...new Set(keys.map((k) => k.extensionId).filter((v): v is string => !!v))]
+  if (ids.length === 0) return keys.map((k) => ({ ...k, extensionName: null }))
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('extensions').select('id,name')
+    .eq('org_id', ctx.orgId)   // RLS + 显式 org_id 双层隔离（CLAUDE.md 铁律）
+    .in('id', ids)
+  if (error) throw new Error(error.message)
+  const nameById = new Map(((data as { id: string; name: string }[] | null) ?? []).map((e) => [e.id, e.name]))
+  return keys.map((k) => ({
+    ...k,
+    // 扩展查不到 = 已被删除，标出来而不是伪装成通用 Key
+    extensionName: k.extensionId ? (nameById.get(k.extensionId) ?? '(扩展已删除)') : null,
+  }))
+}
+
 /** 签发 Key：生成→哈希落库→**返回明文一次**（keyMasked + key 明文）。 */
 export async function createApiKey(
   ctx: RequestContext,

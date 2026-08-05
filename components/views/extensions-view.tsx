@@ -413,18 +413,26 @@ export function ExtensionsView() {
             </Button>
           </div>
 
-          {keys.length > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>名称</TableHead>
-                  <TableHead>前缀</TableHead>
-                  <TableHead>最近使用</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+          {/* Key-1：空列表也要渲染表格 + 空态。此前 keys.length > 0 才渲染，
+              没签过 Key 时整块消失，与「加载失败」长得一模一样，用户无法自证。 */}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>名称</TableHead>
+                <TableHead>前缀</TableHead>
+                <TableHead>最近使用</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead className="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+                {keys.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8 text-sm">
+                      该扩展尚未签发密钥 —— 在上方填写用途后点「签发密钥」
+                    </TableCell>
+                  </TableRow>
+                )}
                 {keys.map((k) => (
                   <TableRow key={k.id}>
                     <TableCell className="text-sm">{k.name}</TableCell>
@@ -445,9 +453,8 @@ export function ExtensionsView() {
                     </TableCell>
                   </TableRow>
                 ))}
-              </TableBody>
-            </Table>
-          )}
+            </TableBody>
+          </Table>
         </DialogContent>
       </Dialog>
 

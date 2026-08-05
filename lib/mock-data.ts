@@ -60,9 +60,9 @@ export interface SecurityReview {
   resourceName: string;
   submitter: string;
   riskLevel: 'low' | 'medium' | 'high';
-  sensitiveDataFound: string[];
-  illegalInstructions: string[];
-  dbRisks: string[];
+  // SEC-2 移除 sensitiveDataFound / illegalInstructions / dbRisks：
+  // 这三个字段是原型期的静态占位，数据层一直硬编码空数组、UI 永远不显示。
+  // 真实的安全核查改由 lib/security/scanners.ts 在打开审核详情时实时给出。
   status: 'pending' | 'approved' | 'rejected';
   submittedAt: string;
 }
@@ -396,9 +396,7 @@ export const mockSecurityReviews: SecurityReview[] = [
     resourceName: 'HR系统接口',
     submitter: '张明',
     riskLevel: 'high',
-    sensitiveDataFound: ['员工身份证号', '银行账户信息', '薪资数据'],
-    illegalInstructions: [],
-    dbRisks: ['SELECT * 查询可能导致数据泄露'],
+
     status: 'pending',
     submittedAt: '2024-03-12 10:30'
   },
@@ -408,9 +406,7 @@ export const mockSecurityReviews: SecurityReview[] = [
     resourceName: '财务数据库查询',
     submitter: '李华',
     riskLevel: 'high',
-    sensitiveDataFound: ['财务报表', '交易记录'],
-    illegalInstructions: ['可能执行DELETE操作'],
-    dbRisks: ['未限制查询范围', '缺少字段白名单'],
+
     status: 'pending',
     submittedAt: '2024-03-12 11:15'
   },
@@ -420,9 +416,7 @@ export const mockSecurityReviews: SecurityReview[] = [
     resourceName: '技术支持工程师',
     submitter: '王芳',
     riskLevel: 'medium',
-    sensitiveDataFound: [],
-    illegalInstructions: [],
-    dbRisks: ['调用了高风险Skill: ERP库存查询'],
+
     status: 'pending',
     submittedAt: '2024-03-12 09:00'
   },
@@ -432,9 +426,7 @@ export const mockSecurityReviews: SecurityReview[] = [
     resourceName: '合同审批流程',
     submitter: '赵强',
     riskLevel: 'low',
-    sensitiveDataFound: [],
-    illegalInstructions: [],
-    dbRisks: [],
+
     status: 'approved',
     submittedAt: '2024-03-11 14:00'
   }
