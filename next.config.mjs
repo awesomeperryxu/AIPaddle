@@ -7,6 +7,8 @@ const distDir = process.env.NEXT_DIST_DIR || '.next'
 const nextConfig = {
   ...(basePath ? { basePath } : {}),
   ...(distDir !== '.next' ? { distDir } : {}),
+  // standalone：只打包运行需要的文件，冷启动更快、内存占用更小
+  output: 'standalone',
   turbopack: {
     root: process.cwd(),
   },

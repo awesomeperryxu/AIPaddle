@@ -153,18 +153,37 @@ else
   fi
 fi
 
-# 产物完整性自检：缺了这些说明构建其实没成，别拿去替换线上
+# 产物完整性自检
 for f in .next.new/BUILD_ID .next.new/server/app; do
   if [ ! -e "$f" ]; then echo "🔴 构建产物缺 $f"; die; fi
 done
 
+# standalone 模式需要把 public 和 static 链进去
+if [ -d .next.new/standalone ]; then
+  if [ -d public ] && [ ! -e .next.new/standalone/public ]; then
+    cp -r public .next.new/standalone/public
+  fi
+  if [ -d .next.new/static ]; then
+    mkdir -p .next.new/standalone/.next
+    cp -r .next.new/static .next.new/standalone/.next/static
+  fi
+fi
+
 # 原子切换
 rm -rf .next.old
-# 注意：不能用 test -d 后接 && mv 的连写 —— set -e 下目录不存在时整行返回 1，
-# 会误触发回滚。用 if 块。
 if [ -d .next ]; then mv .next .next.old; fi
 mv .next.new .next
-pm2 restart "$PM2_NAME" --update-env
+
+# standalone 用 node server.js（更小更快），否则 pnpm start
+if [ -f .next/standalone/server.js ]; then
+  echo "  standalone 模式"
+  pm2 delete "$PM2_NAME" 2>/dev/null || true
+  cd .next/standalone
+  PORT=3000 pm2 start server.js --name "$PM2_NAME" --update-env
+  cd "$APP_DIR"
+else
+  pm2 restart "$PM2_NAME" --update-env
+fi
 trap - ERR
 
 sleep 5
