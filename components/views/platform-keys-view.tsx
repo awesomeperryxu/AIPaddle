@@ -59,9 +59,14 @@ export function PlatformKeysView({ initialKeys }: { initialKeys: PlatformApiKey[
 
   return (
     <div className="space-y-6" data-testid="platform-keys-view">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Key 总览（全平台）</h1>
-        <p className="text-muted-foreground">跨租户清点与吊销对外 API 密钥 · 平台超管视角</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Key 管理</h1>
+          <p className="text-muted-foreground">全平台跨租户清点、审计与吊销对外 API 密钥</p>
+        </div>
+        <Badge variant="outline" className="shrink-0 gap-1.5 text-xs">
+          <ShieldAlert className="h-3.5 w-3.5" />平台超管视角
+        </Badge>
       </div>
 
       {/* 口径说明：不写清楚，运营会以为这页能帮客户找回密钥 */}
@@ -71,6 +76,9 @@ export function PlatformKeysView({ initialKeys }: { initialKeys: PlatformApiKey[
           <span className="text-foreground font-medium">此处看不到密钥明文，平台超管也不行</span>
           ——库内只存 sha256 哈希与前 15 位前缀，明文仅在签发那一刻返回过一次。
           客户遗失密钥只能<span className="text-foreground">重新签发</span>，无法找回。本页用于清点、审计与吊销。
+          <br />
+          {/* 不放签发按钮：跨租户代签的归属与责任不清，且租户侧本就有自助入口 */}
+          签发新 Key 请由该租户管理员在自己的「Key 管理」或「扩展管理 → 密钥」中操作。
         </p>
       </div>
 

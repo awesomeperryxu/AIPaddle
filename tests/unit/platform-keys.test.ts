@@ -70,6 +70,25 @@ describe('GET /api/platform/keys', () => {
   })
 })
 
+// Key-2：/keys 单一入口按身份分流。分流必须在服务端，前端隐藏不算数。
+describe('/keys 页面分流', () => {
+  it('平台超管 → 全平台视图（调 listAllApiKeys）', async () => {
+    mockCtx.mockResolvedValue(adminCtx)
+    mockIsPA.mockResolvedValue(true)
+    const { default: Page } = await import('@/app/(dashboard)/keys/page')
+    await Page()
+    expect(mockList).toHaveBeenCalled()
+  })
+
+  it('租户 Admin → 本租户视图，绝不触跨租户聚合', async () => {
+    mockCtx.mockResolvedValue(adminCtx)
+    mockIsPA.mockResolvedValue(false)
+    const { default: Page } = await import('@/app/(dashboard)/keys/page')
+    await Page()
+    expect(mockList).not.toHaveBeenCalled()
+  })
+})
+
 describe('DELETE /api/platform/keys/[id]', () => {
   it('403 非平台超管，且不触数据层', async () => {
     mockCtx.mockResolvedValue(adminCtx)

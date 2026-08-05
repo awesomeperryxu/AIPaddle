@@ -23,7 +23,6 @@ const TITLES: Record<string, string> = {
   'my-skills': '我的 Skill',
   'saas-dashboard': '运营看板',
   keys: 'Key 管理',
-  'platform-keys': 'Key 总览（全平台）',
   billing: '账单管理',
   settings: '系统设置',
 }
