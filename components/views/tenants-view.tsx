@@ -186,6 +186,7 @@ export function TenantsView({
   const [expandedMembersId, setExpandedMembersId] = useState<string | null>(null);
   const [tenantMembers, setTenantMembers] = useState<TenantMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
   async function toggleMembers(tenantId: string) {
     if (expandedMembersId === tenantId) { setExpandedMembersId(null); return; }
     setExpandedMembersId(tenantId);
@@ -552,7 +553,8 @@ export function TenantsView({
                                 <th className="text-left py-1 pr-4 font-medium">邮箱</th>
                                 <th className="text-left py-1 pr-4 font-medium">角色</th>
                                 <th className="text-left py-1 pr-4 font-medium">部门</th>
-                                <th className="text-left py-1 font-medium">状态</th>
+                                <th className="text-left py-1 pr-4 font-medium">状态</th>
+                                {canManage && <th className="text-left py-1 font-medium">操作</th>}
                               </tr>
                             </thead>
                             <tbody>
@@ -566,12 +568,40 @@ export function TenantsView({
                                     ))}
                                   </td>
                                   <td className="py-1.5 pr-4 text-muted-foreground">{m.department || '—'}</td>
-                                  <td className="py-1.5">
+                                  <td className="py-1.5 pr-4">
                                     <span className={`inline-flex items-center gap-1 ${m.status === 'active' ? 'text-green-600' : 'text-muted-foreground'}`}>
                                       <span className={`w-1.5 h-1.5 rounded-full ${m.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground'}`} />
                                       {m.status === 'active' ? '正常' : m.status}
                                     </span>
                                   </td>
+                                  {canManage && (
+                                    <td className="py-1.5">
+                                      <button
+                                        className="text-[11px] text-primary hover:underline disabled:opacity-40"
+                                        disabled={resettingUserId === m.id}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          if (!confirm(`确认重置「${m.name || m.email}」的密码？\n新密码将发送到 ${m.email}`)) return;
+                                          setResettingUserId(m.id);
+                                          try {
+                                            const r = await apiFetch<{ ok: boolean; message: string; tempPassword?: string }>(
+                                              `/api/tenants/${tenant.id}/members/${m.id}/reset-password`,
+                                              { method: 'POST' },
+                                            );
+                                            if (r.tempPassword) {
+                                              window.alert(`${r.message}\n\n临时密码：${r.tempPassword}\n\n请告知该用户。`);
+                                            } else {
+                                              window.alert(r.message);
+                                            }
+                                          } catch (err) {
+                                            window.alert(err instanceof Error ? err.message : '重置失败');
+                                          } finally { setResettingUserId(null); }
+                                        }}
+                                      >
+                                        {resettingUserId === m.id ? '重置中...' : '重置密码'}
+                                      </button>
+                                    </td>
+                                  )}
                                 </tr>
                               ))}
                             </tbody>
