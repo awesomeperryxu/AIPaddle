@@ -28,7 +28,7 @@ import { VersionHistoryPanel } from './panels/version-history-panel';
 import { nodeRegistry } from './nodes/node-registry';
 import { BlockEnum } from './types';
 import { cn } from '@/lib/utils';
-import { Plus, Code2, Activity, Tags } from 'lucide-react';
+import { Plus, Code2, Activity, Tags, Sparkles, Send, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   graphToReactFlow,
@@ -199,6 +199,90 @@ function WorkflowPageInner({
   const [showRunPanel, setShowRunPanel] = useState(false);
   const [logsRefreshKey, setLogsRefreshKey] = useState(0);
 
+  // useReactFlow 必须在 Copilot useEffect 之前（否则 fitView 在声明前被引用）
+  const { zoomIn, zoomOut, fitView, getZoom, screenToFlowPosition } = useReactFlow();
+
+  // Copilot 对话栏（PRD 2.11：左画布 + 右 Copilot）
+  // ?copilot=<描述> → 自动打开 Copilot 并触发生成（个人助理意图跳转）
+  const [copilotAutoDesc] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? new URL(window.location.href).searchParams.get('copilot') : null,
+  );
+  const copilotAutoFired = useRef(false);
+  const [copilotOpen, setCopilotOpen] = useState(!!copilotAutoDesc);
+  const [copilotInput, setCopilotInput] = useState('');
+  const [copilotMessages, setCopilotMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const copilotScrollRef = useRef<HTMLDivElement>(null);
+
+  // 自动触发：从 URL ?copilot=<描述> 带入。
+  // 不在 useEffect 里同步 setState（React 编译器会报级联渲染），
+  // 而是用 useState 初始值设 copilotOpen=true，然后在这个 effect 里异步触发生成。
+  useEffect(() => {
+    if (!copilotAutoDesc || copilotAutoFired.current) return;
+    copilotAutoFired.current = true;
+    const desc = copilotAutoDesc;
+    // 异步触发，不在同步路径里 setState
+    const timer = setTimeout(() => {
+      setCopilotMessages([{ role: 'user', content: desc }]);
+      setCopilotLoading(true);
+      fetch('/api/workflows/copilot', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: desc }),
+      }).then(r => r.json()).then(data => {
+        if (data.graph?.nodes?.length > 0) {
+          const rf = graphToReactFlow(data.graph);
+          setNodes(rf.nodes as unknown as Node[]);
+          setEdges(rf.edges as unknown as Edge[]);
+          setCopilotMessages(prev => [...prev, { role: 'assistant', content: `✅ 已生成工作流（${data.graph.nodes.length} 个节点）` }]);
+          // fitView 延迟调用——不在闭包里直接引用 hook 返回值
+          setTimeout(() => { try { fitView({ padding: 0.2 }); } catch {} }, 300);
+        } else {
+          setCopilotMessages(prev => [...prev, { role: 'assistant', content: '未能生成有效的工作流，请继续描述。' }]);
+        }
+      }).catch(() => {
+        setCopilotMessages(prev => [...prev, { role: 'assistant', content: '❌ 生成失败' }]);
+      }).finally(() => setCopilotLoading(false));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [copilotAutoDesc, fitView, setNodes, setEdges]);
+
+  async function handleCopilotSend() {
+    const text = copilotInput.trim();
+    if (!text || copilotLoading) return;
+    setCopilotInput('');
+    const userMsg = { role: 'user' as const, content: text };
+    setCopilotMessages(prev => [...prev, userMsg]);
+    setCopilotLoading(true);
+    try {
+      const res = await fetch('/api/workflows/copilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: text }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCopilotMessages(prev => [...prev, { role: 'assistant', content: `❌ ${data?.error?.message ?? '生成失败'}` }]);
+        return;
+      }
+      // 将生成的图应用到画布
+      if (data.graph?.nodes?.length > 0) {
+        const rf = graphToReactFlow(data.graph);
+        setNodes(rf.nodes as unknown as Node[]);
+        setEdges(rf.edges as unknown as Edge[]);
+        const summary = `✅ 已生成工作流（${data.graph.nodes.length} 个节点）${data.valid ? '' : `\n⚠️ ${data.validation?.length ?? 0} 处校验问题`}`;
+        setCopilotMessages(prev => [...prev, { role: 'assistant', content: summary }]);
+        setTimeout(() => fitView({ padding: 0.2 }), 300);
+      } else {
+        setCopilotMessages(prev => [...prev, { role: 'assistant', content: '未能生成有效的工作流节点，请尝试更具体的描述。' }]);
+      }
+    } catch {
+      setCopilotMessages(prev => [...prev, { role: 'assistant', content: '❌ 网络错误，请重试' }]);
+    } finally {
+      setCopilotLoading(false);
+      setTimeout(() => copilotScrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' }), 100);
+    }
+  }
+
   // 版本历史（4.4.10）：真实数据接线
   type WorkflowVersionDto = { id: string; version: number; note: string | null; createdBy: string | null; createdAt: string };
   const [showVersionHistory, setShowVersionHistory] = useState(false);
@@ -207,7 +291,6 @@ function WorkflowPageInner({
 
   const router = useRouter();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { zoomIn, zoomOut, fitView, getZoom, screenToFlowPosition } = useReactFlow();
   const [zoom, setZoom] = useState(1);
 
   // 轻量 toast
@@ -594,6 +677,67 @@ function WorkflowPageInner({
                 onModeChange={(mode) => setInteractionMode(mode === 'hand' ? 'pan' : 'select')}
               />
             </div>
+
+            {/* Copilot Toggle Button */}
+            <Button
+              onClick={() => setCopilotOpen(!copilotOpen)}
+              className="absolute top-4 right-4 z-10 shadow-md gap-1.5"
+              size="sm"
+              variant={copilotOpen ? 'default' : 'outline'}
+            >
+              <Sparkles className="h-4 w-4" />
+              AI 编排
+            </Button>
+
+            {/* Copilot 对话栏 */}
+            {copilotOpen && (
+              <div className="absolute top-0 right-0 bottom-0 w-80 z-20 bg-card border-l border-border flex flex-col shadow-xl">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">AI 编排助手</span>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setCopilotOpen(false)}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div ref={copilotScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {copilotMessages.length === 0 && (
+                    <div className="text-center text-xs text-muted-foreground py-8 space-y-2">
+                      <Sparkles className="h-8 w-8 mx-auto text-primary/30" />
+                      <p>用自然语言描述你想要的工作流</p>
+                      <p className="text-[11px]">例如：「收到客户邮件后，AI 分类并分配给对应部门」</p>
+                    </div>
+                  )}
+                  {copilotMessages.map((msg, i) => (
+                    <div key={i} className={`text-xs leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'text-foreground bg-muted/40 rounded-lg p-2.5' : 'text-muted-foreground'}`}>
+                      {msg.content}
+                    </div>
+                  ))}
+                  {copilotLoading && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      生成中...
+                    </div>
+                  )}
+                </div>
+                <div className="p-3 border-t border-border">
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 h-9 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground/60 outline-none focus:border-primary/50"
+                      placeholder="描述你想要的流程..."
+                      value={copilotInput}
+                      onChange={e => setCopilotInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCopilotSend(); } }}
+                      disabled={copilotLoading}
+                    />
+                    <Button size="sm" className="h-9 px-3" disabled={!copilotInput.trim() || copilotLoading} onClick={handleCopilotSend}>
+                      {copilotLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Block Selector Panel */}
             <BlockSelectorPanel
