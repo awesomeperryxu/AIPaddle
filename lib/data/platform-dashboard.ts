@@ -169,7 +169,9 @@ export async function getTenantUsage(): Promise<Record<string, TenantUsage>> {
   const since30 = new Date(Date.now() - 30 * DAY).toISOString()
 
   const [usersRes, agentsRes, logsRes, provRes] = await Promise.all([
-    admin.from('users').select('org_id').is('deleted_at', null),
+    // 🔴 BUG：之前没过滤 is_service_account，成员数包含了 Extension 机器用户，
+    // 而成员详情列表用了 is_service_account=false 过滤——两边口径不一致。
+    admin.from('users').select('org_id').eq('is_service_account', false).is('deleted_at', null),
     admin.from('agents').select('org_id').is('deleted_at', null),
     admin.from('call_logs').select('org_id,tokens_in,tokens_out,key_source,provider,model,created_at').is('deleted_at', null).gte('created_at', since30),
     // 4.8.17b：当前是否自带 Key，取「配置态」而非历史日志——刚配好还没调用过的租户也要正确显示 BYO
