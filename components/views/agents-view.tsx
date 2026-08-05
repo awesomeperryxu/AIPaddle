@@ -115,10 +115,17 @@ export function AgentsView({
   // 可选为 base 的 Agent（建团队时的候选）
   const baseAgentCandidates = allAgents.filter(a => !deIdSet.has(a.id));
 
-  const filteredDe = digitalEmployees.filter(a =>
-    a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    a.department.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // 分类标签（按 department）
+  const deDepartments = [...new Set(digitalEmployees.map(a => a.department).filter(Boolean))].sort();
+  const [deptFilter, setDeptFilter] = useState<string | null>(null);
+
+  const filteredDe = digitalEmployees.filter(a => {
+    const matchesSearch = a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (a.department ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (a.description ?? '').toLowerCase().includes(searchTerm.toLowerCase());
+    if (deptFilter) return matchesSearch && a.department === deptFilter;
+    return matchesSearch;
+  });
 
   // ── 团队加载 ──
   function loadTeams() {
@@ -332,6 +339,20 @@ export function AgentsView({
                 className="pl-9 bg-card border-border h-9"
               />
             </div>
+
+            {/* 分类标签栏 */}
+            {!selectedAgent && deDepartments.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 mb-3 flex-shrink-0">
+                <button onClick={() => setDeptFilter(null)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${!deptFilter ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:bg-muted'}`}
+                >全部 {digitalEmployees.length}</button>
+                {deDepartments.map(d => (
+                  <button key={d} onClick={() => setDeptFilter(d)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${deptFilter === d ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:bg-muted'}`}
+                  >{d} {digitalEmployees.filter(a => a.department === d).length}</button>
+                ))}
+              </div>
+            )}
 
             {/* 最近使用（未选中时） */}
             {!selectedAgent && digitalEmployees.length > 0 && (
