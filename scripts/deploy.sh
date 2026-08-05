@@ -158,7 +158,7 @@ for f in .next.new/BUILD_ID .next.new/server/app; do
   if [ ! -e "$f" ]; then echo "🔴 构建产物缺 $f"; die; fi
 done
 
-# standalone 模式需要把 public 和 static 链进去
+# standalone 模式需要把 public、static 和 .env.local 链进去
 if [ -d .next.new/standalone ]; then
   if [ -d public ] && [ ! -e .next.new/standalone/public ]; then
     cp -r public .next.new/standalone/public
@@ -167,6 +167,11 @@ if [ -d .next.new/standalone ]; then
     mkdir -p .next.new/standalone/.next
     cp -r .next.new/static .next.new/standalone/.next/static
   fi
+  # 🔴 standalone 的 server.js 从 cwd 读 .env.local。standalone 的 cwd 是
+  # .next/standalone/，而 .env.local 在项目根目录——读不到就没有任何环境变量，
+  # 所有依赖 DASHSCOPE_API_KEY / SUPABASE 等变量的功能全部 500。
+  # 用符号链接而非复制：.env.local 改了不用重新部署。
+  ln -sf "$APP_DIR/.env.local" .next.new/standalone/.env.local
 fi
 
 # 原子切换
