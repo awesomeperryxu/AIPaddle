@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { apiFetch } from '@/lib/api/client';
 import {
-  Send, Bot, Sparkles, SquarePen, Zap, FileText, Image as ImageIcon,
+  Send, Bot, Sparkles, SquarePen, Zap, FileText, Image as ImageIcon, Upload, Download,
   Loader2, Trash2, MessageSquare, X, Paperclip, AtSign, ChevronRight, Users,
 } from 'lucide-react';
 
@@ -81,6 +82,38 @@ export function AssistantView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
+
+  // 办公文件处理（合并自 office-tools 页面）
+  const [officeOpen, setOfficeOpen] = useState(false);
+  const [officeFile, setOfficeFile] = useState<File | null>(null);
+  const [officeTask, setOfficeTask] = useState<'summarize' | 'rewrite' | 'translate'>('summarize');
+  const [officeFormat, setOfficeFormat] = useState<'docx' | 'xlsx' | 'pdf'>('docx');
+  const [officeLoading, setOfficeLoading] = useState(false);
+  const [officeError, setOfficeError] = useState('');
+  const officeInputRef = useRef<HTMLInputElement>(null);
+  async function handleOfficeProcess() {
+    if (!officeFile || officeLoading) return;
+    setOfficeLoading(true); setOfficeError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', officeFile);
+      fd.append('task', officeTask);
+      fd.append('format', officeFormat);
+      const res = await fetch('/api/office/process', { method: 'POST', body: fd });
+      if (!res.ok) { setOfficeError((await res.json().catch(() => ({}))).error?.message ?? '处理失败'); return; }
+      const blob = await res.blob();
+      const baseName = officeFile.name.replace(/\.[^.]+$/, '');
+      const fallback = `${baseName}-${officeTask}.${officeFormat}`;
+      const cd = res.headers.get('Content-Disposition');
+      const star = cd ? /filename\*=UTF-8''([^;]+)/i.exec(cd)?.[1] : null;
+      const downloadName = star ? decodeURIComponent(star) : (/filename="?([^";]+)"?/i.exec(cd ?? '')?.[1] ?? fallback);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = downloadName;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      setOfficeOpen(false); setOfficeFile(null);
+    } catch { setOfficeError('处理失败：网络错误'); }
+    finally { setOfficeLoading(false); }
+  }
 
   const [resources, setResources] = useState<{ agents: Res[]; skills: Res[]; knowledgeBases: (Res & { documentCount?: number })[] }>({ agents: [], skills: [], knowledgeBases: [] });
   const [pickedAgent, setPickedAgent] = useState<Res | null>(null);
@@ -593,6 +626,9 @@ export function AssistantView() {
               <ToolBtn title="上传图片" disabled={attachments.length >= MAX_ATTACHMENTS} onClick={() => imgInputRef.current?.click()}>
                 <ImageIcon className="h-4 w-4" />
               </ToolBtn>
+              <ToolBtn title="文件处理（总结/改写/翻译）" onClick={() => setOfficeOpen(true)}>
+                <FileText className="h-4 w-4" />
+              </ToolBtn>
               <RefPicker kind="agent" items={resources.agents} onInsert={insertToken} />
               <RefPicker kind="skill" items={resources.skills} onInsert={insertToken} />
 
@@ -619,6 +655,56 @@ export function AssistantView() {
           </p>
         </div>
       </div>
+
+      {/* 办公文件处理对话框 */}
+      {officeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => !officeLoading && setOfficeOpen(false)}>
+          <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-foreground">文件处理</h3>
+            <p className="text-xs text-muted-foreground">上传文件，AI 总结 / 改写 / 翻译后下载</p>
+
+            <input ref={officeInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md" className="hidden"
+              onChange={e => { setOfficeFile(e.target.files?.[0] ?? null); setOfficeError(''); if(e.target) e.target.value=''; }} />
+            <button type="button" onClick={() => officeInputRef.current?.click()}
+              className="w-full flex items-center gap-3 p-3 rounded-lg border border-dashed border-border hover:border-primary/50 transition-colors text-left">
+              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                {officeFile ? <FileText className="h-4 w-4 text-primary" /> : <Upload className="h-4 w-4 text-primary" />}
+              </div>
+              <span className="text-sm text-foreground truncate">{officeFile ? officeFile.name : '点击选择文件'}</span>
+            </button>
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">处理方式</p>
+              <div className="flex gap-2">
+                {([['summarize','总结'],['rewrite','改写'],['translate','翻译']] as const).map(([v,l]) => (
+                  <button key={v} onClick={() => setOfficeTask(v)}
+                    className={`flex-1 py-2 rounded-lg border text-sm transition-colors ${officeTask===v ? 'border-primary bg-primary/5 text-foreground' : 'border-border text-muted-foreground hover:border-primary/40'}`}>{l}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">输出格式</p>
+              <div className="flex gap-2">
+                {([['docx','Word'],['xlsx','Excel'],['pdf','PDF']] as const).map(([v,l]) => (
+                  <button key={v} onClick={() => setOfficeFormat(v)}
+                    className={`px-4 py-1.5 rounded-lg border text-xs transition-colors ${officeFormat===v ? 'border-primary bg-primary/5 text-foreground' : 'border-border text-muted-foreground hover:border-primary/40'}`}>{l}</button>
+                ))}
+              </div>
+            </div>
+
+            {officeError && <p className="text-xs text-destructive">{officeError}</p>}
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="ghost" className="flex-1" onClick={() => { setOfficeOpen(false); setOfficeFile(null); }} disabled={officeLoading}>取消</Button>
+              <Button className="flex-1 gap-2" disabled={!officeFile || officeLoading} onClick={handleOfficeProcess}>
+                {officeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {officeLoading ? '处理中…' : '处理并下载'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
