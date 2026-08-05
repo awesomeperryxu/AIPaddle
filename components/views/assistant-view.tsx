@@ -61,7 +61,18 @@ const SUGGESTIONS = [
 
 export function AssistantView() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  // 页面切换再回来时恢复上次对话（sessionStorage），关浏览器/重新登录后归零（空白页）
+  const [activeId, _setActiveId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return sessionStorage.getItem('assistant_activeId') || null;
+  });
+  const setActiveId = useCallback((id: string | null) => {
+    _setActiveId(id);
+    if (typeof window !== 'undefined') {
+      if (id) sessionStorage.setItem('assistant_activeId', id);
+      else sessionStorage.removeItem('assistant_activeId');
+    }
+  }, []);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -176,11 +187,16 @@ export function AssistantView() {
     apiFetch<InitData>('/api/assistant/init').then((r) => {
       setConversations(r.conversations);
       setResources(r.resources);
-      if (r.firstConversationId) {
-        preloadedId.current = r.firstConversationId;
-        setActiveId(r.firstConversationId);
-        setMessages(r.firstMessages ?? []);
+      // 🔴 不自动打开最近对话——用户要求：
+      // 「重新登录或关闭页面重新打开后，先进入默认空白页面，
+      //   点击左侧历史记录才会打开之前的对话」
+      // 但如果 sessionStorage 里有 activeId（页面切换再回来），恢复那个对话
+      const cached = typeof window !== 'undefined' ? sessionStorage.getItem('assistant_activeId') : null;
+      if (cached && r.conversations.some((c) => c.id === cached)) {
+        preloadedId.current = null; // 让 useEffect[activeId] 正常加载消息
+        // activeId 已经由 useState 初始值设了，不需要再 setActiveId
       }
+      // 否则留空白——不调 setActiveId
     }).catch(() => {});
   }, []);
 
