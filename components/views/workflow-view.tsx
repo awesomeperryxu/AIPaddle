@@ -138,7 +138,12 @@ export function WorkflowView() {
       });
       if (!res.ok) { showToast('创建失败：无权限或未登录'); return; }
       const { workflow } = await res.json();
-      router.push(`/workflows/${workflow.id}`);
+      // 从个人助理意图跳转来的（?assistant=<描述>），带描述到编辑页自动触发 Copilot
+      const assistantDesc = searchParams.get('assistant');
+      const target = assistantDesc
+        ? `/workflows/${workflow.id}?copilot=${encodeURIComponent(assistantDesc)}`
+        : `/workflows/${workflow.id}`;
+      router.push(target);
     } catch { showToast('创建失败：网络错误'); }
   };
 
