@@ -184,6 +184,7 @@ export function TenantsView({
   async function toggleMembers(tenantId: string) {
     if (expandedMembersId === tenantId) { setExpandedMembersId(null); return; }
     setExpandedMembersId(tenantId);
+    setTenantMembers([]);  // 🔴 立即清空旧数据，否则切换时会先显示上一个租户的成员
     setMembersLoading(true);
     try {
       const r = await apiFetch<{ members: TenantMember[] }>(`/api/tenants/${tenantId}/members`);
