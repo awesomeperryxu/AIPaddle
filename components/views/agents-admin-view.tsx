@@ -188,12 +188,16 @@ export function AgentsAdminView({
     } finally { setTransitioningId(null); }
   }
 
+  const departments = [...new Set(agents.map(a => a.department).filter(Boolean))].sort()
+  const isDeptTab = departments.includes(activeTab)
   const filteredAgents = agents.filter(agent => {
     const matchesSearch =
       agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      agent.department.toLowerCase().includes(searchTerm.toLowerCase());
-    if (activeTab === 'all') return matchesSearch;
-    return matchesSearch && agent.status === activeTab;
+      (agent.department ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (agent.description ?? '').toLowerCase().includes(searchTerm.toLowerCase());
+    if (isDeptTab) return matchesSearch && agent.department === activeTab;
+    if (activeTab !== 'all') return matchesSearch && agent.status === activeTab;
+    return matchesSearch;
   });
 
   return (
@@ -304,123 +308,80 @@ export function AgentsAdminView({
         </Tabs>
       </div>
 
-      {/* ── Agent List ── */}
-      <div className="flex-1 overflow-y-auto space-y-2">
-        {filteredAgents.length === 0 && (
+      {/* ── 分类标签栏 ── */}
+      {departments.length > 1 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button onClick={() => setActiveTab('all')}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${activeTab === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:bg-muted'}`}
+          >全部 {agents.length}</button>
+          {departments.map(d => (
+            <button key={d} onClick={() => setActiveTab(d)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${activeTab === d ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:bg-muted'}`}
+            >{d} {agents.filter(a => a.department === d).length}</button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Agent 卡片网格 ── */}
+      <div className="flex-1 overflow-y-auto">
+        {filteredAgents.length === 0 ? (
           <p className="text-center text-sm text-muted-foreground py-16">暂无 Agent</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filteredAgents.map((agent) => {
+              const sc = statusConfig[agent.status] ?? statusConfig.draft;
+              const actions = availableActions(agent);
+              const [profession, desc] = (agent.description ?? '').includes('：')
+                ? [agent.description.split('：')[0], agent.description.split('：').slice(1).join('：')]
+                : ['', agent.description ?? ''];
+              return (
+                <div key={agent.id}
+                  className="group bg-card border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-md transition-all cursor-pointer flex flex-col"
+                  onClick={() => router.push(`/agents-admin/${agent.id}`)}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold text-white shrink-0 ${getAvatarBg(agent.name)}`}>
+                      {agent.name.charAt(0)}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${sc.pillClass}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${sc.dotClass}`} />{sc.label}
+                      </div>
+                      {(actions.length > 0 || canDelete || canEdit) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={e => e.stopPropagation()}><MoreHorizontal className="h-3.5 w-3.5" /></Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-40" onClick={e => e.stopPropagation()}>
+                            {canEdit && <DropdownMenuItem onClick={() => openEdit(agent)}><Settings className="h-4 w-4 mr-2" />编辑信息</DropdownMenuItem>}
+                            {actions.map(a => (
+                              <DropdownMenuItem key={a} disabled={transitioningId === agent.id}
+                                onSelect={e => { e.preventDefault(); handleTransition(agent, a); }}>
+                                {a === 'offline' ? <Pause className="h-4 w-4 mr-2" /> : a === 'reject' ? <XCircle className="h-4 w-4 mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+                                {transitioningId === agent.id ? '处理中...' : ACTION_LABEL[a]}
+                              </DropdownMenuItem>
+                            ))}
+                            {canDelete && <><DropdownMenuSeparator /><DropdownMenuItem className="text-destructive" disabled={deletingId === agent.id}
+                              onSelect={e => { e.preventDefault(); handleDelete(agent); }}>
+                              <Trash2 className="h-4 w-4 mr-2" />{deletingId === agent.id ? '删除中...' : '删除'}
+                            </DropdownMenuItem></>}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  </div>
+                  <h3 className="font-semibold text-foreground leading-snug mb-1 line-clamp-1">{agent.name}</h3>
+                  {profession && <span className="text-xs text-primary/80 font-medium mb-1.5">{profession}</span>}
+                  <p className="text-xs text-muted-foreground line-clamp-2 flex-1 mb-3">{desc || '暂无描述'}</p>
+                  <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                    {agent.department ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground">{agent.department}</span> : <span />}
+                    <span className="text-[10px] text-muted-foreground">{agent.calls > 0 ? `${agent.calls.toLocaleString()} 次调用` : ''}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
-        {filteredAgents.map((agent) => {
-          const sc = statusConfig[agent.status] ?? statusConfig.draft;
-          const actions = availableActions(agent);
-          return (
-            <div
-              key={agent.id}
-              className="bg-card border border-border rounded-xl px-5 py-4 flex items-center gap-4 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer"
-              onClick={() => router.push(`/agents-admin/${agent.id}`)}
-            >
-              {/* 彩色首字 Avatar */}
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-base font-semibold text-white shrink-0 ${getAvatarBg(agent.name)}`}>
-                {agent.name.charAt(0)}
-              </div>
-
-              {/* 名称 + 描述·模型 */}
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-foreground leading-tight">{agent.name}</p>
-                <p className="text-sm text-muted-foreground mt-0.5 truncate">
-                  {agent.description}
-                  {agent.model ? <span className="text-muted-foreground/60"> · {agent.model}</span> : null}
-                </p>
-              </div>
-
-              {/* 状态 pill */}
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${sc.pillClass}`}>
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sc.dotClass}`} />
-                {sc.label}
-              </div>
-
-              {/* 调用次数 */}
-              <span className="text-sm text-muted-foreground w-28 text-right shrink-0">
-                {agent.calls.toLocaleString()} 次调用
-              </span>
-
-              {/* 编辑按钮 */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={(e) => { e.stopPropagation(); router.push(`/agents-admin/${agent.id}`); }}
-              >
-                编辑
-              </Button>
-
-              {/* 三点菜单（状态流转 / 编辑信息 / 删除） */}
-              {(actions.length > 0 || canDelete || canEdit) && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-muted-foreground"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-40" onClick={(e) => e.stopPropagation()}>
-                    {canEdit && (
-                      <DropdownMenuItem onClick={() => openEdit(agent)}>
-                        <Settings className="h-4 w-4 mr-2" />
-                        编辑信息
-                      </DropdownMenuItem>
-                    )}
-                    {actions.map(action => (
-                      <DropdownMenuItem
-                        key={action}
-                        disabled={transitioningId === agent.id}
-                        onSelect={(e) => { e.preventDefault(); handleTransition(agent, action); }}
-                      >
-                        {action === 'offline' ? <Pause className="h-4 w-4 mr-2" /> :
-                         action === 'reject'  ? <XCircle className="h-4 w-4 mr-2" /> :
-                                                <Play className="h-4 w-4 mr-2" />}
-                        {transitioningId === agent.id ? '处理中...' : ACTION_LABEL[action]}
-                      </DropdownMenuItem>
-                    ))}
-                    {actions.includes('approve') && canEdit && (
-                      <DropdownMenuItem
-                        disabled={transitioningId === agent.id}
-                        onSelect={async (e) => {
-                          e.preventDefault();
-                          if (transitioningId) return;
-                          setTransitioningId(agent.id);
-                          try {
-                            await apiFetch(`/api/agents/${agent.id}/transition`, { method: 'POST', body: JSON.stringify({ action: 'approve' }) });
-                            router.push(`/agent-schedules/new?agentId=${agent.id}`);
-                          } catch (err) {
-                            window.alert(err instanceof Error ? err.message : '操作失败');
-                          } finally { setTransitioningId(null); }
-                        }}
-                      >
-                        <Clock className="h-4 w-4 mr-2" />
-                        发布并配置定时执行
-                      </DropdownMenuItem>
-                    )}
-                    {canDelete && (actions.length > 0 || canEdit) && <DropdownMenuSeparator />}
-                    {canDelete && (
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        disabled={deletingId === agent.id}
-                        onSelect={(e) => { e.preventDefault(); handleDelete(agent); }}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        {deletingId === agent.id ? '删除中...' : '删除'}
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          );
-        })}
       </div>
     </div>
   );
