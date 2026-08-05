@@ -13,7 +13,18 @@ export function toSessionCookieOptions(options: Record<string, unknown> = {}) {
   return rest
 }
 
+// _next/* 请求直接放行，不建 Supabase 客户端、不打远程调用。
+// getUser() 每次 ~220ms（广州→澳洲），一个页面加载触发多次 _next/data，全跳过 = 省 1~2 秒。
+const SKIP_AUTH_PREFIXES = ['/_next/']
+
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // 快速路径
+  if (SKIP_AUTH_PREFIXES.some((p) => pathname.startsWith(p))) {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -33,9 +44,12 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const { pathname } = request.nextUrl
+  // refresh token 失效时静默处理（user=null → 视为未登录），不刷屏报错
+  let user: Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user'] = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch { /* refresh token 失效 */ }
   const isAuthPage = pathname.startsWith('/login') || pathname.startsWith('/register')
   // 🔴 /no-access 必须放行：它正是「有会话但无组织」的落点，
   // 若被当成受保护页面，它自己也会被踢去 /login，循环照旧
