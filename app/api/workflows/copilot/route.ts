@@ -21,7 +21,13 @@ export async function POST(request: Request) {
   const existingGraph = body?.existingGraph && typeof body.existingGraph === 'object'
     ? body.existingGraph as { nodes: unknown[]; edges: unknown[] }
     : undefined
-  const result = await generateWorkflowGraph(description, existingGraph as never)
+  // WF-3：把本租户【已发布】的 Skill 作为可选能力清单交给 Copilot。
+  // 🔴 这一项曾在合并中丢失过——不传的话它只能生成 llm 节点假装联网检索，
+  // 看着完整、跑起来是编的。create 端点一直有传，此端点必须对齐。
+  const availableSkills = (await listSkills(ctx))
+    .filter((s) => s.status === 'published')
+    .map((s) => ({ id: s.id, name: s.name, description: s.description, type: s.type }))
+  const result = await generateWorkflowGraph(description, { existingGraph: existingGraph as never, availableSkills })
   return Response.json({
     graph: result.graph, validation: result.validation, valid: result.valid,
     clarifications: result.clarifications,
