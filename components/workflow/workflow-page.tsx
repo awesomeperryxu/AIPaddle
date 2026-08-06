@@ -37,7 +37,15 @@ import {
   type RFNodeLike,
   type RFEdgeLike,
 } from '@/lib/workflow/graph-adapter';
-import type { ClarificationItem } from '@/lib/workflow/copilot';
+import { VariableInspectPanel } from './canvas/variable-inspect-panel';
+import { KeyboardShortcutsModal } from './modals/keyboard-shortcuts-modal';
+import {
+  initHistory, pushHistory, isStructurallyEqual,
+  canUndo as canUndoHistory, canRedo as canRedoHistory,
+  undo as undoHistory, redo as redoHistory,
+  type History,
+} from '@/lib/workflow/history';
+import { layoutGraph } from '@/lib/workflow/layout';
 import { WorkflowSubNav, type WorkflowTab } from './pages/workflow-subnav';
 import { WorkflowLogsPage } from './pages/workflow-logs-page';
 import { WorkflowPlaceholderPage } from './pages/workflow-placeholder-page';
@@ -262,6 +270,8 @@ function WorkflowPageInner({
   const [copilotInput, setCopilotInput] = useState('');
   const [copilotMessages, setCopilotMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [copilotLoading, setCopilotLoading] = useState(false);
+  // ③ 澄清面板状态
+  type ClarificationItem = { field: string; question: string; options?: string[] }
   const [copilotClarifications, setCopilotClarifications] = useState<ClarificationItem[]>([]);
   const copilotScrollRef = useRef<HTMLDivElement>(null);
 
@@ -306,7 +316,7 @@ function WorkflowPageInner({
     setCopilotLoading(true);
     setCopilotClarifications([]);
     try {
-      // ⑤ 增量修改：将当前画布图传给 Copilot，在已有节点基础上修改
+      // ⑤ 增量修改：将当前画布图传给 Copilot
       const currentGraph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
       const res = await fetch('/api/workflows/copilot', {
         method: 'POST',
@@ -318,7 +328,6 @@ function WorkflowPageInner({
         setCopilotMessages(prev => [...prev, { role: 'assistant', content: `❌ ${data?.error?.message ?? '生成失败'}` }]);
         return;
       }
-      // 将生成的图应用到画布
       if (data.graph?.nodes?.length > 0) {
         const rf = graphToReactFlow(data.graph);
         setNodes(rf.nodes as unknown as Node[]);
@@ -329,7 +338,7 @@ function WorkflowPageInner({
       } else {
         setCopilotMessages(prev => [...prev, { role: 'assistant', content: '未能生成有效的工作流节点，请尝试更具体的描述。' }]);
       }
-      // ③ 澄清面板：有需要补充的信息时显示
+      // ③ 澄清面板
       if (Array.isArray(data.clarifications) && data.clarifications.length > 0) {
         setCopilotClarifications(data.clarifications);
       }
@@ -829,7 +838,7 @@ function WorkflowPageInner({
                     </div>
                   )}
                 </div>
-                {/* ③ 澄清面板：AI 需要用户补充信息时显示 */}
+                {/* ③ 澄清面板 */}
                 {copilotClarifications.length > 0 && (
                   <div className="px-3 py-2 border-t border-amber-500/30 bg-amber-500/5 space-y-2 max-h-48 overflow-y-auto">
                     <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400">需要补充以下信息：</p>
@@ -839,13 +848,10 @@ function WorkflowPageInner({
                         {c.options && c.options.length > 0 && (
                           <div className="flex flex-wrap gap-1">
                             {c.options.map((opt, j) => (
-                              <button
-                                key={j}
+                              <button key={j}
                                 className="text-[11px] px-2 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
                                 onClick={() => handleCopilotSend(`${c.field}：${opt}`)}
-                              >
-                                {opt}
-                              </button>
+                              >{opt}</button>
                             ))}
                           </div>
                         )}
