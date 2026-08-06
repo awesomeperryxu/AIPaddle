@@ -654,8 +654,10 @@ export function DashboardView({ data }: { data: DashboardData }) {
                   </ResponsiveContainer>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-2">
+                  {/* 🔴 key 不能用 name：已删 Agent 在数据层统一回落成「未知」（lib/data/dashboard.ts:267/286），
+                      多条同名会撞 key，React 复用/丢弃节点导致榜单串行。用 name+序号保证唯一。 */}
                   {agentDistribution.map((item, index) => (
-                    <div key={item.name} className="flex items-center gap-2">
+                    <div key={`${item.name}-${index}`} className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
                       <span className="text-xs text-muted-foreground truncate">{item.name}</span>
                       <span className="text-xs font-medium text-foreground ml-auto">{item.value}%</span>
@@ -686,7 +688,7 @@ export function DashboardView({ data }: { data: DashboardData }) {
             ) : (
               <div className="space-y-3">
                 {topAgents.slice(0, 4).map((agent, index) => (
-                  <div key={agent.name} className="flex items-center gap-3">
+                  <div key={`${agent.name}-${index}`} className="flex items-center gap-3">
                     <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-medium ${
                       index === 0 ? 'bg-yellow-500/10 text-yellow-600' :
                       index === 1 ? 'bg-gray-400/10 text-gray-500' :
@@ -728,7 +730,7 @@ export function DashboardView({ data }: { data: DashboardData }) {
             ) : (
               <div className="space-y-3">
                 {topSkills.slice(0, 4).map((skill, index) => (
-                  <div key={skill.name} className="flex items-center gap-3">
+                  <div key={`${skill.name}-${index}`} className="flex items-center gap-3">
                     <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-medium ${
                       index === 0 ? 'bg-yellow-500/10 text-yellow-600' :
                       index === 1 ? 'bg-gray-400/10 text-gray-500' :
