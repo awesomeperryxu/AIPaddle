@@ -35,6 +35,26 @@ jobs:
           # 保留 .env.local（密钥只存服务器，不进 GitHub）
           cp -f .env.local /tmp/aipaddle.env.bak 2>/dev/null || true
 
+          # ── OPS-1：记录切换前的源码版本，供失败时回退 ──────────────
+          # 🔴 源码切换（git reset）在构建之前，构建一旦失败就会留下
+          #    「新源码 + 旧 .next」的半更新态——2026-08-05 两次 OOM 失败正是如此，
+          #    仅因 pm2 未重启才没炸；进程一旦重启就复现「多路由 500 + 误导性
+          #    InvariantError」那场生产故障。故失败时必须把源码退回去。
+          PREV_SHA=$(git rev-parse HEAD)
+          echo ">> 当前线上源码版本 $PREV_SHA（失败将回退至此）"
+
+          # 🔴 必须用 EXIT trap 而非 ERR trap：脚本里多处显式 `exit 1`，
+          #    exit 不触发 ERR trap，回滚会静默失效（本仓 2026-08-03 踩过同一条）。
+          DEPLOY_OK=0
+          cleanup() {
+            if [ "$DEPLOY_OK" != "1" ]; then
+              echo ">> 部署未成功：源码回退到 $PREV_SHA，避免留下「新源码 + 旧构建」半更新态"
+              git reset --hard "$PREV_SHA" >/dev/null 2>&1 \
+                || echo "警告：源码回退失败，请人工检查 /opt/aipaddle 的 git 状态"
+            fi
+          }
+          trap cleanup EXIT
+
           # 用 Actions 临时 token 拉取私有仓库最新 main（一次性 URL，不写入 remote）
           git fetch "https://x-access-token:${GH_PAT}@github.com/awesomeperryxu/AIPaddle.git" main
           git reset --hard FETCH_HEAD
@@ -50,7 +70,23 @@ jobs:
           # 校验完整后再原子换成 .next；构建或校验失败则线上 .next 与运行进程纹丝不动。
           rm -rf .next.new
           echo ">> 构建到临时目录 .next.new（线上 .next 不受影响）"
-          NEXT_DIST_DIR=.next.new pnpm build
+          echo ">> 构建前内存：$(free -m | awk '/^Mem:/{print "可用 "$7"MB / 共 "$2"MB"}')，swap $(free -m | awk '/^Swap:/{print "已用 "$3"MB / 共 "$2"MB"}')"
+          # 🔴 OPS-1：构建失败时把退出码翻译成人话。
+          # 此前 OOM 的全部线索只有一行 `Killed` + exit 137，不写明是内存问题，
+          # 两次排查都往代码/依赖方向找。137 = 128+9(SIGKILL)，即内核 OOM killer。
+          if ! NEXT_DIST_DIR=.next.new pnpm build; then
+            RC=$?
+            if [ "$RC" -eq 137 ]; then
+              echo "FATAL: 构建进程被内核杀死（exit 137 = SIGKILL，几乎必然是 OOM）"
+              echo "       构建后内存：$(free -m | awk '/^Mem:/{print "可用 "$7"MB"}')"
+              echo "       本机同时跑着 Dify / deskmate 等服务，构建期内存峰值会撞车。"
+              echo "       这是偶发失败：同一份代码重跑常能成功；线上未受影响（.next 未动，源码将回退）。"
+            else
+              echo "FATAL: 构建失败（exit $RC）——非 OOM，请看上方构建日志"
+            fi
+            rm -rf .next.new
+            exit "$RC"
+          fi
 
           echo ">> 校验新构建完整性"
           MISSING=""
@@ -91,6 +127,8 @@ jobs:
             exit 1
           fi
 
+          # 🔴 只有走到这里才算成功——置标志，否则 EXIT trap 会把刚上线的源码退回去
+          DEPLOY_OK=1
           pm2 save
           echo "部署完成（健康检查连续 3×200）: $(git log --oneline -1)"
           REMOTE

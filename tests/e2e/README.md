@@ -31,6 +31,31 @@ pnpm test:e2e --grep @isolation    # 只跑租户隔离专项
 CI 接入：切片 0 启动后，在 `.github/workflows/ci.yml` 的 e2e job 中加一行
 `env: { E2E_STAGE: "0" }`，每完成一个切片把数字 +1 即可，无需改测试代码。
 
+## 并发上限：workers 锁在 2（BUG-96）
+
+`playwright.config.ts` 显式设了 `workers: 2`，**不要**为了提速调高。
+
+原因在 `webServer` 跑的是 `pnpm dev` —— Next.js 开发服务器是**按需即时编译**的。
+多个 worker 同时首访不同路由（`/login`、`/api/auth/login`、`/dashboard`…）会触发并发编译，
+CPU 打满后单个请求就撞 30s timeout。
+
+**挂哪一条完全随机**，这一点最容易误导排查方向：
+- 台账 BUG-96 记录的是 4 条 S0 用例超时（S0-AUTH-03 / S0-ISO-01·03·04·05 / S0-PRM-01）
+- 2026-08-06 复现时却是 `auth.setup` 的 `adminB` 登录超时，导致后续 12 个用例直接 `did not run`
+
+随机性正是资源争抢的特征——**不是用例本身不稳定**。排查时若只盯着失败的那条用例，会一直找不到原因。
+
+实测对照（本机 12 核）：
+
+| workers | 结果 | 耗时 |
+|---|---|---|
+| 6（默认 = 核数/2） | setup 即挂，12 用例未跑 | — |
+| **2（现配置）** | 17 passed | 1.4m |
+| 1 | 17 passed | 2.6m |
+
+⚠️ **想提高这个值，必须先把 `webServer` 换成生产构建**（`pnpm build && pnpm start`，无即时编译），
+否则只是把随机失败的概率调回去。
+
 ## 测试数据约定（与 seed 脚本的契约）
 
 - `fixtures/test-data.ts` 是唯一权威：seed 脚本 **`scripts/seed-e2e.mjs`（`pnpm seed:e2e`）** 幂等地按 `TENANTS` / `USERS` 建两租户五账号 + 角色 + 平台超管（adminA），密码取环境变量 `SEED_PASSWORD`；跑 stages/带登录用例前先执行。走 service_role REST（本地即可运行）。

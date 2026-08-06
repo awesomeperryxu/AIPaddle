@@ -1,6 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { generateWorkflowGraph } from '@/lib/workflow/copilot'
+import { listSkills } from '@/lib/data/skills'
 
 // POST /api/workflows/copilot —— Workflow Copilot（4.4.5，ADR-005）。
 // 描述 → 生成工作流图（draft）+ 校验结果。AI 只产 draft、不保存不发布；

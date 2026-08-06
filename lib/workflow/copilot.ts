@@ -1,6 +1,6 @@
 import 'server-only'
 import { chat } from '@/lib/ai'
-import { validateGraph, type WorkflowGraph, type GraphError } from '@/lib/workflow/validate'
+import { validateGraph, type WorkflowGraph, type GraphError, type GraphNode } from '@/lib/workflow/validate'
 
 // Workflow Copilot（PRD 2.11 / ADR-005）：自然语言 → 结构化工作流图。
 // ③ 澄清面板  ④ 扩展节点类型  ⑤ 增量修改
