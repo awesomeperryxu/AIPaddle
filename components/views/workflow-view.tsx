@@ -23,7 +23,8 @@ import {
   Download,
   MoreHorizontal,
   ChevronRight,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api/client';
 
@@ -62,7 +63,16 @@ export function WorkflowView() {
   // 个人助理意图跳转（切片2）：?assistant=<描述> → 初始即打开创建应用对话框
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(() => !!searchParams.get('assistant'));
+  // WF-1：从个人助理带描述来时，**不再弹创建对话框让用户选类型**——
+  // 用户已经把需求说清楚了，再让他点一次 Workflow/Chatflow 是多余的一步；
+  // 直接走 copilot/create 一次性建出填好流程的工作流。
+  const assistantDesc = searchParams.get('assistant');
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  // 生成中的整页反馈：此前建壳后才跳编辑器，8s 生成期间画布全空，
+  // 用户以为功能没生效（2026-08-06 实测生成耗时 7.7s）
+  const [autoGenerating, setAutoGenerating] = useState(!!assistantDesc);
+  const [autoGenError, setAutoGenError] = useState<string | null>(null);
+  const autoFired = useRef(false);
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -127,6 +137,31 @@ export function WorkflowView() {
     a.remove();
   };
 
+  // WF-1：助理带描述进来 → 一次调用建出「已填好流程」的工作流，然后直接进编辑器。
+  // 全部 setState 落在 promise 链里，不放 effect 同步路径（react-hooks/set-state-in-effect，
+  // 与 extensions-view / security-view 同款写法）。
+  useEffect(() => {
+    if (!assistantDesc || autoFired.current) return;
+    autoFired.current = true;
+    fetch('/api/workflows/copilot/create', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: assistantDesc }),
+    })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data?.error?.message ?? '生成失败');
+        return data as { workflow: { id: string }; valid: boolean; validation: unknown[] };
+      })
+      .then((data) => {
+        // 已落库且已校验，编辑器打开即是完整流程——不再带 ?copilot= 二次生成
+        router.push(`/workflows/${data.workflow.id}${data.valid ? '' : '?check=1'}`);
+      })
+      .catch((e) => {
+        setAutoGenError(e instanceof Error ? e.message : '生成失败');
+        setAutoGenerating(false);
+      });
+  }, [assistantDesc, router]);
+
   // 创建空白应用（Workflow / Chatflow）：真实创建后跳转到编排编辑器。
   const handleCreateBlank = async (type: 'workflow' | 'chatflow') => {
     setIsCreateDialogOpen(false);
@@ -178,6 +213,43 @@ export function WorkflowView() {
       router.push(`/workflows/${body.workflow.id}`);
     } catch { showToast('导入失败：文件不是有效的 DSL JSON'); }
   };
+
+  // WF-1：生成中的整页反馈。生成实测约 8s，没有这个界面用户会以为功能没生效。
+  if (autoGenerating) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="max-w-md text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <div>
+            <h2 className="text-lg font-medium text-foreground">正在为你生成工作流…</h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              需求：{assistantDesc}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            AI 正在规划节点与连线并做结构校验，通常需要 5–15 秒。完成后会自动打开编辑器。
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (autoGenError) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="max-w-md text-center space-y-4">
+          <h2 className="text-lg font-medium text-foreground">生成失败</h2>
+          <p className="text-sm text-destructive">{autoGenError}</p>
+          <p className="text-xs text-muted-foreground">
+            可以把需求描述得更具体些再试，或直接手动创建空白工作流。
+          </p>
+          <Button variant="outline" onClick={() => { setAutoGenError(null); }}>
+            返回工作流列表
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // Workspace List View (Dify-style)
   return (
