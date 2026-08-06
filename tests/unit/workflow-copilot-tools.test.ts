@@ -12,7 +12,7 @@ import { sanitizeToolNodes } from '@/lib/workflow/copilot'
 
 const allowed = new Set(['sk-real-1', 'sk-real-2'])
 const toolNode = (id: string, toolId: string, label = '联网检索') => ({
-  id, type: 'tool', label, data: { config: { tool_id: toolId } },
+  id, type: 'tool', label, config: { tool_id: toolId },
 })
 
 describe('编造的 tool_id 必须被降级', () => {
@@ -21,14 +21,14 @@ describe('编造的 tool_id 必须被降级', () => {
       { nodes: [toolNode('t1', 'sk-hallucinated')], edges: [] },
       allowed,
     )
-    const n = g.nodes[0] as { type: string; label: string }
+    const n = g.nodes[0]
     expect(n.type).toBe('llm')
     expect(n.label).toContain('需接入能力')
   })
 
   it('tool_id 为空 → 同样降级', () => {
     const g = sanitizeToolNodes({ nodes: [toolNode('t1', '')], edges: [] }, allowed)
-    expect((g.nodes[0] as { type: string }).type).toBe('llm')
+    expect(g.nodes[0].type).toBe('llm')
   })
 
   // 降级而非丢弃：节点 id 与连线必须保留，否则流程结构会塌
@@ -52,9 +52,9 @@ describe('编造的 tool_id 必须被降级', () => {
 describe('合法引用原样保留', () => {
   it('tool_id 在清单内 → 保持 tool 类型与 config', () => {
     const g = sanitizeToolNodes({ nodes: [toolNode('t1', 'sk-real-1')], edges: [] }, allowed)
-    const n = g.nodes[0] as { type: string; data?: { config?: { tool_id?: string } } }
+    const n = g.nodes[0]
     expect(n.type).toBe('tool')
-    expect(n.data?.config?.tool_id).toBe('sk-real-1')
+    expect(n.config?.tool_id).toBe('sk-real-1')
   })
 
   it('非 tool 节点一律不动', () => {
@@ -77,6 +77,6 @@ describe('无可用 Skill 时', () => {
       { nodes: [toolNode('t1', 'sk-real-1'), toolNode('t2', 'sk-real-2')], edges: [] },
       new Set<string>(),
     )
-    expect(g.nodes.every((n) => (n as { type: string }).type === 'llm')).toBe(true)
+    expect(g.nodes.every((n) => n.type === 'llm')).toBe(true)
   })
 })
