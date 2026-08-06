@@ -1,6 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { generateWorkflowGraph } from '@/lib/workflow/copilot'
+import { listSkills } from '@/lib/data/skills'
 import { createWorkflow, saveWorkflow } from '@/lib/data/workflow'
 import { validateGraph } from '@/lib/workflow/validate'
 import { validateToolNodes } from '@/lib/workflow/validate-tools'
@@ -28,7 +29,12 @@ export async function POST(request: Request) {
   const type = body?.type === 'chatflow' ? 'chatflow' : 'workflow'
 
   // ① 生成（copilot 内部已含「生成 → 校验 → 非法则让模型修一次」）
-  const gen = await generateWorkflowGraph(description)
+  // WF-3：把本租户【已发布】的 Skill 作为可选能力清单交给 Copilot。
+  // 不传的话它只能生成 llm 节点假装联网检索——看着完整、跑起来是编的。
+  const published = (await listSkills(ctx))
+    .filter((s) => s.status === 'published')
+    .map((s) => ({ id: s.id, name: s.name, description: s.description, type: s.type }))
+  const gen = await generateWorkflowGraph(description, published)
   if (gen.graph.nodes.length === 0) {
     return Response.json(
       { error: { code: 'generate_failed', message: '未能从描述生成流程，请把需求描述得更具体一些' } },

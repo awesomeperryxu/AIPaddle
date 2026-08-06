@@ -1,6 +1,7 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { generateWorkflowGraph } from '@/lib/workflow/copilot'
+import { listSkills } from '@/lib/data/skills'
 
 // POST /api/workflows/copilot —— Workflow Copilot（4.4.5，ADR-005）。
 // 描述 → 生成工作流图（draft）+ 校验结果。AI 只产 draft、不保存不发布；
@@ -16,7 +17,12 @@ export async function POST(request: Request) {
   if (!description) {
     return Response.json({ error: { code: 'invalid', message: '请描述你想要的工作流' } }, { status: 400 })
   }
-  const result = await generateWorkflowGraph(description)
+  // WF-3：把本租户【已发布】的 Skill 作为可选能力清单交给 Copilot。
+  // 不传的话它只能生成 llm 节点假装联网检索——看着完整、跑起来是编的。
+  const published = (await listSkills(ctx))
+    .filter((s) => s.status === 'published')
+    .map((s) => ({ id: s.id, name: s.name, description: s.description, type: s.type }))
+  const result = await generateWorkflowGraph(description, published)
   // 只返回生成的 draft 图 + 校验结果，不落库（用户采纳后自行保存）
   return Response.json({ graph: result.graph, validation: result.validation, valid: result.valid })
 }

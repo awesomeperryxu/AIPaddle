@@ -11,12 +11,15 @@ import type { RequestContext } from '@/lib/context'
 vi.mock('@/lib/context', () => ({ getRequestContext: vi.fn() }))
 vi.mock('@/lib/workflow/copilot', () => ({ generateWorkflowGraph: vi.fn() }))
 vi.mock('@/lib/data/workflow', () => ({ createWorkflow: vi.fn(), saveWorkflow: vi.fn() }))
+// WF-3 起端点会取「本租户已发布 Skill」作为 Copilot 的能力清单，不 mock 会真去连库
+vi.mock('@/lib/data/skills', () => ({ listSkills: vi.fn() }))
 vi.mock('@/lib/workflow/validate-tools', () => ({ validateToolNodes: vi.fn() }))
 vi.mock('@/lib/data/audit', () => ({ writeAudit: vi.fn() }))
 
 import { getRequestContext } from '@/lib/context'
 import { generateWorkflowGraph } from '@/lib/workflow/copilot'
 import { createWorkflow, saveWorkflow } from '@/lib/data/workflow'
+import { listSkills } from '@/lib/data/skills'
 import { validateToolNodes } from '@/lib/workflow/validate-tools'
 import { writeAudit } from '@/lib/data/audit'
 import { POST } from '@/app/api/workflows/copilot/create/route'
@@ -26,6 +29,7 @@ const mockGen = vi.mocked(generateWorkflowGraph)
 const mockCreate = vi.mocked(createWorkflow)
 const mockSave = vi.mocked(saveWorkflow)
 const mockToolCheck = vi.mocked(validateToolNodes)
+const mockSkills = vi.mocked(listSkills)
 const mockAudit = vi.mocked(writeAudit)
 
 const dev: RequestContext = { userId: 'u1', orgId: 'o1', roles: ['Developer'] }
@@ -47,6 +51,7 @@ beforeEach(() => {
   mockCreate.mockResolvedValue({ id: 'w1', name: 'x' } as never)
   mockSave.mockResolvedValue({ id: 'w1', name: 'x', graph } as never)
   mockToolCheck.mockResolvedValue([])
+  mockSkills.mockResolvedValue([])
 })
 
 const req = (b: unknown) =>
