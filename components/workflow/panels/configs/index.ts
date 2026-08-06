@@ -7,6 +7,7 @@ export { IfElseNodeConfigPanel } from "./if-else-config"
 export { HttpNodeConfigPanel } from "./http-config"
 export { IterationNodeConfigPanel } from "./iteration-config"
 export { KnowledgeRetrievalConfigPanel } from "./knowledge-retrieval-config"
+export { ScheduleNodeConfigPanel } from "./schedule-config"
 
 // AI Nodes
 export { AgentConfig } from "./agent-config"

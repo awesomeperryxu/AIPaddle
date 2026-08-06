@@ -353,7 +353,13 @@ export interface TriggerWebhookConfig extends BaseNodeConfig {
  * Trigger Schedule node configuration
  */
 export interface TriggerScheduleConfig extends BaseNodeConfig {
-  schedule_type: 'cron' | 'interval';
+  /** 预设频率（每小时/每天8点/自定义…），仅用于面板回显 */
+  schedule_preset?: string;
+  /** 五段式 cron 表达式，真正决定触发时机 */
+  cron?: string;
+  /** IANA 时区，默认 Asia/Shanghai */
+  timezone?: string;
+  schedule_type?: 'cron' | 'interval';
   cron_expression?: string;
   interval_seconds?: number;
 }

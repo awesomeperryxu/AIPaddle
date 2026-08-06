@@ -28,6 +28,7 @@ import { IfElseNodeConfigPanel } from './configs/if-else-config';
 import { HttpNodeConfigPanel } from './configs/http-config';
 import { IterationNodeConfigPanel } from './configs/iteration-config';
 import { KnowledgeRetrievalConfigPanel } from './configs/knowledge-retrieval-config';
+import { ScheduleNodeConfigPanel } from './configs/schedule-config';
 import { AgentConfig } from './configs/agent-config';
 import { QuestionClassifierConfig } from './configs/question-classifier-config';
 import { ParameterExtractorConfig } from './configs/parameter-extractor-config';
@@ -216,6 +217,8 @@ export function NodeConfigPanel({
         return <StartNodeConfigPanel {...coreProps} />;
       case BlockEnum.End:
         return <EndNodeConfigPanel {...coreProps} />;
+      case BlockEnum.TriggerSchedule:
+        return <ScheduleNodeConfigPanel {...coreProps} />;
       case BlockEnum.LLM:
         return <LLMNodeConfigPanel {...coreProps} />;
       case BlockEnum.Code:
