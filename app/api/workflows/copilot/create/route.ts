@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   const published = (await listSkills(ctx))
     .filter((s) => s.status === 'published')
     .map((s) => ({ id: s.id, name: s.name, description: s.description, type: s.type }))
-  const gen = await generateWorkflowGraph(description, { availableSkills: published })
+  const gen = await generateWorkflowGraph(description, published)
   if (gen.graph.nodes.length === 0) {
     return Response.json(
       { error: { code: 'generate_failed', message: '未能从描述生成流程，请把需求描述得更具体一些' } },

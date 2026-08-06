@@ -2,8 +2,9 @@ import 'server-only'
 import { chat } from '@/lib/ai'
 import { validateGraph, type WorkflowGraph, type GraphError, type GraphNode } from '@/lib/workflow/validate'
 
-// Workflow Copilot（PRD 2.11 / ADR-005）：自然语言 → 结构化工作流图。
-// ③ 澄清面板  ④ 扩展节点类型  ⑤ 增量修改
+// Workflow Copilot（4.4.5，ADR-005）：自然语言 → 结构化工作流图（draft）。
+// 四道防线：① 白名单节点类型 ② 强制 JSON 结构 ③ 图校验 ④ 仅产 draft、AI 不能发布/保存。
+// ③ 澄清面板  ④ 扩展节点类型（17种）  ⑤ 增量修改
 
 const NODE_TYPES = {
   'start': '开始入口',
@@ -27,17 +28,24 @@ const NODE_TYPES = {
 
 const NODE_LIST = Object.entries(NODE_TYPES).map(([k, v]) => `${k}: ${v}`).join('\n')
 
-function buildSystemPrompt(existingGraph?: WorkflowGraph): string {
-  const base = `你是工作流编排助手。根据用户需求生成或修改工作流图。只输出 JSON，不要任何解释或 markdown 代码块。
+/** 可供 Copilot 选用的 Skill（调用方从数据层取「本租户已发布」的传入） */
+export type AvailableSkill = { id: string; name: string; description?: string | null; type?: string | null }
+
+export type ClarificationItem = { field: string; question: string; options?: string[] }
+
+const BASE_RULES = `硬性要求：
+① 恰好一个 start 节点、至少一个 end 或 answer 节点
+② 每个节点都要连入流程（无孤立节点）
+③ 不能有环（有向无环图）
+④ 节点 id 格式：类型-序号（如 llm-1、if-else-2）`
+
+function buildSystemPrompt(existingGraph?: WorkflowGraph, skills?: AvailableSkill[]): string {
+  let prompt = `你是工作流编排助手。根据用户需求生成或修改工作流图。只输出 JSON，不要任何解释或 markdown 代码块。
 
 可用节点类型：
 ${NODE_LIST}
 
-硬性要求：
-① 恰好一个 start 节点、至少一个 end 或 answer 节点
-② 每个节点都要连入流程（无孤立节点）
-③ 不能有环（有向无环图）
-④ 节点 id 格式：类型-序号（如 llm-1、if-else-2）
+${BASE_RULES}
 
 输出格式（严格 JSON）：
 {
@@ -51,13 +59,27 @@ clarifications 规则：
 - 如果缺少必要信息（如用哪个知识库、分支条件、调用哪个 Tool），列出需要澄清的问题
 - 每个问题提供可选项（如果有的话）`
 
-  if (existingGraph && existingGraph.nodes.length > 0) {
-    return base + `\n\n当前工作流已有以下节点和连线，请在此基础上**增量修改**（保留未提到的节点，只改用户要求的部分）：\n${JSON.stringify(existingGraph)}`
+  // WF-3：可用 Skill 清单
+  if (skills && skills.length > 0) {
+    const list = skills
+      .map((s) => `- id=${s.id}｜${s.name}${s.type ? `（${s.type}）` : ''}${s.description ? `：${String(s.description).slice(0, 60)}` : ''}`)
+      .join('\n')
+    prompt += `\n\ntool 节点必须引用已有能力（**只能从中选择，禁止编造 id**）：
+${list}
+tool 节点格式：{"id":"唯一id","type":"tool","label":"简短中文名","config":{"tool_id":"上表中的 id"}}
+若清单里没有能满足需求的能力，就用 llm 节点并在 label 注明「需接入 XX 能力」。`
+  } else {
+    prompt += `\n\n⚠️ 当前工作区没有可用的已发布 Skill，**禁止**生成 tool 节点。
+若需求涉及联网检索、调用外部系统等本模型做不到的能力，仍照常编排 llm 节点，
+但在该节点 label 上注明「需接入 XX 能力」。`
   }
-  return base
-}
 
-export type ClarificationItem = { field: string; question: string; options?: string[] }
+  // ⑤ 增量修改
+  if (existingGraph && existingGraph.nodes.length > 0) {
+    prompt += `\n\n当前工作流已有以下节点和连线，请在此基础上**增量修改**（保留未提到的节点，只改用户要求的部分）：\n${JSON.stringify(existingGraph)}`
+  }
+  return prompt
+}
 
 export type CopilotResult = {
   graph: WorkflowGraph
@@ -81,10 +103,14 @@ function parseResult(text: string): { graph: WorkflowGraph; clarifications: Clar
     const nodes = Array.isArray(obj.nodes)
       ? obj.nodes.map((n) => {
           const nn = n as Record<string, unknown>
-          return {
-            id: String(nn.id ?? ''), type: String(nn.type ?? ''), label: String(nn.label ?? ''),
-            ...(nn.config && typeof nn.config === 'object' ? { config: nn.config } : {}),
+          const base = { id: String(nn.id ?? ''), type: String(nn.type ?? ''), label: String(nn.label ?? '') }
+          if (base.type === 'tool') {
+            const cfg = (nn.config ?? (nn.data as Record<string, unknown> | undefined)?.config ?? {}) as Record<string, unknown>
+            const toolId = typeof cfg.tool_id === 'string' ? cfg.tool_id
+              : typeof cfg.skill_id === 'string' ? cfg.skill_id : ''
+            return { ...base, data: { config: { tool_id: toolId } } }
           }
+          return { ...base, ...(nn.config && typeof nn.config === 'object' ? { config: nn.config } : {}) }
         })
       : []
     const edges = Array.isArray(obj.edges)
@@ -111,33 +137,56 @@ function parseResult(text: string): { graph: WorkflowGraph; clarifications: Clar
   }
 }
 
-export type CopilotOptions = {
-  existingGraph?: WorkflowGraph
-  /** 可选能力清单（已发布 Skill），让 Copilot 优先使用真实 Skill 而非臆造 */
-  availableSkills?: { id: string; name: string; description: string; type: string }[]
+/**
+ * WF-3 安全边界：把模型编造的 tool_id 降级为 llm 节点。
+ * 降级而非丢弃：节点位置和连线都保留，label 标注需人工挂载，流程结构不塌。
+ */
+export function sanitizeToolNodes(graph: WorkflowGraph, allowedIds: Set<string>): WorkflowGraph {
+  return {
+    ...graph,
+    nodes: (graph.nodes ?? []).map((n) => {
+      const node = n as GraphNode & { label?: string; data?: { config?: { tool_id?: string } } }
+      if (node.type !== 'tool') return n
+      const id = node.data?.config?.tool_id ?? ''
+      if (id && allowedIds.has(id)) return n
+      return {
+        id: node.id,
+        type: 'llm',
+        label: `${node.label ?? '外部能力'}（需接入能力，请手动挂载）`,
+      }
+    }),
+  }
 }
 
+export type CopilotOptions = {
+  existingGraph?: WorkflowGraph
+  availableSkills?: AvailableSkill[]
+}
+
+/** 根据描述生成工作流图（draft）。支持增量修改、Skill 清单、澄清面板。 */
 export async function generateWorkflowGraph(
   description: string,
-  existingGraphOrOpts?: WorkflowGraph | CopilotOptions,
+  existingGraphOrOpts?: WorkflowGraph | CopilotOptions | AvailableSkill[],
 ): Promise<CopilotResult> {
-  // 兼容两种调用方式：直接传 existingGraph 或传 options 对象
-  const opts: CopilotOptions =
-    existingGraphOrOpts && 'nodes' in existingGraphOrOpts
-      ? { existingGraph: existingGraphOrOpts }
-      : (existingGraphOrOpts as CopilotOptions) ?? {}
-  let prompt = buildSystemPrompt(opts.existingGraph)
-  if (opts.availableSkills?.length) {
-    prompt += `\n\n当前租户已发布的 Skill（优先使用，避免臆造）：\n${opts.availableSkills.map(s => `- ${s.name}（${s.type}）：${s.description}`).join('\n')}`
+  // 兼容三种调用方式
+  let opts: CopilotOptions
+  if (Array.isArray(existingGraphOrOpts)) {
+    opts = { availableSkills: existingGraphOrOpts }
+  } else if (existingGraphOrOpts && 'nodes' in existingGraphOrOpts) {
+    opts = { existingGraph: existingGraphOrOpts }
+  } else {
+    opts = (existingGraphOrOpts as CopilotOptions) ?? {}
   }
-  const systemPrompt = prompt
+
+  const allowedIds = new Set((opts.availableSkills ?? []).map((s) => s.id))
+  const systemPrompt = buildSystemPrompt(opts.existingGraph, opts.availableSkills)
   const messages = [
     { role: 'system' as const, content: systemPrompt },
     { role: 'user' as const, content: `需求：${description}` },
   ]
-  let raw = await chat(messages, { temperature: 0.3, maxTokens: 2000 })
+  let raw = await chat(messages, { temperature: 0.2, maxTokens: 2000 })
   const parsed = parseResult(raw)
-  let graph = parsed?.graph ?? { nodes: [], edges: [] }
+  let graph = sanitizeToolNodes(parsed?.graph ?? { nodes: [], edges: [] }, allowedIds)
   let clarifications = parsed?.clarifications ?? []
   let validation = validateGraph(graph)
 
@@ -152,9 +201,10 @@ export async function generateWorkflowGraph(
     )
     const fixParsed = parseResult(fix)
     if (fixParsed) {
-      const fixedErrs = validateGraph(fixParsed.graph)
+      const fixed = sanitizeToolNodes(fixParsed.graph, allowedIds)
+      const fixedErrs = validateGraph(fixed)
       if (fixedErrs.length < validation.length) {
-        raw = fix; graph = fixParsed.graph; clarifications = fixParsed.clarifications; validation = fixedErrs
+        raw = fix; graph = fixed; clarifications = fixParsed.clarifications; validation = fixedErrs
       }
     }
   }
