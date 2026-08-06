@@ -111,11 +111,26 @@ function parseResult(text: string): { graph: WorkflowGraph; clarifications: Clar
   }
 }
 
+export type CopilotOptions = {
+  existingGraph?: WorkflowGraph
+  /** 可选能力清单（已发布 Skill），让 Copilot 优先使用真实 Skill 而非臆造 */
+  availableSkills?: { id: string; name: string; description: string; type: string }[]
+}
+
 export async function generateWorkflowGraph(
   description: string,
-  existingGraph?: WorkflowGraph,
+  existingGraphOrOpts?: WorkflowGraph | CopilotOptions,
 ): Promise<CopilotResult> {
-  const systemPrompt = buildSystemPrompt(existingGraph)
+  // 兼容两种调用方式：直接传 existingGraph 或传 options 对象
+  const opts: CopilotOptions =
+    existingGraphOrOpts && 'nodes' in existingGraphOrOpts
+      ? { existingGraph: existingGraphOrOpts }
+      : (existingGraphOrOpts as CopilotOptions) ?? {}
+  let prompt = buildSystemPrompt(opts.existingGraph)
+  if (opts.availableSkills?.length) {
+    prompt += `\n\n当前租户已发布的 Skill（优先使用，避免臆造）：\n${opts.availableSkills.map(s => `- ${s.name}（${s.type}）：${s.description}`).join('\n')}`
+  }
+  const systemPrompt = prompt
   const messages = [
     { role: 'system' as const, content: systemPrompt },
     { role: 'user' as const, content: `需求：${description}` },
