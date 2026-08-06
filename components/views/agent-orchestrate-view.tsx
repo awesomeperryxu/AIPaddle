@@ -591,6 +591,28 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
             );
           })()}
 
+          {/* 缺失能力警告：config.missingCapability 标注了无法自动补足的外部依赖 */}
+          {agent.config.missingCapability && (
+            <section className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <Wrench className="h-4 w-4 text-red-500" />
+                <span className="text-sm font-medium text-red-600 dark:text-red-400">缺失外部能力（草稿状态）</span>
+              </div>
+              <p className="text-xs text-red-600/80 dark:text-red-400/80">
+                该 Agent 需要 <span className="font-medium text-foreground">{(agent.config.missingCapability as { description?: string }).description}</span>，
+                AIPaddle 平台暂无对应的 Tool。
+              </p>
+              <div className="rounded-lg bg-background border border-border px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">如何解决：</span>{(agent.config.missingCapability as { howToFix?: string }).howToFix}
+                </p>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                补足能力后，在下方「Plugin 工具」区域绑定对应 Tool，然后发布此 Agent 即可正常使用。
+              </p>
+            </section>
+          )}
+
           {/* 提示词 */}
           <section className="rounded-xl border border-border p-4">
             <div className="mb-2 flex items-center justify-between">

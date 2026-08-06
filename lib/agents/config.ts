@@ -57,6 +57,12 @@ export const AgentConfigSchema = z.object({
   moderationOutputEnabled: z.boolean().optional(), // 是否审查 AI 输出
   // 从模板创建时写入：模板声明的推荐技能列表，首次打开编排页时展示检测弹窗
   requiredSkills: z.array(RequiredSkillSchema).optional(),
+  // 缺失能力标注（无法自动补足的外部依赖，编排页显示红色警告）
+  missingCapability: z.object({
+    plugin: z.string(),
+    description: z.string(),
+    howToFix: z.string(),
+  }).optional(),
   // 来源系统（如 WorkBuddy）声明的 Plugin 依赖，供编排页依赖检测
   requiredPlugins: z.array(z.object({
     id: z.string(),
