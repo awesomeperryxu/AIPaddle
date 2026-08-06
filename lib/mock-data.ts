@@ -17,6 +17,8 @@ export interface Agent {
   origin: AgentOrigin;      // 平台/用户来源（4.1.17 / ADR-013）
   mandatory: boolean;       // 类一 平台内置强制
   category: AgentCategory;  // 四类派生
+  openingStatement?: string;       // 开场白
+  suggestedQuestions?: string[];   // 建议问题
 }
 
 export interface Skill {

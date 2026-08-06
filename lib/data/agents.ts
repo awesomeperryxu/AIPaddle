@@ -18,7 +18,7 @@ type Row = {
   metrics_calls: number | null
   metrics_success: number | null
   created_at: string | null
-  config: { model?: string } | null
+  config: { model?: string; openingStatement?: string; suggestedQuestions?: string[] } | null
   origin: AgentOrigin
   mandatory: boolean
 }
@@ -44,6 +44,8 @@ function mapRow(r: Row): Agent {
     origin,
     mandatory,
     category: deriveAgentCategory(origin, mandatory, r.status),
+    openingStatement: r.config?.openingStatement as string | undefined,
+    suggestedQuestions: r.config?.suggestedQuestions as string[] | undefined,
   }
 }
 
@@ -188,6 +190,10 @@ export type AgentChatConfig = {
   // Features（4.1.12）
   citationEnabled?: boolean
   moderationEnabled?: boolean
+  // 内容审查配置（v1.14）
+  moderationKeywords?: string[]
+  moderationLevel?: 'keywords' | 'ai' | 'both'
+  moderationOutputEnabled?: boolean
 }
 
 export async function getAgentForChat(_ctx: RequestContext, id: string): Promise<AgentChatConfig | null> {
@@ -206,6 +212,7 @@ export async function getAgentForChat(_ctx: RequestContext, id: string): Promise
     brainMode?: 'llm' | 'workflow' | 'routing'; brainWorkflowId?: string | null
     routingRules?: { keyword: string; skillId: string }[]
     citationEnabled?: boolean; moderationEnabled?: boolean
+    moderationKeywords?: string[]; moderationLevel?: 'keywords' | 'ai' | 'both'; moderationOutputEnabled?: boolean
   }
   return {
     id: data.id as string,
@@ -220,6 +227,9 @@ export async function getAgentForChat(_ctx: RequestContext, id: string): Promise
     routingRules: cfg.routingRules,
     citationEnabled: cfg.citationEnabled,
     moderationEnabled: cfg.moderationEnabled,
+    moderationKeywords: cfg.moderationKeywords,
+    moderationLevel: cfg.moderationLevel,
+    moderationOutputEnabled: cfg.moderationOutputEnabled,
   }
 }
 

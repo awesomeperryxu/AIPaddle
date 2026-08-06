@@ -4,7 +4,7 @@
 // 右侧调试预览（接真实 /chat）。嵌入 dashboard 外壳（非全屏），防抖自动保存 config。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare, X, Zap, Users } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Sparkles, Loader2, Send, Settings2, BookOpen, Wrench, MessageSquare, X, Zap, Users, Paperclip, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +43,51 @@ const STATUS_LABEL: Record<AgentDetail['status'], { text: string; cls: string }>
 
 type ChatMsg = { role: 'user' | 'assistant'; content: string };
 
+type DebugAttachment =
+  | { kind: 'image'; filename: string; dataUrl: string }
+  | { kind: 'doc'; filename: string; text: string };
+
+const IMG_MAX_EDGE = 1600;
+const IMG_QUALITY = 0.82;
+const MAX_DEBUG_ATTACHMENTS = 5;
+const ACCEPTED_IMAGE = '.jpg,.jpeg,.png,.gif,.webp';
+const ACCEPTED_DOC = '.pdf,.txt,.md,.docx';
+const ACCEPTED_ALL = `${ACCEPTED_IMAGE},${ACCEPTED_DOC}`;
+
+async function compressImage(file: File): Promise<string> {
+  const rawDataUrl = () =>
+    new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error('读取失败'));
+      r.readAsDataURL(file);
+    });
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, IMG_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { bitmap.close?.(); return await rawDataUrl(); }
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    return canvas.toDataURL('image/jpeg', IMG_QUALITY);
+  } catch {
+    return rawDataUrl();
+  }
+}
+
+async function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error('读取失败'));
+    r.readAsText(file);
+  });
+}
+
 export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: AgentDetail; canEdit: boolean; fromTemplate?: boolean }) {
   const router = useRouter();
 
@@ -60,6 +105,10 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>(agent.config.suggestedQuestions ?? []);
   const [citationEnabled, setCitationEnabled] = useState(agent.config.citationEnabled ?? true);
   const [moderationEnabled, setModerationEnabled] = useState(agent.config.moderationEnabled ?? false);
+  const [moderationKeywords, setModerationKeywords] = useState<string[]>(agent.config.moderationKeywords ?? []);
+  const [moderationLevel, setModerationLevel] = useState<'keywords' | 'ai' | 'both'>(agent.config.moderationLevel ?? 'keywords');
+  const [moderationOutputEnabled, setModerationOutputEnabled] = useState(agent.config.moderationOutputEnabled ?? false);
+  const [newKeyword, setNewKeyword] = useState('');
 
   // 大脑设置（4.1.9）
   const [brainMode, setBrainMode] = useState<BrainMode>(agent.config.brainMode ?? 'llm');
@@ -122,6 +171,10 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   const requiredSkills: RequiredSkill[] = agent.config.requiredSkills ?? [];
   const [depDialogOpen, setDepDialogOpen] = useState(fromTemplate && requiredSkills.length > 0);
 
+  // 依赖检测：config.requiredPlugins 声明的 Plugin 依赖 vs 平台已有 Tool
+  const requiredPlugins = agent.config.requiredPlugins ?? [];
+  const [depDismissed, setDepDismissed] = useState(false);
+
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   // 服务端返回的校验文案（如「名称不能为空」），显示在顶栏名称下方
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -175,7 +228,10 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
     suggestedQuestions: suggestedQuestions.filter((q) => q.trim()),
     citationEnabled,
     moderationEnabled,
-  }), [systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, openingStatement, suggestedQuestions, citationEnabled, moderationEnabled]);
+    moderationKeywords: moderationKeywords.filter((k) => k.trim()),
+    moderationLevel,
+    moderationOutputEnabled,
+  }), [systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, openingStatement, suggestedQuestions, citationEnabled, moderationEnabled, moderationKeywords, moderationLevel, moderationOutputEnabled]);
 
   // 立即保存（返回是否成功）；防环 422 弹出提示
   const saveNow = useCallback(async () => {
@@ -209,7 +265,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
     if (firstRun.current) { firstRun.current = false; return; }
     const t = setTimeout(() => { setSaveStatus('saving'); void saveNow(); }, 800);
     return () => clearTimeout(t);
-  }, [title, systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, openingStatement, suggestedQuestions, citationEnabled, moderationEnabled, canEdit, saveNow]);
+  }, [title, systemPrompt, model, temperature, variables, agentMode, maxIterations, brainMode, brainWorkflowId, routingRules, openingStatement, suggestedQuestions, citationEnabled, moderationEnabled, moderationKeywords, moderationLevel, moderationOutputEnabled, canEdit, saveNow]);
 
   // AI 生成提示词
   const [genInstruction, setGenInstruction] = useState('');
@@ -303,11 +359,54 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
   // 4.1.15：试聊前填入的变量值，随对话上送，服务端替换提示词里的 {{变量名}}
   const [varValues, setVarValues] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
+  const [debugAttachments, setDebugAttachments] = useState<DebugAttachment[]>([]);
+  const debugFileRef = useRef<HTMLInputElement>(null);
+
+  const handleDebugFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const room = MAX_DEBUG_ATTACHMENTS - debugAttachments.length;
+    const picked = Array.from(files).slice(0, room);
+    if (picked.length === 0) return;
+    const next: DebugAttachment[] = [];
+    for (const f of picked) {
+      const isImage = /\.(jpe?g|png|gif|webp)$/i.test(f.name);
+      if (isImage) {
+        const dataUrl = await compressImage(f).catch(() => '');
+        if (dataUrl) next.push({ kind: 'image', filename: f.name, dataUrl });
+      } else {
+        const text = await readFileAsText(f).catch(() => '');
+        if (text) next.push({ kind: 'doc', filename: f.name, text });
+      }
+    }
+    setDebugAttachments((a) => [...a, ...next].slice(0, MAX_DEBUG_ATTACHMENTS));
+    if (debugFileRef.current) debugFileRef.current.value = '';
+  };
+
+  const removeDebugAttachment = (i: number) => setDebugAttachments((a) => a.filter((_, idx) => idx !== i));
+
   const send = async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    const atts = debugAttachments;
+    if ((!text && atts.length === 0) || sending) return;
+
+    // 拼装最终消息：附件内容拼入文本
+    let finalContent = text;
+    const imageParts: string[] = [];
+    for (const att of atts) {
+      if (att.kind === 'doc') {
+        finalContent = `[附件: ${att.filename}]\n${att.text}\n\n${finalContent}`;
+      } else {
+        imageParts.push(`[图片: ${att.filename}]\n${att.dataUrl}`);
+      }
+    }
+    if (imageParts.length > 0) {
+      finalContent = `${finalContent}\n\n${imageParts.join('\n\n')}`;
+    }
+    if (!finalContent.trim()) return;
+
     setInput('');
-    const next = [...messages, { role: 'user' as const, content: text }];
+    setDebugAttachments([]);
+    const next = [...messages, { role: 'user' as const, content: finalContent }];
     setMessages(next);
     setSending(true);
     try {
@@ -424,6 +523,74 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
       <div className="flex-1 flex overflow-hidden">
         {/* 左：编排 */}
         <div className="flex-1 overflow-auto p-6 space-y-5 max-w-3xl">
+          {/* 依赖检测：requiredPlugins 中声明但平台未找到对应 Tool 的依赖 */}
+          {!depDismissed && requiredPlugins.length > 0 && (() => {
+            // 把已有 Tool name 集合做匹配（模糊匹配 plugin id）
+            const toolNames = new Set(availableTools.map((t) => t.name.toLowerCase()));
+            const toolDisplays = new Set(availableTools.map((t) => (t.displayName || '').toLowerCase()).filter(Boolean));
+            const mcpNames = new Set(availableMcpServers.map((m) => m.name.toLowerCase()));
+            const missing = requiredPlugins.filter((p) => {
+              const pid = p.id.toLowerCase();
+              return !toolNames.has(pid) && !toolDisplays.has(pid) && !mcpNames.has(pid)
+                && ![...toolNames].some((n) => n.includes(pid) || pid.includes(n));
+            });
+            const found = requiredPlugins.filter((p) => !missing.includes(p));
+            if (missing.length === 0 && found.length === 0) return null;
+            return (
+              <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-amber-600" />
+                    <span className="text-sm font-medium text-amber-700 dark:text-amber-400">Plugin 依赖检测</span>
+                    <Badge className="bg-amber-500/10 text-amber-600 text-[10px] px-1.5 py-0 h-4">
+                      {missing.length > 0 ? `${missing.length} 项缺失` : '全部就绪'}
+                    </Badge>
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-muted-foreground" onClick={() => setDepDismissed(true)}>
+                    <X className="h-3 w-3 mr-1" />关闭
+                  </Button>
+                </div>
+                {missing.length > 0 && (
+                  <>
+                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                      该 Agent 来自外部系统导入，以下依赖的 Plugin 在 AIPaddle 中尚未创建。
+                      建议到「Plugin」菜单下创建对应的 Tool，或绑定已有的替代工具。
+                    </p>
+                    <div className="space-y-1.5">
+                      {missing.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between rounded-lg border border-amber-500/20 bg-background px-3 py-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+                            <span className="text-xs font-medium text-foreground truncate">{p.name}</span>
+                            {p.source && <span className="text-[10px] text-muted-foreground">来源: {p.source}</span>}
+                          </div>
+                          <Button
+                            variant="outline" size="sm"
+                            className="h-6 px-2 text-[11px] shrink-0 ml-2"
+                            onClick={() => router.push(`/plugins/mcp`)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />去创建
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {found.length > 0 && (
+                  <div className="space-y-1">
+                    {found.map((p) => (
+                      <div key={p.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-600">
+                        <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                        <span className="font-medium">{p.name}</span>
+                        <span className="text-muted-foreground">✓ 已就绪</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })()}
+
           {/* 提示词 */}
           <section className="rounded-xl border border-border p-4">
             <div className="mb-2 flex items-center justify-between">
@@ -583,10 +750,89 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-sm">内容审查</Label>
-                <p className="text-xs text-muted-foreground">对输入做基础敏感内容拦截（命中即拒答）</p>
+                <p className="text-xs text-muted-foreground">对用户输入和 AI 输出做内容安全审查</p>
               </div>
               <Switch checked={moderationEnabled} onCheckedChange={setModerationEnabled} disabled={!canEdit} />
             </div>
+
+            {/* 内容审查详细配置（v1.14）：展开仅在开启审查后 */}
+            {moderationEnabled && (
+              <div className="space-y-3 pt-2 border-t border-border/50">
+                {/* 审查级别 */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">审查方式</Label>
+                  <Select value={moderationLevel} onValueChange={(v) => setModerationLevel(v as 'keywords' | 'ai' | 'both')} disabled={!canEdit}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="keywords">仅关键词匹配（快速、零成本）</SelectItem>
+                      <SelectItem value="ai">仅 AI 语义审查（更准确，消耗少量 Token）</SelectItem>
+                      <SelectItem value="both">双重审查（关键词 + AI，最严格）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 输出审查开关 */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-xs">审查 AI 输出</Label>
+                    <p className="text-[11px] text-muted-foreground">同时检查 AI 的回复内容是否合规</p>
+                  </div>
+                  <Switch checked={moderationOutputEnabled} onCheckedChange={setModerationOutputEnabled} disabled={!canEdit} />
+                </div>
+
+                {/* 自定义敏感词 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-muted-foreground">自定义敏感词（在平台默认词表基础上追加）</Label>
+                    <span className="text-[10px] text-muted-foreground">{moderationKeywords.length}/100</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <Input
+                      value={newKeyword}
+                      onChange={(e) => setNewKeyword(e.target.value)}
+                      placeholder="输入敏感词…"
+                      className="h-7 text-xs flex-1"
+                      disabled={!canEdit || moderationKeywords.length >= 100}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const kw = newKeyword.trim();
+                          if (kw && !moderationKeywords.includes(kw)) {
+                            setModerationKeywords((v) => [...v, kw]);
+                            setNewKeyword('');
+                          }
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="outline" size="sm" className="h-7 px-2 text-xs"
+                      disabled={!canEdit || !newKeyword.trim() || moderationKeywords.includes(newKeyword.trim())}
+                      onClick={() => {
+                        const kw = newKeyword.trim();
+                        if (kw) { setModerationKeywords((v) => [...v, kw]); setNewKeyword(''); }
+                      }}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  {moderationKeywords.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {moderationKeywords.map((kw, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 rounded-full bg-destructive/10 text-destructive px-2 py-0.5 text-[11px]">
+                          {kw}
+                          <button
+                            className="hover:text-destructive/70" disabled={!canEdit}
+                            onClick={() => setModerationKeywords((v) => v.filter((_, idx) => idx !== i))}
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </section>
 
           {/* 大脑设置（4.1.9）：纯LLM / 绑定工作流 / 事项路由到 Skill */}
@@ -689,29 +935,31 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
             )}
           </section>
 
-          {/* GAP-1：Plugin 提供的 Tool。在此之前 Agent 只能绑 mcp_servers，
-              而那张表在 ADR-021 之后是 0 行——161 个已发布 Tool 一个都够不着。 */}
+          {/* Plugin 工具（统一入口）：MCP/API/DB 等 Provider 提供的 Tool 统一在此绑定。
+              PRD v1.12：MCP 是 Plugin 的一种 Provider 类型，不单独作为并列概念。 */}
           <section className="rounded-xl border border-border p-4 space-y-3">
             <div className="flex items-center gap-2">
               <Wrench className="h-4 w-4 text-indigo-500" />
               <Label className="text-sm font-medium">Plugin 工具</Label>
-              <Badge className="bg-indigo-500/10 text-indigo-600 text-[10px] px-1.5 py-0 h-4">推荐</Badge>
+              <Badge className="bg-indigo-500/10 text-indigo-600 text-[10px] px-1.5 py-0 h-4">Tool</Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              绑定 Plugin 提供的 Tool，Agent 对话时经 Function Calling 调用。
+              绑定 Plugin 提供的 Tool（含 MCP / API / DB 等来源），Agent 对话时经 Function Calling 调用。
               仅 <span className="text-foreground font-medium">已发布</span> 的 Tool 可绑定；
               Tool 一旦下线，调用会被即时拒绝。
             </p>
-            {availableTools.length === 0 ? (
+            {availableTools.length === 0 && availableMcpServers.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 暂无已发布的 Tool。请到「Plugin」菜单下创建并发布，或联系管理员。
               </p>
             ) : (
-              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {/* 已发布 Tool（MCP/API/DB 等） */}
                 {availableTools.map((t) => {
                   const bound = boundToolIds.includes(t.id);
                   const riskColor = t.riskLevel === 'high'
                     ? 'text-red-500' : t.riskLevel === 'medium' ? 'text-amber-500' : 'text-emerald-500';
+                  const typeLabel = t.bindingType === 'mcp' ? 'MCP' : t.bindingType === 'api' ? 'API' : t.bindingType === 'db' ? 'DB' : t.bindingType ?? '';
                   return (
                     <button
                       key={t.id} type="button" disabled={!canEdit}
@@ -725,8 +973,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                           <span className={`text-xs font-medium truncate ${bound ? 'text-indigo-600' : 'text-foreground'}`}>
                             {t.displayName || t.name}
                           </span>
-                          <span className="text-[10px] text-muted-foreground">{t.bindingType}</span>
-                          {/* 高风险要在选之前就看见，不能等调用时才知道 */}
+                          {typeLabel && <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5">{typeLabel}</Badge>}
                           {t.riskLevel === 'high' && <span className={`text-[10px] ${riskColor}`}>高风险</span>}
                         </div>
                         <p className="text-[11px] text-muted-foreground truncate mt-0.5 font-mono">{t.name}</p>
@@ -734,46 +981,40 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                     </button>
                   );
                 })}
-              </div>
-            )}
-          </section>
-
-          {/* MCP 直连工具（Path B）：绑定平台管理员已审批的 MCP Server，Agent 可直接调用其工具 */}
-          <section className="rounded-xl border border-border p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-violet-500" />
-              <Label className="text-sm font-medium">MCP 直连工具</Label>
-              <Badge className="bg-violet-500/10 text-violet-600 text-[10px] px-1.5 py-0 h-4">Path B</Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              绑定平台管理员已审批的 MCP Server，Agent 对话时可直接通过 Function Calling 调用其工具。
-              仅 <span className="text-foreground font-medium">已审批（approved）</span> 的 MCP Server 可绑定。
-            </p>
-            {availableMcpServers.length === 0 ? (
-              <p className="text-xs text-muted-foreground">暂无可用的 MCP Server，请联系平台管理员审批注册。</p>
-            ) : (
-              <div className="space-y-1.5">
-                {availableMcpServers.map((m) => {
-                  const bound = boundMcpIds.includes(m.id);
-                  const secColor = m.security_level === 'high'
-                    ? 'text-red-500'
-                    : m.security_level === 'medium' ? 'text-amber-500' : 'text-emerald-500';
-                  return (
-                    <button
-                      key={m.id} type="button" disabled={!canEdit} onClick={() => toggleMcp(m.id)}
-                      className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${bound ? 'border-violet-500/50 bg-violet-500/5' : 'border-border hover:border-border/80'}`}
-                    >
-                      <div className={`h-2 w-2 shrink-0 rounded-full ${bound ? 'bg-violet-500' : 'bg-muted-foreground/30'}`} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs font-medium ${bound ? 'text-violet-600' : 'text-foreground'}`}>{m.name}</span>
-                          <span className={`text-[10px] ${secColor}`}>{m.security_level}</span>
-                        </div>
-                        {m.description && <p className="text-[11px] text-muted-foreground truncate mt-0.5">{m.description}</p>}
+                {/* MCP Server 直连（兼容旧绑定 + 未迁移到 Tool 的 MCP Server） */}
+                {availableMcpServers.length > 0 && (
+                  <>
+                    {availableTools.length > 0 && (
+                      <div className="flex items-center gap-2 pt-2 pb-1">
+                        <div className="h-px flex-1 bg-border" />
+                        <span className="text-[10px] text-muted-foreground shrink-0">MCP Server 直连</span>
+                        <div className="h-px flex-1 bg-border" />
                       </div>
-                    </button>
-                  );
-                })}
+                    )}
+                    {availableMcpServers.map((m) => {
+                      const bound = boundMcpIds.includes(m.id);
+                      const secColor = m.security_level === 'high'
+                        ? 'text-red-500'
+                        : m.security_level === 'medium' ? 'text-amber-500' : 'text-emerald-500';
+                      return (
+                        <button
+                          key={m.id} type="button" disabled={!canEdit} onClick={() => toggleMcp(m.id)}
+                          className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${bound ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-border hover:border-border/80'}`}
+                        >
+                          <div className={`h-2 w-2 shrink-0 rounded-full ${bound ? 'bg-indigo-500' : 'bg-muted-foreground/30'}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-medium ${bound ? 'text-indigo-600' : 'text-foreground'}`}>{m.name}</span>
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5">MCP</Badge>
+                              <span className={`text-[10px] ${secColor}`}>{m.security_level}</span>
+                            </div>
+                            {m.description && <p className="text-[11px] text-muted-foreground truncate mt-0.5">{m.description}</p>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
               </div>
             )}
           </section>
@@ -846,8 +1087,44 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
             ))}
             {sending && <div className="flex justify-start"><div className="rounded-lg bg-muted px-3 py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div></div>}
           </div>
-          <div className="border-t border-border p-3">
+          <div className="border-t border-border p-3 space-y-2">
+            {debugAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {debugAttachments.map((att, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[11px] text-muted-foreground max-w-[160px]">
+                    {att.kind === 'image' ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={att.dataUrl} alt={att.filename} className="h-4 w-4 rounded object-cover shrink-0" />
+                    ) : (
+                      <FileText className="h-3 w-3 shrink-0" />
+                    )}
+                    <span className="truncate">{att.filename}</span>
+                    <button type="button" onClick={() => removeDebugAttachment(i)} className="shrink-0 hover:text-foreground">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2">
+              <input
+                ref={debugFileRef}
+                type="file"
+                accept={ACCEPTED_ALL}
+                multiple
+                className="hidden"
+                onChange={(e) => handleDebugFiles(e.target.files)}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                disabled={debugAttachments.length >= MAX_DEBUG_ATTACHMENTS}
+                onClick={() => debugFileRef.current?.click()}
+                title="上传文件/图片"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
               <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -855,7 +1132,7 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
                 placeholder="和 Agent 聊天…"
                 className="min-h-[40px] max-h-32 text-sm"
               />
-              <Button size="icon" onClick={send} disabled={sending || !input.trim()}><Send className="h-4 w-4" /></Button>
+              <Button size="icon" onClick={send} disabled={sending || (!input.trim() && debugAttachments.length === 0)}><Send className="h-4 w-4" /></Button>
             </div>
           </div>
           </div>

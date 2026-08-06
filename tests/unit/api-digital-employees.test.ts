@@ -52,7 +52,7 @@ describe('GET /api/digital-employees', () => {
     const res = await GET()
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.employees).toEqual([{ id: DE, name: '客服Nova' }])
+    expect(body.employees).toEqual([{ id: DE, name: '客服Nova', openingStatement: '', suggestedQuestions: [] }])
     expect(body.teams).toEqual([{ id: TEAM, name: '售后团队' }])
   })
 })
