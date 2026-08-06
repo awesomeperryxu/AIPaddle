@@ -18,7 +18,7 @@ type Row = {
   metrics_calls: number | null
   metrics_success: number | null
   created_at: string | null
-  config: { model?: string } | null
+  config: { model?: string; openingStatement?: string; suggestedQuestions?: string[] } | null
   origin: AgentOrigin
   mandatory: boolean
 }
@@ -44,6 +44,8 @@ function mapRow(r: Row): Agent {
     origin,
     mandatory,
     category: deriveAgentCategory(origin, mandatory, r.status),
+    openingStatement: r.config?.openingStatement as string | undefined,
+    suggestedQuestions: r.config?.suggestedQuestions as string[] | undefined,
   }
 }
 
