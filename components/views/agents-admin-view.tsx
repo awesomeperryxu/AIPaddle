@@ -16,6 +16,7 @@ import {
 import type { Agent } from '@/lib/mock-data';
 import { apiFetch } from '@/lib/api/client';
 import { actionsFor, ACTION_LABEL, TRANSITIONS, type TransitionAction } from '@/lib/agents/status';
+import type { AgentReadiness } from '@/lib/agents/readiness';
 import {
   Plus,
   Search,
@@ -29,6 +30,7 @@ import {
   XCircle,
   ChevronDown,
   Clock,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -58,6 +60,7 @@ const statusConfig = {
 
 export function AgentsAdminView({
   agents = [],
+  readiness = {},
   canCreate = false,
   canDelete = false,
   canEdit = false,
@@ -65,6 +68,8 @@ export function AgentsAdminView({
   canReview = false,
 }: {
   agents?: Agent[];
+  /** 配置完整度（按 agentId）。外部导入的 Agent 常只有提示词、没有能力接线 */
+  readiness?: Record<string, AgentReadiness>;
   canCreate?: boolean;
   canDelete?: boolean;
   canEdit?: boolean;
@@ -373,6 +378,29 @@ export function AgentsAdminView({
                   <h3 className="font-semibold text-foreground leading-snug mb-1 line-clamp-1">{agent.name}</h3>
                   {profession && <span className="text-xs text-primary/80 font-medium mb-1.5">{profession}</span>}
                   <p className="text-xs text-muted-foreground line-clamp-2 flex-1 mb-3">{desc || '暂无描述'}</p>
+
+                  {/* 配置缺口提示：外部平台导入的 Agent 只搬得动提示词，能力接线搬不过来，
+                      不在列表标出来就要点进去才发现是空壳（曾 133 个里 89 个空壳且全是已发布） */}
+                  {(() => {
+                    const r = readiness[agent.id];
+                    if (!r || r.gaps.length === 0) return null;
+                    const blocking = r.gaps.filter((g) => g.severity === 'blocking');
+                    const tone = blocking.length
+                      ? 'bg-destructive/5 border-destructive/20 text-destructive'
+                      : 'bg-amber-500/5 border-amber-500/20 text-amber-600';
+                    return (
+                      <div className={`mb-3 rounded-lg border px-2.5 py-2 ${tone}`}
+                        title={r.gaps.map((g) => `${g.label}：${g.hint}`).join('\n')}>
+                        <div className="flex items-center gap-1.5 text-[11px] font-medium">
+                          <AlertTriangle className="h-3 w-3 shrink-0" />
+                          {r.isShell ? '未配置能力，当前仅裸 LLM 对话' : `待配置：${r.gaps.map((g) => g.label).join('、')}`}
+                        </div>
+                        <p className="mt-0.5 text-[10px] leading-snug opacity-80 line-clamp-2">
+                          {r.gaps[0].hint}
+                        </p>
+                      </div>
+                    );
+                  })()}
                   <div className="flex items-center justify-between pt-2 border-t border-border/50">
                     {agent.department ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground">{agent.department}</span> : <span />}
                     <span className="text-[10px] text-muted-foreground">{agent.calls > 0 ? `${agent.calls.toLocaleString()} 次调用` : ''}</span>

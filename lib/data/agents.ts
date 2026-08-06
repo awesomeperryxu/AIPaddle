@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { TRANSITIONS, type TransitionAction } from '@/lib/agents/status'
 import type { AgentConfig } from '@/lib/agents/config'
 import { deriveAgentCategory, type AgentOrigin } from '@/lib/agents/taxonomy'
+import { assessAgentReadiness } from '@/lib/agents/readiness'
 
 // 数据层（ADR-008）：唯一访问 agents 表的地方，首参 ctx，用请求级客户端（RLS 生效）。
 // DB 行 → 视图用的 Agent 形状映射。
@@ -45,6 +46,66 @@ function mapRow(r: Row): Agent {
     mandatory,
     category: deriveAgentCategory(origin, mandatory, r.status),
   }
+}
+
+/**
+ * 列表用的配置完整度。单独一个函数而非塞进 listAgents——
+ * 它要多查一次 agent_resources，只有需要展示徽标的页面才付这个代价。
+ *
+ * 返回 Map<agentId, ReadinessGap[]>；没有缺口的 Agent 不出现在 map 中。
+ */
+export async function getAgentsReadiness(
+  ctx: RequestContext,
+  agentIds: string[],
+): Promise<Record<string, ReturnType<typeof assessAgentReadiness>>> {
+  if (agentIds.length === 0) return {}
+  const supabase = await createClient()
+
+  const [{ data: rows }, { data: res }] = await Promise.all([
+    supabase.from('agents').select('id,config').eq('org_id', ctx.orgId).in('id', agentIds),
+    supabase.from('agent_resources').select('agent_id,resource_type,resource_id').in('agent_id', agentIds),
+  ])
+
+  // 挂载的 Skill 是否已发布——未发布会让调用真的失败，属 blocking
+  const skillIds = ((res as { resource_type: string; resource_id: string }[] | null) ?? [])
+    .filter((r) => r.resource_type === 'skill').map((r) => r.resource_id)
+  const skillById = new Map<string, { name: string; status: string }>()
+  if (skillIds.length) {
+    const { data: sk } = await supabase.from('skills').select('id,name,status').in('id', [...new Set(skillIds)])
+    for (const s of (sk as { id: string; name: string; status: string }[] | null) ?? []) {
+      skillById.set(s.id, { name: s.name, status: s.status })
+    }
+  }
+
+  const byAgent = new Map<string, { resource_type: string; resource_id: string }[]>()
+  for (const r of ((res as { agent_id: string; resource_type: string; resource_id: string }[] | null) ?? [])) {
+    if (!byAgent.has(r.agent_id)) byAgent.set(r.agent_id, [])
+    byAgent.get(r.agent_id)!.push(r)
+  }
+
+  const out: Record<string, ReturnType<typeof assessAgentReadiness>> = {}
+  for (const a of ((rows as { id: string; config: Record<string, unknown> | null }[] | null) ?? [])) {
+    const cfg = a.config ?? {}
+    const rs = byAgent.get(a.id) ?? []
+    const cnt = (t: string) => rs.filter((r) => r.resource_type === t).length
+    const unpublished = rs
+      .filter((r) => r.resource_type === 'skill')
+      .map((r) => skillById.get(r.resource_id))
+      .filter((s): s is { name: string; status: string } => !!s && s.status !== 'published')
+      .map((s) => s.name)
+
+    out[a.id] = assessAgentReadiness({
+      hasSystemPrompt: typeof cfg.systemPrompt === 'string' && !!cfg.systemPrompt.trim(),
+      hasModel: !!cfg.model,
+      knowledgeBaseCount: cnt('knowledge_base'),
+      skillCount: cnt('skill'),
+      toolCount: cnt('tool'),
+      mcpCount: cnt('mcp_server'),
+      subAgentCount: cnt('agent'),
+      unpublishedSkillNames: unpublished,
+    })
+  }
+  return out
 }
 
 export async function listAgents(_ctx: RequestContext): Promise<Agent[]> {
