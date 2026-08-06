@@ -6,7 +6,7 @@ import { executeGraph } from '@/lib/workflow/execute'
 import { getSkillById } from '@/lib/data/skills'
 import { evaluateSkillCall } from '@/lib/skills/invoke'
 import { retrieveSegments } from '@/lib/kb/rag'
-import { moderateText } from '@/lib/agents/moderation'
+import { moderateContent } from '@/lib/agents/moderation'
 import { substitutePromptVariables } from '@/lib/agents/prompt'
 import { recordCall } from '@/lib/data/call-logs'
 import { enforceLlmQuota } from '@/lib/data/quota'
@@ -75,9 +75,12 @@ export async function POST(req: Request, { params }: Ctx) {
   const lastUser = typeof lastUserContent === 'string' ? lastUserContent : ''
   const startedAt = Date.now()
 
-  // 4.1.12 内容审查（前置）
+  // 内容审查（输入，v1.14 升级：可配关键词 + AI 语义审查）
   if (agent.moderationEnabled) {
-    const mod = moderateText(lastUser)
+    const mod = await moderateContent(lastUser, {
+      level: agent.moderationLevel ?? 'keywords',
+      customKeywords: agent.moderationKeywords,
+    })
     if (mod.flagged) {
       await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: false, errorCode: 'moderation_blocked' })
       return Response.json({ reply: '抱歉，你的请求涉及不合规内容，我无法协助。', agent: { id: agent.id, name: agent.name, moderated: true } })
@@ -252,6 +255,16 @@ export async function POST(req: Request, { params }: Ctx) {
       { model: agent.model, temperature: agent.temperature, client: llmClient },
     )
     await recordCall(ctx, { agentId: agent.id, model, tokensIn, tokensOut, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: true })
+    // 输出审查（v1.14）：审查 AI 回复内容
+    if (agent.moderationEnabled && agent.moderationOutputEnabled) {
+      const outMod = await moderateContent(content, {
+        level: agent.moderationLevel ?? 'keywords',
+        customKeywords: agent.moderationKeywords,
+      })
+      if (outMod.flagged) {
+        return Response.json({ reply: '抱歉，该回复包含不合规内容，已被系统过滤。如有疑问请联系管理员。', agent: { id: agent.id, name: agent.name, moderated: true, outputFiltered: true } })
+      }
+    }
     return Response.json({ reply: content, agent: { id: agent.id, name: agent.name, model } })
   } catch (e) {
     console.error('[chat] LLM 调用失败:', e)

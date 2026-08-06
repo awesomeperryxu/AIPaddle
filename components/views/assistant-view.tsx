@@ -16,9 +16,9 @@ type Citation = { documentId: string; filename: string; snippet: string; similar
 type MsgAttachment = { kind: 'doc' | 'image'; filename: string; dataUrl?: string };
 type Msg = { id: string; role: 'user' | 'assistant' | 'system'; content: string; citations: Citation[]; attachments?: MsgAttachment[]; label?: string };
 type Conversation = { id: string; title: string; updatedAt: string };
-type Res = { id: string; name: string };
+type Res = { id: string; name: string; openingStatement?: string; suggestedQuestions?: string[] };
 // 4.1.20：@@ 唤醒目标——数字员工 或 数字员工团队
-type WakeTarget = { type: 'employee' | 'team'; id: string; name: string };
+type WakeTarget = { type: 'employee' | 'team'; id: string; name: string; openingStatement?: string; suggestedQuestions?: string[] };
 type ClientAttachment =
   | { kind: 'doc'; filename: string; text: string }
   | { kind: 'image'; filename: string; dataUrl: string };
@@ -194,7 +194,7 @@ export function AssistantView() {
   // 唤醒候选：数字员工 + 团队，合并后按查询过滤
   const wakeItems: WakeTarget[] = pickerMode === 'wake'
     ? [
-        ...wakeList.employees.map((e): WakeTarget => ({ type: 'employee', id: e.id, name: e.name })),
+        ...wakeList.employees.map((e): WakeTarget => ({ type: 'employee', id: e.id, name: e.name, openingStatement: e.openingStatement, suggestedQuestions: e.suggestedQuestions })),
         ...wakeList.teams.map((t): WakeTarget => ({ type: 'team', id: t.id, name: t.name })),
       ].filter((x) => x.name.toLowerCase().includes(pickerQuery))
     : [];
@@ -299,6 +299,10 @@ export function AssistantView() {
     setTimeout(() => { if (textareaRef.current) textareaRef.current.style.height = 'auto'; }, 0);
     const convId = await ensureConversation();
     const userContent = `@@${target.name} ${text}`;
+    // 开场白：首次 @@ 唤醒时，先展示该数字员工配置的开场白（v1.14）
+    if (target.openingStatement && messages.length === 0) {
+      setMessages((m) => [...m, { id: `greeting-${Date.now()}`, role: 'assistant', content: target.openingStatement!, citations: [], label: `${target.name}` }]);
+    }
     setMessages((m) => [...m, { id: `u-${Date.now()}`, role: 'user', content: userContent, citations: [] }]);
     // 收集回复用于落库
     const replies: Array<{ agentId: string; content: string }> = [];

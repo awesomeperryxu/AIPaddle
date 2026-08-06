@@ -16,7 +16,13 @@ export async function POST(request: Request) {
   if (!description) {
     return Response.json({ error: { code: 'invalid', message: '请描述你想要的工作流' } }, { status: 400 })
   }
-  const result = await generateWorkflowGraph(description)
-  // 只返回生成的 draft 图 + 校验结果，不落库（用户采纳后自行保存）
-  return Response.json({ graph: result.graph, validation: result.validation, valid: result.valid })
+  // ⑤ 增量修改：前端传入当前画布图，Copilot 在此基础上修改
+  const existingGraph = body?.existingGraph && typeof body.existingGraph === 'object'
+    ? body.existingGraph as { nodes: unknown[]; edges: unknown[] }
+    : undefined
+  const result = await generateWorkflowGraph(description, existingGraph as never)
+  return Response.json({
+    graph: result.graph, validation: result.validation, valid: result.valid,
+    clarifications: result.clarifications,
+  })
 }

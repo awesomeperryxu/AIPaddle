@@ -48,9 +48,16 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createClient()
-  const config = (body?.config && typeof body.config === 'object' && !Array.isArray(body.config))
-    ? body.config as Record<string, unknown>
-    : undefined
+  // config 可从 body.config 对象传入；也兼容 systemPrompt 顶级字段（导入脚本等场景）
+  let config: Record<string, unknown> | undefined =
+    (body?.config && typeof body.config === 'object' && !Array.isArray(body.config))
+      ? body.config as Record<string, unknown>
+      : undefined
+  if (!config && typeof body?.systemPrompt === 'string' && body.systemPrompt.trim()) {
+    config = { systemPrompt: body.systemPrompt.trim() }
+  } else if (config && !config.systemPrompt && typeof body?.systemPrompt === 'string' && body.systemPrompt.trim()) {
+    config = { ...config, systemPrompt: body.systemPrompt.trim() }
+  }
 
   const { data, error } = await supabase
     .from('agents')

@@ -37,6 +37,7 @@ import {
   type RFNodeLike,
   type RFEdgeLike,
 } from '@/lib/workflow/graph-adapter';
+import type { ClarificationItem } from '@/lib/workflow/copilot';
 import { WorkflowSubNav, type WorkflowTab } from './pages/workflow-subnav';
 import { WorkflowLogsPage } from './pages/workflow-logs-page';
 import { WorkflowPlaceholderPage } from './pages/workflow-placeholder-page';
@@ -212,6 +213,7 @@ function WorkflowPageInner({
   const [copilotInput, setCopilotInput] = useState('');
   const [copilotMessages, setCopilotMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [copilotLoading, setCopilotLoading] = useState(false);
+  const [copilotClarifications, setCopilotClarifications] = useState<ClarificationItem[]>([]);
   const copilotScrollRef = useRef<HTMLDivElement>(null);
 
   // 自动触发：从 URL ?copilot=<描述> 带入。
@@ -246,18 +248,21 @@ function WorkflowPageInner({
     return () => clearTimeout(timer);
   }, [copilotAutoDesc, fitView, setNodes, setEdges]);
 
-  async function handleCopilotSend() {
-    const text = copilotInput.trim();
+  async function handleCopilotSend(overrideText?: string) {
+    const text = (overrideText ?? copilotInput).trim();
     if (!text || copilotLoading) return;
-    setCopilotInput('');
+    if (!overrideText) setCopilotInput('');
     const userMsg = { role: 'user' as const, content: text };
     setCopilotMessages(prev => [...prev, userMsg]);
     setCopilotLoading(true);
+    setCopilotClarifications([]);
     try {
+      // ⑤ 增量修改：将当前画布图传给 Copilot，在已有节点基础上修改
+      const currentGraph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
       const res = await fetch('/api/workflows/copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: text }),
+        body: JSON.stringify({ description: text, existingGraph: currentGraph }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -274,6 +279,10 @@ function WorkflowPageInner({
         setTimeout(() => fitView({ padding: 0.2 }), 300);
       } else {
         setCopilotMessages(prev => [...prev, { role: 'assistant', content: '未能生成有效的工作流节点，请尝试更具体的描述。' }]);
+      }
+      // ③ 澄清面板：有需要补充的信息时显示
+      if (Array.isArray(data.clarifications) && data.clarifications.length > 0) {
+        setCopilotClarifications(data.clarifications);
       }
     } catch {
       setCopilotMessages(prev => [...prev, { role: 'assistant', content: '❌ 网络错误，请重试' }]);
@@ -721,17 +730,41 @@ function WorkflowPageInner({
                     </div>
                   )}
                 </div>
+                {/* ③ 澄清面板：AI 需要用户补充信息时显示 */}
+                {copilotClarifications.length > 0 && (
+                  <div className="px-3 py-2 border-t border-amber-500/30 bg-amber-500/5 space-y-2 max-h-48 overflow-y-auto">
+                    <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400">需要补充以下信息：</p>
+                    {copilotClarifications.map((c, i) => (
+                      <div key={i} className="space-y-1">
+                        <p className="text-xs text-foreground/80">{c.question}</p>
+                        {c.options && c.options.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {c.options.map((opt, j) => (
+                              <button
+                                key={j}
+                                className="text-[11px] px-2 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
+                                onClick={() => handleCopilotSend(`${c.field}：${opt}`)}
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="p-3 border-t border-border">
                   <div className="flex gap-2">
                     <input
                       className="flex-1 h-9 rounded-lg border border-input bg-background px-3 text-sm placeholder:text-muted-foreground/60 outline-none focus:border-primary/50"
-                      placeholder="描述你想要的流程..."
+                      placeholder={copilotClarifications.length > 0 ? '回答上面的问题，或继续描述...' : '描述你想要的流程...'}
                       value={copilotInput}
                       onChange={e => setCopilotInput(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCopilotSend(); } }}
                       disabled={copilotLoading}
                     />
-                    <Button size="sm" className="h-9 px-3" disabled={!copilotInput.trim() || copilotLoading} onClick={handleCopilotSend}>
+                    <Button size="sm" className="h-9 px-3" disabled={!copilotInput.trim() || copilotLoading} onClick={() => handleCopilotSend()}>
                       {copilotLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                     </Button>
                   </div>

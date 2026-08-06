@@ -1,28 +1,33 @@
 import { getRequestContext } from '@/lib/context'
-import { listAgents } from '@/lib/data/agents'
 import { listDigitalEmployeeIds } from '@/lib/data/agent-resources'
 import { listTeams } from '@/lib/data/digital-employee-teams'
+import { createClient } from '@/lib/supabase/server'
 
 // GET /api/digital-employees —— @@ 唤醒候选列表（4.1.20 / ADR-014）。
-// 返回本租户「数字员工」与「数字员工团队」的 {id,name}，供聊天窗 @@ 选择器拉取。
-// 读取语义对齐 GET /api/agents / GET /api/teams（ADR-007 agent:read 行=全角色✅，
-// 读端点无独立 enforced action）：登录即可读，RLS 隔离本租户（= 有权访问）。
+// 返回本租户「数字员工」与「数字员工团队」的 {id,name,openingStatement,suggestedQuestions}。
 export async function GET() {
   const ctx = await getRequestContext()
   if (!ctx) {
     return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
   }
 
-  // 数字员工 = 引用了 ≥1 子 Agent 的 Agent（ADR-014）。取 id 集合后与本租户 Agent 名称对齐。
-  const [agents, deIds, teams] = await Promise.all([
-    listAgents(ctx),
+  const supabase = await createClient()
+  const [deIds, teams, { data: agents }] = await Promise.all([
     listDigitalEmployeeIds(ctx),
     listTeams(ctx),
+    supabase.from('agents').select('id,name,config').is('deleted_at', null),
   ])
   const deSet = new Set(deIds)
-  const employees = agents
-    .filter((a) => deSet.has(a.id))
-    .map((a) => ({ id: a.id, name: a.name }))
+  const agentList = (agents ?? []).filter((a) => deSet.has(a.id as string))
+  const employees = agentList.map((a) => {
+    const cfg = (a.config ?? {}) as { openingStatement?: string; suggestedQuestions?: string[] }
+    return {
+      id: a.id as string,
+      name: a.name as string,
+      openingStatement: cfg.openingStatement || '',
+      suggestedQuestions: (cfg.suggestedQuestions ?? []).filter(Boolean),
+    }
+  })
   const teamList = teams.map((t) => ({ id: t.id, name: t.name }))
 
   return Response.json({ employees, teams: teamList })

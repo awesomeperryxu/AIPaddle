@@ -51,8 +51,18 @@ export const AgentConfigSchema = z.object({
   suggestedQuestions: z.array(z.string().trim().max(120)).max(10).optional(),
   citationEnabled: z.boolean().optional(),
   moderationEnabled: z.boolean().optional(),
+  // 内容审查配置（v1.14）：自定义敏感词 + 审查级别 + 输出审查
+  moderationKeywords: z.array(z.string().trim().max(40)).max(100).optional(),
+  moderationLevel: z.enum(['keywords', 'ai', 'both']).optional(), // keywords=仅关键词, ai=仅AI, both=双重
+  moderationOutputEnabled: z.boolean().optional(), // 是否审查 AI 输出
   // 从模板创建时写入：模板声明的推荐技能列表，首次打开编排页时展示检测弹窗
   requiredSkills: z.array(RequiredSkillSchema).optional(),
+  // 来源系统（如 WorkBuddy）声明的 Plugin 依赖，供编排页依赖检测
+  requiredPlugins: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    source: z.string().optional(),
+  })).optional(),
 })
 export type AgentConfig = z.infer<typeof AgentConfigSchema>
 
