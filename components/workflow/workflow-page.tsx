@@ -73,7 +73,8 @@ function WorkflowNode({ data, selected }: { data: WorkflowNodeData; selected: bo
 
   const Icon = config.icon;
   const bt = String(data.blockType);
-  const isStart = bt === 'start';
+  // 入口节点（start 与各类 trigger）没有输入句柄——与 validate.ts 的 isEntry 判定保持一致
+  const isStart = bt === 'start' || bt.startsWith('trigger');
   const isEnd = bt === 'end';
   const isIfElse = bt === 'if-else';
 
@@ -193,9 +194,57 @@ function WorkflowPageInner({
   const [headerMode, setHeaderMode] = useState<'normal' | 'restoring' | 'view-history'>('normal');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [toast, setToast] = useState('');
-  const [interactionMode, setInteractionMode] = useState<'select' | 'pan'>('select');
+  // WF-4：底部工具栏此前有 6 个按钮点了没反应——onUndo/onRedo/onAutoLayout/
+  // onToggleVariableInspect/onOpenShortcuts 五个回调压根没传（onClick=undefined），
+  // canUndo/canRedo 还写死 false 把按钮锁成 disabled；评论模式则因为
+  // interactionMode 只有 select|pan 两态，comment 被翻译成 select 后回读又变回 pointer。
+  const [interactionMode, setInteractionMode] = useState<'select' | 'pan' | 'comment'>('select');
+  const [variableInspectOpen, setVariableInspectOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [showBlockSelector, setShowBlockSelector] = useState(false);
   const [recentBlocks, setRecentBlocks] = useState<string[]>(['llm', 'code', 'if-else']);
+
+  // ── WF-4 撤销/重做 ────────────────────────────────────────
+  // 历史栈放 ref 而非 state：它只在按下按钮时被读，随 state 走会多出一轮渲染，
+  // 且 pushHistory 发生在 nodes/edges 的 effect 里，用 state 会自我触发。
+  const historyRef = useRef<History<Node, Edge>>(initHistory({ nodes: initial.nodes, edges: initial.edges }));
+  // 可用态用 state 承载：render 中读 ref 违反「Cannot access refs during render」，
+  // 且 ref 变化不触发重渲染，靠它驱动按钮亮灭本身就不成立
+  const [historyFlags, setHistoryFlags] = useState({ undo: false, redo: false });
+  const applyingHistory = useRef(false);
+
+  useEffect(() => {
+    // 撤销/重做自身触发的 setNodes 不能再次入栈，否则一步撤销要按两次
+    if (applyingHistory.current) { applyingHistory.current = false; return; }
+    const cur = { nodes, edges };
+    if (isStructurallyEqual(historyRef.current.present, cur)) {
+      // 结构没变（多半是拖动改坐标）——更新 present 但不入栈，
+      // 否则撤销一次只挪回几像素
+      historyRef.current = { ...historyRef.current, present: cur };
+      return;
+    }
+    historyRef.current = pushHistory(historyRef.current, cur);
+    setHistoryFlags({ undo: canUndoHistory(historyRef.current), redo: canRedoHistory(historyRef.current) });
+  }, [nodes, edges]);
+
+  const applySnapshot = useCallback((h: History<Node, Edge>) => {
+    applyingHistory.current = true;
+    historyRef.current = h;
+    setNodes(h.present.nodes);
+    setEdges(h.present.edges);
+    setHistoryFlags({ undo: canUndoHistory(h), redo: canRedoHistory(h) });
+  }, [setNodes, setEdges]);
+
+  const handleUndo = useCallback(() => {
+    if (!canUndoHistory(historyRef.current)) return;
+    applySnapshot(undoHistory(historyRef.current));
+  }, [applySnapshot]);
+
+  const handleRedo = useCallback(() => {
+    if (!canRedoHistory(historyRef.current)) return;
+    applySnapshot(redoHistory(historyRef.current));
+  }, [applySnapshot]);
+
   const [activeTab, setActiveTab] = useState<WorkflowTab>('orchestrate');
   const [showRunPanel, setShowRunPanel] = useState(false);
   const [logsRefreshKey, setLogsRefreshKey] = useState(0);
@@ -309,6 +358,36 @@ function WorkflowPageInner({
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 2600);
   }, []);
+
+  // WF-4 自动整理布局：复用 Copilot 生成时同一套分层算法，
+  // 保证「AI 生成的图」与「手工整理后的图」摆放规则一致。
+  const handleAutoLayout = useCallback(() => {
+    const pos = layoutGraph(
+      nodes.map((n) => ({ id: n.id, type: String((n.data as WorkflowNodeData)?.blockType ?? '') })),
+      edges.map((e) => ({ source: e.source, target: e.target })),
+    );
+    setNodes((ns) => ns.map((n) => (pos[n.id] ? { ...n, position: pos[n.id] } : n)));
+    // 布局只改坐标，isStructurallyEqual 判定为等价、不进历史栈——
+    // 这是刻意的：整理布局不该占用一次撤销
+    setTimeout(() => { try { fitView({ padding: 0.2 }); } catch {} }, 50);
+    showToast('已按流程走向重新排布');
+  }, [nodes, edges, setNodes, fitView, showToast]);
+
+  // WF-4 变量检查：汇总画布上各节点声明的变量，供用户核对引用是否有效
+  const inspectedVariables = useMemo(() => {
+    return nodes.map((n) => {
+      const d = (n.data ?? {}) as WorkflowNodeData & { blockType?: string };
+      return {
+        id: n.id,
+        name: d.label || String(d.blockType ?? n.id),
+        sourceNode: d.label || String(d.blockType ?? ''),
+        sourceNodeId: n.id,
+        type: 'string' as const,
+        value: d.description ?? '—',
+      };
+    });
+  }, [nodes]);
+
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   // 自动保存（防抖）：节点/连线/标题变更 800ms 后 PATCH 保存真实 graph。
@@ -642,6 +721,9 @@ function WorkflowPageInner({
                 nodeTypes={nodeTypes}
                 panOnDrag={interactionMode === 'pan'}
                 selectionOnDrag={interactionMode === 'select'}
+                // 评论模式下不让拖动改图，避免看批注时误改流程
+                nodesDraggable={interactionMode !== 'comment'}
+                nodesConnectable={interactionMode !== 'comment'}
                 fitView
                 fitViewOptions={{ padding: 0.2 }}
               >
@@ -676,16 +758,33 @@ function WorkflowPageInner({
               {/* Bottom Operator Bar */}
               <WorkflowOperator
                 zoom={Math.round(zoom * 100)}
-                mode={interactionMode === 'pan' ? 'hand' : 'pointer'}
-                canUndo={false}
-                canRedo={false}
+                // 三态直传，不再把 comment 折成 select（折了之后回读永远是 pointer，
+                // 点评论模式看起来毫无反应）
+                mode={interactionMode === 'pan' ? 'hand' : interactionMode === 'comment' ? 'comment' : 'pointer'}
+                onModeChange={(m) => setInteractionMode(m === 'hand' ? 'pan' : m === 'comment' ? 'comment' : 'select')}
+                canUndo={historyFlags.undo}
+                canRedo={historyFlags.redo}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                onAutoLayout={handleAutoLayout}
                 onZoomIn={handleZoomIn}
                 onZoomOut={handleZoomOut}
                 onZoomReset={() => setZoom(1)}
                 onFitView={handleFitView}
-                onModeChange={(mode) => setInteractionMode(mode === 'hand' ? 'pan' : 'select')}
+                variableInspectOpen={variableInspectOpen}
+                onToggleVariableInspect={() => setVariableInspectOpen((v) => !v)}
+                onOpenShortcuts={() => setShortcutsOpen(true)}
+              />
+
+              {/* WF-4：两个面板此前已实现却从未被挂载，按钮自然点不出东西 */}
+              <VariableInspectPanel
+                isOpen={variableInspectOpen}
+                onClose={() => setVariableInspectOpen(false)}
+                variables={inspectedVariables}
               />
             </div>
+
+            <KeyboardShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
             {/* Copilot Toggle Button */}
             <Button
