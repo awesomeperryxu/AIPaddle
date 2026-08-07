@@ -57,7 +57,20 @@ jobs:
 
           # 用 Actions 临时 token 拉取私有仓库最新 main（一次性 URL，不写入 remote）
           git fetch "https://x-access-token:${GH_PAT}@github.com/awesomeperryxu/AIPaddle.git" main
-          git reset --hard FETCH_HEAD
+          TARGET_SHA=$(git rev-parse FETCH_HEAD)
+
+          # 🔴 防回退：目标比线上**旧**就不切换。
+          # concurrency 保证部署串行，但排队中的任务醒来后仍可能拿到比线上旧的提交
+          # （极端情况：main 被 revert / force-push）。目标是当前 HEAD 的祖先即视为回退。
+          # 不失败退出——这不是错误，是「已经有更新的版本在线上了」，直接跳过即可，
+          # 否则会白白触发 EXIT trap 的源码回退。
+          if [ "$TARGET_SHA" != "$PREV_SHA" ] && git merge-base --is-ancestor "$TARGET_SHA" "$PREV_SHA"; then
+            echo ">> 跳过：目标 $TARGET_SHA 比线上 $PREV_SHA 旧，线上已是更新的版本"
+            DEPLOY_OK=1   # 置位，别让 EXIT trap 把线上源码往回退
+            exit 0
+          fi
+
+          git reset --hard "$TARGET_SHA"
 
           # 恢复/校验 .env.local
           [ -f .env.local ] || cp -f /tmp/aipaddle.env.bak .env.local 2>/dev/null || true

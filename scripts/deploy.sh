@@ -17,10 +17,20 @@
 # 零停机：构建到 .next.new（next.config.mjs 支持 NEXT_DIST_DIR），成功后原子切换。
 # 构建期间线上照跑旧产物；且每次全新目录，不会有增量构建残留的不一致清单。
 #
+# 🔴 常规部署**不要跑这个脚本**——合并进 main 会由 `.github/workflows/deploy.yml`
+# 自动部署（原子切换 + 健康检查 + 失败回滚 + 冒烟）。本脚本只是应急逃生口。
+#
+# 2026-08-07 实测：手工跑本脚本与 CI 部署撞车，两边同时 `next build`，
+# 报「Another next build process is already running」，构建被打断、留下半残 .next.new。
+# 更麻烦的是当时误判成「另一个会话在部署」，顺着错方向查了很久——
+# 真凶就是自己这条手工链路。CI 已经在做同一件事，手工再跑一遍纯属制造并发。
+#
+# 什么时候才该用它：CI 挂了 / GitHub Actions 故障 / 要回滚到指定版本。
+#
 # 用法：
-#   ./scripts/deploy.sh                  # 部署 origin/main
+#   ./scripts/deploy.sh --force-manual   # 应急手工部署（常规请用 CI）
 #   ./scripts/deploy.sh --no-verify      # 跳过部署后验证（不建议）
-#   ./scripts/deploy.sh --allow-rollback # 允许部署比线上更旧的版本（回滚，见下方防回退护栏）
+#   ./scripts/deploy.sh --allow-rollback # 允许部署比线上更旧的版本（见下方防回退护栏）
 set -euo pipefail
 
 HOST="${DEPLOY_HOST:-ubuntu@43.173.99.218}"
@@ -29,9 +39,29 @@ APP_DIR="${DEPLOY_DIR:-/opt/aipaddle}"
 PM2_NAME="${PM2_NAME:-aipaddle}"
 
 ALLOW_ROLLBACK=0
+FORCE_MANUAL=0
 for arg in "$@"; do
   [ "$arg" = "--allow-rollback" ] && ALLOW_ROLLBACK=1
+  [ "$arg" = "--force-manual" ] && FORCE_MANUAL=1
 done
+
+# 默认拒绝：不显式声明就不跑，免得又跟 CI 的自动部署并发
+if [ "$FORCE_MANUAL" != "1" ]; then
+  cat <<'HINT'
+🔴 常规部署不需要手工执行本脚本。
+
+   合并进 main 后，.github/workflows/deploy.yml 会自动部署
+   （原子构建切换 + 连续 3×200 健康检查 + 失败自动回滚 + 线上冒烟）。
+   查看进度：gh run list --workflow=deploy.yml
+
+   手工跑会与 CI 部署并发，两边同时 next build 必然撞锁
+   （「Another next build process is already running」），构建被打断。
+
+   确属应急（CI 挂了 / 要回滚指定版本）请显式声明：
+     ./scripts/deploy.sh --force-manual
+HINT
+  exit 1
+fi
 
 echo "=== 部署到 $HOST:$APP_DIR ==="
 
