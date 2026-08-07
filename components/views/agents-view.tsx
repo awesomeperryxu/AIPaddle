@@ -132,6 +132,8 @@ export function AgentsView({
   const agentById = new Map(allAgents.map(a => [a.id, a]));
   // 可选为 base 的 Agent（建数字员工时的候选）：只能是普通 Agent（R1：Agent 下不可挂 Agent）
   const baseAgentCandidates = plainAgents;
+  // DE-10：团队成员候选 = 数字员工 + 普通 Agent（两者并级，ADR-026 §1）
+  const teamMemberCandidates = allAgents;
 
   // 分类标签（按 department）
   const deDepartments = [...new Set(digitalEmployees.map(a => a.department).filter(Boolean))].sort();
@@ -816,17 +818,18 @@ export function AgentsView({
               <Input value={teamDesc} onChange={e => setTeamDesc(e.target.value)} placeholder="（可选）描述团队职责" />
             </div>
             <div>
-              {/* DE-1 连带修正：此前这里列的是**普通 Agent**（旧 digitalEmployees 的含义），
-                  而服务端门控只收数字员工（teams/[id]/route.ts:54）——选了必被拒，
-                  于是团队永远是 0 成员。现在列的是真正的数字员工，与服务端一致。
-                  D-12 已放宽为「数字员工与普通 Agent 并级」，但服务端门控放开属 DE-10，
-                  本批不动——选择器先与现行服务端保持一致，避免又出现"选了存不进去"。 */}
-              <label className="text-sm font-medium text-foreground block mb-1.5">成员（仅限数字员工）</label>
-              {digitalEmployees.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-2">暂无可用的数字员工，请先创建数字员工</p>
+              {/* DE-10：服务端门控已放宽（D-12 / ADR-026 §1）——成员可以是数字员工，
+                  也可以是普通 Agent，两者在团队 Workflow 中并级。选择器同步放开。
+                  在此之前这里列的是普通 Agent 而服务端只收数字员工，选了必被拒，
+                  团队永远存不进成员——两头对不上比任何一头错都难查。 */}
+              <label className="text-sm font-medium text-foreground block mb-1.5">
+                成员（数字员工与普通 Agent 均可）
+              </label>
+              {teamMemberCandidates.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">暂无可选成员，请先创建 Agent</p>
               ) : (
                 <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border">
-                  {digitalEmployees.map(a => (
+                  {teamMemberCandidates.map(a => (
                     <label key={a.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 cursor-pointer">
                       <input
                         type="checkbox"
