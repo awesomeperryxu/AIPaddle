@@ -210,11 +210,106 @@ const smtpHandler: Handler = {
   },
 }
 
+// ── 联网搜索（WF-23）────────────────────────────────────────────────────
+
+/**
+ * 平台内置的联网检索能力，走 Gemini 的 Google Search grounding。
+ *
+ * 🔴 为什么是它而不是一个「搜索 API」：平台此前**完全没有**联网能力，
+ * 于是「查全网当天 AI 大事件」这类需求只能落成一个 llm 节点让模型凭空作答——
+ * 用户实测拿到的就是一整篇编造的 2024 年报告。补这一块时的取舍：
+ *   · grounding 直接返回**带来源 URL 的正文**，不用再抓一遍网页（省一整层抓取与解析）；
+ *   · 来源在 groundingMetadata 里，可以逐条回给用户核对，不是「模型说它搜过了」。
+ * 代价：结果由模型转述而非原始网页，极端严谨的场景仍应人工点开来源核对。
+ *
+ * 凭证 = Google AI Studio 的 API Key，存 credentials 加密表，**绝不进代码或 git**。
+ */
+const GEMINI_HOST = 'generativelanguage.googleapis.com'
+// 用 -latest 别名：实测写死 gemini-2.5-flash 会在模型下线后直接 404
+//（「no longer available to new users」），别名由 Google 侧滚动指向当代模型
+const DEFAULT_SEARCH_MODEL = 'gemini-flash-latest'
+
+type GroundingChunk = { web?: { uri?: string; title?: string } }
+
+const webSearchHandler: Handler = {
+  id: 'websearch.google',
+  label: '联网搜索（Google）',
+  allowedHosts: [GEMINI_HOST],
+  async run({ config, secret, probeOnly }) {
+    if (!secret) return { ok: false, message: '未绑定凭证：请在「凭证管理」里填入 Google AI Studio 的 API Key' }
+
+    const query = String(config.query ?? '').trim()
+    // probeOnly = 点「测试」按钮：用一个固定的轻量查询验证 Key 与出网，不消耗业务语义
+    if (!query && !probeOnly) return { ok: false, message: '缺少检索词（query）' }
+    const model = String(config.model ?? DEFAULT_SEARCH_MODEL).trim() || DEFAULT_SEARCH_MODEL
+    const prompt = probeOnly && !query ? '用一句话说明今天的日期' : query
+
+    let res: Response
+    try {
+      res = await guardedFetch(
+        `https://${GEMINI_HOST}/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        [GEMINI_HOST],
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': secret },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            tools: [{ google_search: {} }],
+          }),
+          timeoutMs: 45_000, // grounding 要真去搜再总结，比普通补全慢不少
+        },
+      )
+    } catch (e) {
+      if (e instanceof NetGuardError) return { ok: false, message: e.message }
+      return { ok: false, message: '联网搜索请求失败（网络不可达或超时）' }
+    }
+
+    const body = (await res.json().catch(() => null)) as {
+      candidates?: { content?: { parts?: { text?: string }[] }; groundingMetadata?: { groundingChunks?: GroundingChunk[]; webSearchQueries?: string[] } }[]
+      error?: { message?: string; status?: string }
+    } | null
+
+    if (!res.ok) {
+      // 🔴 回错误结论但不带 key：报文里不含 key，可仍避免把整段 body 抖出去
+      const hint = res.status === 400 || res.status === 403 ? '（API Key 无效或未开通）'
+        : res.status === 404 ? '（模型名不存在或已下线）'
+          : res.status === 429 ? '（超出配额）' : ''
+      return { ok: false, message: `联网搜索失败 HTTP ${res.status}${hint}：${body?.error?.message?.slice(0, 200) ?? ''}` }
+    }
+
+    const cand = body?.candidates?.[0]
+    const text = (cand?.content?.parts ?? []).map((p) => p.text ?? '').join('').trim()
+    const chunks = cand?.groundingMetadata?.groundingChunks ?? []
+    const sources = chunks
+      .map((c) => c.web)
+      .filter((w): w is { uri?: string; title?: string } => !!w)
+      .map((w, i) => `[${i + 1}] ${w.title ?? '来源'} ${w.uri ?? ''}`.trim())
+
+    if (probeOnly) {
+      return {
+        ok: true,
+        message: `连通（模型 ${model}，返回 ${sources.length} 条来源）`,
+        detail: { model, sourceCount: sources.length, queries: cand?.groundingMetadata?.webSearchQueries },
+      }
+    }
+    if (!text) return { ok: false, message: '联网搜索没有返回内容' }
+
+    // 🔴 把来源附在正文后面一起交给下游：没有来源的检索结果与「模型编的」在下游看来毫无区别，
+    // 用户必须能点开核对。这也是这条能力存在的意义。
+    return {
+      ok: true,
+      message: sources.length ? `${text}\n\n来源：\n${sources.join('\n')}` : text,
+      detail: { model, sourceCount: sources.length, queries: cand?.groundingMetadata?.webSearchQueries },
+    }
+  },
+}
+
 // ── 注册表 ─────────────────────────────────────────────────────────────
 
 const HANDLERS: Record<string, Handler> = {
   [wecomHandler.id]: wecomHandler,
   [smtpHandler.id]: smtpHandler,
+  [webSearchHandler.id]: webSearchHandler,
 }
 
 export const HANDLER_IDS = Object.keys(HANDLERS)

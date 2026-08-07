@@ -73,11 +73,12 @@ export async function POST(request: Request) {
     valid: validation.length === 0,
     ready: readiness.ready,
     readinessIssues: readiness.issues.length,
-    schedule: gen.graph.schedule?.cron ?? null,
+    // WF-24：定时不再落进工作流，只记「识别到了什么」供回溯
+    scheduleHint: gen.scheduleHint?.cron || (gen.scheduleHint ? 'unspecified' : null),
   })
 
   return Response.json(
-    { workflow: saved, validation, valid: validation.length === 0, readiness },
+    { workflow: saved, validation, valid: validation.length === 0, readiness, scheduleHint: gen.scheduleHint },
     { status: 201 },
   )
 }

@@ -115,7 +115,31 @@ export function parseCronFromText(text: string): string | undefined {
   return undefined
 }
 
-/** 描述里是否明确提到了周期性运行（用于决定要不要兜底补 schedule） */
+const WEEKDAY_CN = ['日', '一', '二', '三', '四', '五', '六']
+
+/**
+ * cron → 中文描述（WF-24 引导文案用）。
+ * 只翻译最常见的三种形态，看不懂就原样回 cron——写错的描述比不描述更误导。
+ */
+export function describeCron(cron: string): string {
+  const p = (cron ?? '').trim().split(/\s+/)
+  if (p.length !== 5) return cron
+  const [mi, ho, dom, mon, dow] = p
+  const hhmm = /^\d{1,2}$/.test(mi) && /^\d{1,2}$/.test(ho)
+    ? `${ho.padStart(2, '0')}:${mi.padStart(2, '0')}`
+    : ''
+  if (!hhmm) {
+    if (mi !== '*' && ho === '*' && dom === '*' && mon === '*' && dow === '*') return `每小时第 ${mi} 分钟`
+    return cron
+  }
+  if (dom === '*' && mon === '*' && dow === '*') return `每天 ${hhmm}`
+  if (dom === '*' && mon === '*' && dow === '1-5') return `每个工作日 ${hhmm}`
+  if (dom === '*' && mon === '*' && /^[0-6]$/.test(dow)) return `每周${WEEKDAY_CN[Number(dow)]} ${hhmm}`
+  if (/^\d{1,2}$/.test(dom) && mon === '*' && dow === '*') return `每月 ${dom} 日 ${hhmm}`
+  return cron
+}
+
+/** 描述里是否明确提到了周期性运行（用于决定要不要提示去 Agent 配定时） */
 export function mentionsSchedule(text: string): boolean {
   return /每(?:天|日|晚|周|星期|礼拜|月|小时|分钟|隔|个)|天天|工作日|定时|定期|周期性|自动运行|自动执行/.test(
     (text ?? '').replace(/\s+/g, ''),

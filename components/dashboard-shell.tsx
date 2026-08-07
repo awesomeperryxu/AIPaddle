@@ -4,34 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { AppSidebar } from '@/components/app-sidebar'
 import { WindowTabs } from '@/components/window-tabs'
-
-const TITLES: Record<string, string> = {
-  dashboard: '监控',
-  'agents-admin': 'Agent 管理',
-  'skill-hub': 'Skill Hub',
-  security: '安全管理',
-  mcp: 'MCP 管理',
-  workflows: '工作流管理',
-  templates: '模板库',
-  assistant: '个人助理',
-  agents: '数字员工',
-  members: '成员管理',
-  'knowledge-admin': '知识库管理',
-  tenants: '租户管理',
-  knowledge: '知识库问答',
-  'office-tools': '办公文件处理',
-  'my-skills': '我的 Skill',
-  'saas-dashboard': '运营看板',
-  keys: 'Key 管理',
-  billing: '账单管理',
-  settings: '系统设置',
-}
+import { TabTitleProvider } from '@/components/tab-title'
+import { isPinnableView, resolveTabTitle } from '@/lib/nav/views'
 
 const HOME_VIEW = 'dashboard'
-
-function titleOf(view: string) {
-  return TITLES[view] ?? view
-}
 
 export function DashboardShell({
   userName,
@@ -53,7 +29,7 @@ export function DashboardShell({
   const activeView = pathname.replace(/^\//, '') || HOME_VIEW
 
   // 多窗口标签：已「钉住」的视图集合（首页固定在最前）。
-  // 用 sessionStorage 持久化——页面刷新/导航不丢失标签。
+  // 用 sessionStorage 持久化——页面刷新/导航不丢失标签（PR #183）。
   const STORAGE_KEY = 'aipaddle_pinned_tabs'
   const [pinned, setPinned] = useState<string[]>(() => {
     if (typeof window !== 'undefined') {
@@ -65,14 +41,13 @@ export function DashboardShell({
             // 确保首页在最前 + 当前页在列表中
             const set = new Set(parsed)
             set.add(HOME_VIEW)
-            if (activeView in TITLES) set.add(activeView)
-            const list = [HOME_VIEW, ...([...set].filter((v) => v !== HOME_VIEW))]
-            return list
+            if (isPinnableView(activeView)) set.add(activeView)
+            return [HOME_VIEW, ...[...set].filter((v) => v !== HOME_VIEW)]
           }
         }
       } catch { /* SSR 或 parse 失败 */ }
     }
-    return activeView !== HOME_VIEW && activeView in TITLES ? [HOME_VIEW, activeView] : [HOME_VIEW]
+    return activeView !== HOME_VIEW && isPinnableView(activeView) ? [HOME_VIEW, activeView] : [HOME_VIEW]
   })
 
   // pinned 变化时持久化到 sessionStorage
@@ -80,16 +55,29 @@ export function DashboardShell({
     try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(pinned)) } catch { /* ignore */ }
   }, [pinned])
 
-  // 将当前视图的顶级路径提取出来（如 agents-admin/xxx → agents-admin），用于标签匹配
+  // 侧栏高亮用一级段（`workflows/<id>` 时仍高亮「工作流管理」），但**标签本身不折叠**：
+  // 折叠到一级标签的话，点它回到的是列表页，用户那条具体的流程照样找不回来——
+  // 而「切走后回不到那条流程」正是 WF-19 要修的问题。
   const topView = activeView.split('/')[0]
+
+  // 详情页上报的名字：view → 显示名。没上报的回落到「一级名 · 详情」。
+  const [detailTitles, setDetailTitles] = useState<Record<string, string>>({})
+  const reportTitle = useCallback((view: string, title: string | undefined) => {
+    setDetailTitles((prev) => {
+      if ((prev[view] ?? undefined) === title) return prev // 同值不重渲染，避免上报→重渲→再上报
+      const next = { ...prev }
+      if (title) next[view] = title
+      else delete next[view]
+      return next
+    })
+  }, [])
+
+  const titleOf = useCallback((view: string) => resolveTabTitle(view, detailTitles), [detailTitles])
 
   // 渲染期派生：始终把当前视图并入展示（覆盖页面内的程序化跳转），无需 effect。
   const tabs = useMemo(
-    () => {
-      const viewForTab = topView in TITLES ? topView : activeView
-      return pinned.includes(viewForTab) || !(viewForTab in TITLES) ? pinned : [...pinned, viewForTab]
-    },
-    [pinned, activeView, topView],
+    () => (pinned.includes(activeView) || !isPinnableView(activeView) ? pinned : [...pinned, activeView]),
+    [pinned, activeView],
   )
 
   // 打开视图（侧栏点击 / 标签点击）：钉住并导航。
@@ -128,7 +116,7 @@ export function DashboardShell({
         <header className="flex items-center px-3 h-11 shrink-0">
           <WindowTabs
             tabs={tabs}
-            activeView={topView in TITLES ? topView : activeView}
+            activeView={activeView}
             titleOf={titleOf}
             homeView={HOME_VIEW}
             onSelect={openView}
@@ -136,7 +124,9 @@ export function DashboardShell({
           />
         </header>
 
-        <main className="flex-1 overflow-auto">{children}</main>
+        <main className="flex-1 overflow-auto">
+          <TabTitleProvider report={reportTitle}>{children}</TabTitleProvider>
+        </main>
       </div>
     </div>
   )

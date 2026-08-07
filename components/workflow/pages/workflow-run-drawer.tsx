@@ -24,6 +24,8 @@ type RunResult = {
   traces: Trace[];
   durationMs: number;
 };
+/** 运行前体检的拦截项（WF-21），与 lib/workflow/readiness.ts 的 ReadinessIssue 同形 */
+type ReadinessIssue = { code: string; nodeId?: string; nodeLabel?: string; message: string };
 
 const TRACE_STATUS: Record<Trace['status'], { text: string; cls: string }> = {
   succeeded: { text: '成功', cls: 'text-emerald-600 bg-emerald-500/10' },
@@ -34,20 +36,26 @@ const TRACE_STATUS: Record<Trace['status'], { text: string; cls: string }> = {
 export function WorkflowRunDrawer({
   workflowId,
   open,
+  needsInput = false,
   beforeRun,
   onClose,
   onFinished,
 }: {
   workflowId: string;
   open: boolean;
+  /** 这张图是否真的等着外部输入（start 定义了变量 / 引用了 sys.query）。WF-20 */
+  needsInput?: boolean;
   beforeRun?: () => Promise<void>;
   onClose: () => void;
   onFinished?: () => void;
 }) {
   const [input, setInput] = useState('');
+  // 不需要输入的流程默认不显示输入框；仍留一个入口给调试用（想手动喂一段文本时）
+  const [showInput, setShowInput] = useState(needsInput);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState('');
+  const [blockers, setBlockers] = useState<ReadinessIssue[]>([]);
 
   const run = async () => {
     setRunning(true);
@@ -63,8 +71,11 @@ export function WorkflowRunDrawer({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(body?.error?.message ?? '运行失败：无权限或未登录');
+        // WF-21：体检未过时把每一项待补的都列出来——只说「未通过」用户不知道改哪
+        setBlockers(Array.isArray(body?.error?.issues) ? body.error.issues : []);
         return;
       }
+      setBlockers([]);
       setResult(body.run as RunResult);
       onFinished?.();
     } catch {
@@ -89,23 +100,56 @@ export function WorkflowRunDrawer({
       </div>
 
       <div className="flex-1 overflow-auto p-4 space-y-4">
-        {/* 起始输入 */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">起始输入</label>
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="输入工作流的起始输入（传给开始节点）…"
-            className="min-h-[80px] text-sm"
-          />
-        </div>
+        {/* 起始输入（WF-20）：只有图真的等着外部输入时才默认显示。
+            🔴 以前无条件摆这个框，用户为一条「查当天 AI 大事件」的流程手填了日期当参数——
+            当天/昨天是运行时事实，由引擎注入（{{today}}/{{yesterday}}），不该让人填。 */}
+        {showInput ? (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="wf-run-input">
+              起始输入
+            </label>
+            <Textarea
+              id="wf-run-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="输入工作流的起始输入（传给开始节点）…"
+              className="min-h-[80px] text-sm"
+            />
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+            该流程无需外部输入，日期等运行时信息由系统自动提供。
+            <button
+              type="button"
+              onClick={() => setShowInput(true)}
+              className="ml-1 text-primary underline-offset-2 hover:underline"
+            >
+              仍要自定义输入
+            </button>
+          </div>
+        )}
         <Button onClick={run} disabled={running} className="w-full gap-2">
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           {running ? '运行中…' : '运行'}
         </Button>
 
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>
+          <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+            <p className="text-sm text-destructive">{error}</p>
+            {blockers.length > 0 && (
+              <ul className="space-y-1.5 text-xs text-destructive/90">
+                {blockers.map((b, i) => (
+                  <li key={`${b.nodeId ?? b.code}-${i}`} className="flex gap-1.5">
+                    <span className="shrink-0">•</span>
+                    <span>
+                      {b.nodeLabel && <span className="font-medium">「{b.nodeLabel}」</span>}
+                      {b.message}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
 
         {result && (
