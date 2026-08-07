@@ -66,6 +66,16 @@ const EXTERNAL_DATA_RE =
 /** 能把外部数据带进流程的节点类型——只要有一个，就说明数据有正经来源 */
 const EXTERNAL_SOURCE_TYPES = new Set(['tool', 'http-request', 'knowledge-retrieval', 'agent', 'sub-workflow', 'code'])
 
+/**
+ * 开了联网搜索的 llm 节点本身就是数据源（WF-22）。
+ *
+ * 通义原生支持联网检索，用平台现有 Key 即可，不必再接第三方搜索 API。
+ * 🔴 这条判定是「解决」而非「放行」：开关真的会让那一步联网取数
+ * （execute.ts 传 enable_search + forced_search），不是把检查绕过去。
+ */
+export const isWebSearchNode = (n: LooseNode): boolean =>
+  n.type === 'llm' && n.data?.config?.enableSearch === true
+
 /** LLM 提示词：面板 prompts[] 优先，回落引擎侧 prompt（与 execute.ts 的取法一致） */
 function llmPromptOf(cfg: Record<string, unknown>): string {
   const prompts = Array.isArray(cfg.prompts) ? (cfg.prompts as Record<string, unknown>[]) : []
@@ -93,18 +103,22 @@ export function checkReadiness(graph: WorkflowGraph): ReadinessReport {
   // 整张图有没有正经的外部数据入口。没有的话，任何声称「抓取/检索」的步骤都只能是编的。
   // 判据放在图这一级而不是节点级：llm 节点叫「整理抓取到的资讯」很正常——
   // 只要上游真有 tool/http 把数据取进来，就不该报错。
-  const hasExternalSource = nodes.some((n) => EXTERNAL_SOURCE_TYPES.has(n.type))
+  const hasExternalSource = nodes.some((n) => EXTERNAL_SOURCE_TYPES.has(n.type) || isWebSearchNode(n))
 
   for (const n of nodes) {
     const cfg = n.data?.config ?? {}
 
     if (n.type === 'llm') {
       const prompt = llmPromptOf(cfg)
-      // WF-21：说要联网取数、全图却没有任何外部数据来源 → 拦住，别让它跑出一篇编的
-      if (!hasExternalSource && EXTERNAL_DATA_RE.test(`${n.data?.label ?? ''}\n${prompt}`)) {
+      // WF-21：说要联网取数、全图却没有任何外部数据来源 → 拦住，别让它跑出一篇编的。
+      // 本节点自己开了联网搜索就不算——它就是数据源。
+      const needsData = !isWebSearchNode(n) && EXTERNAL_DATA_RE.test(`${n.data?.label ?? ''}\n${prompt}`)
+      const missingData = needsData && !hasExternalSource
+      if (missingData) {
         push('error', 'llm_no_data_source', n,
           '这一步要拿外部数据（抓取/检索/搜索），但整条流程没有任何联网或数据源能力——' +
-          '直接跑只会得到模型编造的内容。请挂上具备联网检索能力的 Skill，或改用 HTTP 请求节点接真实接口')
+          '直接跑只会得到模型编造的内容。请打开该节点的「联网搜索」开关，' +
+          '或挂上具备检索能力的 Skill / 改用 HTTP 请求节点接真实接口')
       }
       if (!prompt) {
         push('error', 'llm_no_prompt', n, '未设置提示词，运行时会退化成模型自由发挥')
@@ -114,8 +128,10 @@ export function checkReadiness(graph: WorkflowGraph): ReadinessReport {
       if (!cfg.model || typeof cfg.model !== 'object') {
         push('warn', 'llm_no_model', n, '未指定模型，将使用系统默认模型')
       }
-      // 「需接入 XX 能力」是生成时的降级标记：这类节点其实没有对应能力
-      if ((n.data?.label ?? '').includes('需接入')) {
+      // 「需接入 XX 能力」是生成时的降级标记：这类节点其实没有对应能力。
+      // 🔴 与上面那条同源——同一个节点报两遍只会让人以为有两个毛病要修。
+      // 上面已报（信息更全、给了三条出路）就不再重复；开了联网搜索则两条都不该报。
+      if (!missingData && !isWebSearchNode(n) && (n.data?.label ?? '').includes('需接入')) {
         push('error', 'llm_placeholder_capability', n, '该步骤缺少真实能力（生成时已标注需人工挂载），请挂上对应 Skill 或改写流程')
       }
     }

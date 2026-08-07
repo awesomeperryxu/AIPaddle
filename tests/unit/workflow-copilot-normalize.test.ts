@@ -286,3 +286,29 @@ describe('WF-14 折叠臆想的中间步骤', () => {
     expect(g.nodes.map((n) => n.id)).toContain('a')
   })
 })
+
+describe('WF-22 生成时自动开联网搜索', () => {
+  const cfgOf = (label: string, prompt: string) =>
+    normalizeGraph({ nodes: [{ id: 'llm-1', type: 'llm', label, config: { prompt } }], edges: [] })
+      .nodes[0].data!.config as Record<string, unknown>
+
+  it.each([
+    ['抓取前一日的AI大事件', '列出昨天的AI大事件'],
+    ['检索最新行业动态', '汇总本周动态'],
+    ['全网搜集用户反馈', '整理反馈'],
+  ])('「%s」→ 自动开启 enableSearch', (label, prompt) => {
+    expect(cfgOf(label, prompt).enableSearch).toBe(true)
+  })
+
+  it('纯加工步骤不开——没必要为「摘要」去联网', () => {
+    expect(cfgOf('筛选重要事件并摘要', '从以下内容提炼要点：{{input}}').enableSearch).toBeUndefined()
+  })
+
+  it('模型自己开了就尊重它', () => {
+    const g = normalizeGraph({
+      nodes: [{ id: 'llm-1', type: 'llm', label: '写周报', config: { prompt: '写一篇周报', enableSearch: true } }],
+      edges: [],
+    })
+    expect(g.nodes[0].data?.config?.enableSearch).toBe(true)
+  })
+})

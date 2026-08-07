@@ -48,8 +48,19 @@ describe('LLM 节点', () => {
   })
 
   it('label 标了「需接入」的降级节点 → error，它其实没有对应能力', () => {
+    // 这类节点若同时提到检索/抓取，会被上一条更具体的规则（llm_no_data_source）接管；
+    // 两条同源，只报一条——重点是**必须被拦住**。
     const r = checkReadiness(graphOf(
       node('llm-1', 'llm', { prompt: '检索全网AI资讯并汇总' }, '联网检索（需接入能力，请手动挂载）'),
+    ))
+    expect(r.ready).toBe(false)
+    expect(r.issues.filter((i) => i.level === 'error')).toHaveLength(1)
+    expect(r.issues[0].code).toBe('llm_no_data_source')
+  })
+
+  it('不涉及取数、但标了「需接入」→ 由 placeholder 规则拦住', () => {
+    const r = checkReadiness(graphOf(
+      node('llm-1', 'llm', { prompt: '把结果发送到企业微信群' }, '推送到企业微信（需接入消息推送能力）'),
     ))
     expect(r.ready).toBe(false)
     expect(r.issues.map((i) => i.code)).toContain('llm_placeholder_capability')
@@ -173,5 +184,44 @@ describe('摘要文案', () => {
 
   it('通过时给出节点数', () => {
     expect(summarizeReadiness(checkReadiness(graphOf(okLlm())))).toContain('体检通过')
+  })
+})
+
+describe('WF-22 联网搜索开关', () => {
+  // 用户实测：「查全网当天AI大事件」被拦，且同一节点报了两条重复的错。
+  // 平台其实有联网能力（通义原生支持），开关一开这一步就是真联网取数——
+  // 这是「解决」而非「放行」。
+  const webNode = (on: boolean) => node('llm-1', 'llm', {
+    prompt: '检索并列出昨天全球AI领域的重大事件，注明日期与来源',
+    model: { provider: 'qwen', name: 'qwen-plus' },
+    ...(on ? { enableSearch: true } : {}),
+  }, '抓取前一日的AI大事件')
+
+  it('开了联网搜索 → 通过体检，不再拦发布', () => {
+    const r = checkReadiness(graphOf(webNode(true)))
+    expect(r.ready).toBe(true)
+  })
+
+  it('没开 → 仍然拦住（否则跑出来是编的）', () => {
+    const r = checkReadiness(graphOf(webNode(false)))
+    expect(r.ready).toBe(false)
+    expect(r.issues.map((i) => i.code)).toContain('llm_no_data_source')
+  })
+
+  it('🔴 同一节点不再报两条重复的错', () => {
+    // 用户看到的正是这个：「需接入」标记 + 「没有数据源」两条，内容重叠
+    const n = node('llm-1', 'llm', { prompt: '检索昨日AI大事件并汇总要点' }, '抓取前一日的AI大事件（需接入实时资讯检索能力）')
+    const errs = checkReadiness(graphOf(n)).issues.filter((i) => i.level === 'error')
+    expect(errs).toHaveLength(1)
+    expect(errs[0].code).toBe('llm_no_data_source')
+    expect(errs[0].message).toContain('联网搜索')
+  })
+
+  it('开了联网搜索的节点也为全图提供数据源，下游整理节点不再被误判', () => {
+    const r = checkReadiness(graphOf(
+      webNode(true),
+      node('llm-2', 'llm', { prompt: '从抓取到的资讯里筛选重要事件并摘要', model: { provider: 'qwen', name: 'qwen-plus' } }, '筛选重要事件并摘要'),
+    ))
+    expect(r.ready).toBe(true)
   })
 })

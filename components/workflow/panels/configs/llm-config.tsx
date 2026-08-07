@@ -301,6 +301,23 @@ export function LLMNodeConfigPanel({
 
       <Separator />
 
+      {/* 联网搜索（WF-22）：这一步要不要真的去查网上的最新信息。
+          没有它，凡是「查最新/查昨天」的步骤跑出来都是模型凭记忆编的。 */}
+      <div className="flex items-center justify-between">
+        <div>
+          <Label className="text-sm font-medium">联网搜索</Label>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            开启后这一步会真的联网检索最新信息；关闭则只用模型已有知识作答
+          </p>
+        </div>
+        <Switch
+          checked={(config as { enableSearch?: boolean }).enableSearch === true}
+          onCheckedChange={(v) => onUpdate({ enableSearch: v } as Partial<LLMNodeConfig>)}
+        />
+      </div>
+
+      <Separator />
+
       {/* Context (Knowledge) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
