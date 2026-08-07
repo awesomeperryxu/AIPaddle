@@ -30,6 +30,24 @@ type McpServerRecord = {
   auth_config: Record<string, string>
 }
 
+/**
+ * 把任意来源的 JSON Schema 归一化成 Function Calling 要求的参数结构。
+ *
+ * 🔴 Plugin Tool 的 input_schema 是自由 jsonb，MCP Server 返回的 inputSchema
+ * 同样不保证形状——两者都可能缺 `type`。缺了会让部分模型**直接拒绝整个工具列表**，
+ * 表现是「工具没被调用」而不是报错，极难定位。
+ * 早先只在 Plugin 那侧就地归一化、MCP 侧直接透传，等于同一个坑只填了一半；
+ * 抽成共用函数就是为了不让下一处接入再漏一次。
+ */
+function toFunctionParameters(schema: Record<string, unknown> | undefined) {
+  const props = schema?.properties
+  return {
+    type: 'object' as const,
+    properties: (props && typeof props === 'object' ? props : {}) as Record<string, unknown>,
+    ...(Array.isArray(schema?.required) ? { required: schema.required as string[] } : {}),
+  }
+}
+
 // POST /api/agents/[id]/chat  body: { messages: {role, content}[] }
 // LLM 模式若绑定了 approved MCP Server，使用 Function Calling 路径（Path B 直连）。
 export async function POST(req: Request, { params }: Ctx) {
@@ -175,21 +193,14 @@ export async function POST(req: Request, { params }: Ctx) {
           name: qualifiedName,
           // 高风险 Tool 在描述里点明，让模型在调用前更谨慎（PRD §14 的人工确认是另一层）
           description: t.riskLevel === 'high' ? `[高风险] ${t.description}` : t.description,
-          // input_schema 是自由 jsonb，不保证形状。归一化成 Function Calling
-          // 要求的结构——缺 type 会让部分模型直接拒绝整个工具列表，
-          // 表现是「工具没被调用」而非报错，很难查
-          parameters: {
-            type: 'object',
-            properties: (t.inputSchema.properties && typeof t.inputSchema.properties === 'object'
-              ? t.inputSchema.properties : {}) as Record<string, unknown>,
-            ...(Array.isArray(t.inputSchema.required)
-              ? { required: t.inputSchema.required as string[] } : {}),
-          },
+          parameters: toFunctionParameters(t.inputSchema),
         },
       })
     }
     // mcpServerName → {endpoint, auth_type, auth_config} 映射，工具名带 server 前缀区分
     const toolServerMap = new Map<string, { server: McpServerRecord; originalName: string }>()
+    // 工具发现失败的 Server：用于在全部不可用时给出可行动的提示，而非静默降级
+    const failedServers: { name: string; reason: string }[] = []
 
     for (const server of mcpServers) {
       try {
@@ -203,16 +214,30 @@ export async function POST(req: Request, { params }: Ctx) {
             function: {
               name: qualifiedName,
               description: `[${server.name}] ${t.description ?? ''}`,
-              parameters: t.inputSchema,
+              // 🔴 MCP 返回的 inputSchema 同样是自由 JSON Schema，不保证有 type。
+              // 这里原先直接透传，漏了 Plugin Tool 那侧早就做过的归一化——
+              // 同一个坑填了一半，MCP 路径照样会被模型整体拒绝。
+              parameters: toFunctionParameters(t.inputSchema),
             },
           })
         }
-      } catch { /* 某个 MCP Server 工具发现失败，跳过 */ }
+      } catch (e) {
+        // 🔴 不要静默跳过：发现失败时该 Server 的工具整个消失，对话表现成
+        // 「Agent 没有这个能力」，而真因可能只是 Key 没配或地址填错。
+        // 之前这里是空 catch，线上排查完全无从下手。
+        // 单个 Server 失败仍不阻断对话（其他 Server 与 Plugin Tool 照常可用）。
+        const reason = e instanceof Error ? e.message : String(e)
+        console.warn(`[chat] MCP Server「${server.name}」工具发现失败，本轮不可用：${reason}`)
+        failedServers.push({ name: server.name, reason })
+      }
     }
 
     if (tools.length > 0) {
       const handler = async (toolName: string, args: Record<string, unknown>) => {
-        // Plugin Tool 优先：它是现行模型，mcp_servers 是待下线的旧路径
+        // 按名称前缀分发：pt__ 走 Plugin Tool，{serverId前6位}__ 走 MCP。
+        // 🔴 ADR-024 后 mcp_servers 不再是「待下线的旧路径」，而是 MCP 的**唯一**模型
+        //    （MCP 不设 Plugin 层，tools 表已无 binding_type='mcp' 记录）。
+        //    两条路径并存且都是现行的，谁先查只是分发顺序，不含优先级含义。
         const pt = pluginByName.get(toolName)
         if (pt) {
           const r = await runToolVersion(ctx, pt.versionId, args)
@@ -245,6 +270,20 @@ export async function POST(req: Request, { params }: Ctx) {
         await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: false, errorCode: 'mcp_error' })
         return Response.json({ error: { code: 'mcp_error', message: 'MCP 工具调用失败，请稍后重试' } }, { status: 502 })
       }
+    }
+
+    // 🔴 挂了 MCP Server 却一个工具都没发现出来 → 不要静默降级成普通对话。
+    // 静默降级的观感是「这个 Agent 就是不会用工具」，用户无从知道真因是
+    // 地址没填 / Key 没配 / 服务连不上，只能反复试。如实说明并指出去哪儿修。
+    if (tools.length === 0 && failedServers.length > 0) {
+      await recordCall(ctx, { agentId: agent.id, model: agent.model, latencyMs: Date.now() - startedAt, keySource: llmClient.source, provider: llmClient.provider, success: false, errorCode: 'mcp_unavailable' })
+      const detail = failedServers.map((f) => `「${f.name}」${f.reason}`).join('；')
+      return Response.json({
+        error: {
+          code: 'mcp_unavailable',
+          message: `该 Agent 依赖的 MCP Server 当前不可用：${detail}。请到「Plugin → MCP」检查该 Server 的 Endpoint 与凭证配置。`,
+        },
+      }, { status: 502 })
     }
   }
 

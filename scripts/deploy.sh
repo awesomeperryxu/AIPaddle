@@ -194,7 +194,11 @@ build_once() {
     return 1
   fi
 
-  NEXT_DIST_DIR=.next.new pnpm build > "$1" 2>&1
+  # 🔴 OPS-3：显式限堆，与 .github/workflows/deploy.yml 保持同一数值。
+  # 不设时 V8 按物理内存自估，在这台同时跑 Dify/deskmate 的 7.6G 机器上会被内核
+  # OOM killer 杀掉（exit 137，不可诊断且牵连同机服务）；限堆后是 V8 先 GC 或
+  # 抛可读的 heap out of memory。2026-08-07 16:40 的 dmesg 有实例。
+  NEXT_DIST_DIR=.next.new NODE_OPTIONS="--max-old-space-size=4096" pnpm build > "$1" 2>&1
 }
 BUILD_LOG="/tmp/aipaddle-build-$(date +%s).log"
 if build_once "$BUILD_LOG"; then

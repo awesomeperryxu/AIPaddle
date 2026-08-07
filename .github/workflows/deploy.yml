@@ -94,6 +94,35 @@ jobs:
           cd /opt/aipaddle
           export PATH="$HOME/.local/share/pnpm:$PATH"
 
+          # ── OPS-3：与 scripts/deploy.sh 共用同一把锁 ────────────────────
+          # 🔴 2026-08-07 生产故障：本工作流与 scripts/deploy.sh 是两条独立路径，
+          #    此前只有 deploy.sh 持锁，两边零互斥。当时服务器上同时跑了两个
+          #    `next build`，7.6G 内存被吃穿触发 OOM killer（16:40 dmesg 有记录）。
+          #    OPS-2 把 CI 构建搬去 runner 后，这里已不再构建，但**互斥依然必需**：
+          #    源码 git reset 与产物原子切换若与应急手工部署重叠，
+          #    照样会把两次部署的源码和产物错配。锁必须是同一把，否则等于没锁。
+          # 拿不到锁 = 另一次部署正在进行，它部署的代码只会更新不会更旧，
+          # 直接跳过是安全的；此时尚未改动任何文件，不需要回滚。
+          exec 9>/tmp/aipaddle-deploy.lock
+          if ! flock -w 900 9; then
+            echo ">> 跳过：另一次部署仍在进行（等待 900s 未获锁）"
+            exit 0
+          fi
+
+          # ── OPS-3：清理孤儿构建进程 ────────────────────────────────────
+          # 🔴 CI 已不在此机构建（OPS-2），但 scripts/deploy.sh --force-manual
+          #    这条应急路径仍在服务器上跑 `next build`。它被中断时（ssh 断开只杀
+          #    客户端，杀不掉远端已起的进程）会留下孤儿继续吃内存——
+          #    2026-08-07 现场抓到 3 个，正是 OOM 的直接推手。
+          #    持锁后仍存在的 build 必然是孤儿（正常部署都在锁内），按运行时长清理。
+          for pid in $(pgrep -f "next build" 2>/dev/null || true); do
+            et=$(ps -o etimes= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+            if [ -n "$et" ] && [ "$et" -gt 1800 ]; then
+              echo ">> 清理孤儿构建进程 $pid（已运行 ${et}s）"
+              kill -9 "$pid" 2>/dev/null || true
+            fi
+          done
+
           # 保留 .env.local（密钥只存服务器，不进 GitHub）
           cp -f .env.local /tmp/aipaddle.env.bak 2>/dev/null || true
 
@@ -115,7 +144,12 @@ jobs:
                 || echo "警告：源码回退失败，请人工检查 /opt/aipaddle 的 git 状态"
             fi
           }
-          trap cleanup EXIT
+          # 🔴 OPS-3：只 trap EXIT 不够——取消工作流时 runner 杀 ssh 客户端，
+          #    远端 bash 收到的是 HUP/PIPE（写回显时管道已断）而非正常退出，
+          #    bash 对**未捕获的致命信号**不会执行 EXIT trap，回滚静默失效。
+          #    2026-08-07 线上就卡在「源码 9c1c6d1 + .next 停在 15:48」这种半更新态，
+          #    页面刷新看到的一直是一个半小时前的旧产物。信号必须逐个显式捕获。
+          trap cleanup EXIT INT TERM HUP PIPE
 
           # 用 Actions 临时 token 拉取私有仓库最新 main（一次性 URL，不写入 remote）
           git fetch "https://x-access-token:${GH_PAT}@github.com/awesomeperryxu/AIPaddle.git" main
