@@ -87,18 +87,36 @@ jobs:
           # 🔴 OPS-1：构建失败时把退出码翻译成人话。
           # 此前 OOM 的全部线索只有一行 `Killed` + exit 137，不写明是内存问题，
           # 两次排查都往代码/依赖方向找。137 = 128+9(SIGKILL)，即内核 OOM killer。
-          if ! NEXT_DIST_DIR=.next.new pnpm build; then
-            RC=$?
+          # 🔴 退出码必须这样取。原写法 `if ! cmd; then RC=$?` 是**错的**：
+          # `$?` 拿到的是 `!` 取反**之后**的值——构建失败(非零)取反成 0，于是
+          #   ① 报错印成「构建失败（exit 0）」，自相矛盾、误导排查；
+          #   ② `exit "$RC"` 变成 `exit 0`，脚本以成功退出、跳过下面的产物校验，
+          #      GitHub Actions 判定**部署成功**。
+          # 后果：构建失败被谎报成功，线上停在「新源码 + 旧构建产物」的半更新态，
+          # 而所有信号（run 绿、git log 是最新 commit）都显示一切正常。
+          # 2026-08-07 实测撞上：连续两小时的合并其实都没上线，直到比对
+          # `.next/BUILD_ID` 的时间戳才发现。
+          set +e
+          NEXT_DIST_DIR=.next.new pnpm build
+          RC=$?
+          set -e
+          if [ "$RC" -ne 0 ]; then
             if [ "$RC" -eq 137 ]; then
               echo "FATAL: 构建进程被内核杀死（exit 137 = SIGKILL，几乎必然是 OOM）"
               echo "       构建后内存：$(free -m | awk '/^Mem:/{print "可用 "$7"MB"}')"
               echo "       本机同时跑着 Dify / deskmate 等服务，构建期内存峰值会撞车。"
               echo "       这是偶发失败：同一份代码重跑常能成功；线上未受影响（.next 未动，源码将回退）。"
+            elif [ "$RC" -eq 143 ]; then
+              echo "FATAL: 构建被 SIGTERM 终止（exit 143 = 128+15）"
+              echo "       多为并发部署互相打断，或有人取消了上一条 run。"
+              echo "       线上未受影响（.next 未动，源码将回退）；重跑即可。"
             else
               echo "FATAL: 构建失败（exit $RC）——非 OOM，请看上方构建日志"
             fi
             rm -rf .next.new
-            exit "$RC"
+            # 🔴 一律以非零退出：RC 万一仍是 0（信号/管道等边缘情况），
+            # exit 0 会让这次失败继续伪装成成功。宁可多报一次失败。
+            [ "$RC" -ne 0 ] && exit "$RC" || exit 1
           fi
 
           echo ">> 校验新构建完整性"
