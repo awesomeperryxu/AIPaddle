@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiFetch } from '@/lib/api/client';
-import { Plus, Server, CheckCircle2, Clock, XCircle, Ban, ChevronDown, ChevronRight, KeyRound } from 'lucide-react';
+import { Plus, Server, CheckCircle2, Clock, XCircle, Ban, ChevronDown, ChevronRight, KeyRound, Wrench } from 'lucide-react';
 
 // ADR-023：MCP Server 注册区，嵌入 Plugin → MCP 页面。
 //
@@ -44,6 +44,28 @@ export function McpServerSection() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
+
+  // ADR-024：tools 由 Server 动态提供，实时拉取不落库。
+  // 库里存副本的下场本项目已经见过——164 条手工 Tool 记录既无来源也跑不通。
+  type ToolsState = { loading: boolean; tools?: { name: string; description: string }[]; error?: string; at?: string };
+  const [toolsByServer, setToolsByServer] = useState<Record<string, ToolsState>>({});
+
+  async function loadTools(id: string) {
+    setToolsByServer((m) => ({ ...m, [id]: { loading: true } }));
+    try {
+      const r = await apiFetch<{ ok: boolean; tools?: { name: string; description: string }[]; message?: string; fetchedAt?: string }>(
+        `/api/mcp-servers/${id}/tools`,
+      );
+      setToolsByServer((m) => ({
+        ...m,
+        [id]: r.ok
+          ? { loading: false, tools: r.tools ?? [], at: r.fetchedAt }
+          : { loading: false, error: r.message ?? '拉取失败' },
+      }));
+    } catch (e) {
+      setToolsByServer((m) => ({ ...m, [id]: { loading: false, error: e instanceof Error ? e.message : '拉取失败' } }));
+    }
+  }
 
   useEffect(() => {
     apiFetch<{ servers: McpServer[] }>('/api/mcp-servers')
@@ -142,6 +164,13 @@ export function McpServerSection() {
                     <p className="text-[11px] text-muted-foreground truncate font-mono">{s.endpoint || '— 未配置 Endpoint —'}</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    {s.endpoint && (
+                      <Button size="sm" variant="ghost" className="h-6 text-[11px]"
+                        disabled={toolsByServer[s.id]?.loading}
+                        onClick={() => loadTools(s.id)}>
+                        {toolsByServer[s.id]?.loading ? '连接中…' : '查看工具'}
+                      </Button>
+                    )}
                     {s.status === 'draft' && (
                       <Button size="sm" variant="outline" className="h-6 text-[11px]" disabled={busy === s.id || !s.endpoint}
                         onClick={() => transition(s.id, 'submit')}>提交审批</Button>
@@ -163,6 +192,42 @@ export function McpServerSection() {
                         onClick={() => transition(s.id, 'enable')}>启用</Button>
                     )}
                   </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 实时拉取的 tools 清单。刻意标注拉取时间——它是快照不是库里的记录，
+              Server 侧变更后需重新点「查看工具」 */}
+          <div className="space-y-2 mt-2">
+            {Object.entries(toolsByServer).map(([id, st]) => {
+              const s = servers.find((x) => x.id === id);
+              if (!s || st.loading) return null;
+              return (
+                <div key={id} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Wrench className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-[11px] font-medium text-foreground">{s.name} 提供的工具</span>
+                    {st.at && (
+                      <span className="text-[10px] text-muted-foreground">
+                        实时拉取 · {new Date(st.at).toLocaleTimeString('zh-CN')}
+                      </span>
+                    )}
+                  </div>
+                  {st.error ? (
+                    <p className="text-[11px] text-destructive">{st.error}</p>
+                  ) : st.tools && st.tools.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {st.tools.map((t) => (
+                        <span key={t.name} title={t.description}
+                          className="px-1.5 py-0.5 rounded bg-background border border-border text-[10px] font-mono text-foreground">
+                          {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">该 Server 未暴露任何工具</p>
+                  )}
                 </div>
               );
             })}
