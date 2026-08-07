@@ -63,6 +63,12 @@ export const AgentConfigSchema = z.object({
     description: z.string(),
     howToFix: z.string(),
   }).optional(),
+  // 外部凭证引导（需要用户配置 API Key 才能使用的 Tool）
+  credentialGuide: z.object({
+    name: z.string(),
+    steps: z.string(),
+    endpoint: z.string(),
+  }).optional(),
   // 来源系统（如 WorkBuddy）声明的 Plugin 依赖，供编排页依赖检测
   requiredPlugins: z.array(z.object({
     id: z.string(),

@@ -591,6 +591,29 @@ export function AgentOrchestrateView({ agent, canEdit, fromTemplate }: { agent: 
             );
           })()}
 
+          {/* 凭证引导：需要用户配置 API Key 才能使用的外部 Tool */}
+          {agent.config.credentialGuide && !agent.config.missingCapability && (
+            <section className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-blue-500" />
+                <span className="text-sm font-medium text-blue-600 dark:text-blue-400">需要配置凭证</span>
+              </div>
+              <p className="text-xs text-blue-600/80 dark:text-blue-400/80">
+                该 Agent 依赖外部服务 <span className="font-medium text-foreground">{(agent.config.credentialGuide as { name: string }).name}</span>，
+                需要配置凭证后才能正常调用。
+              </p>
+              <div className="rounded-lg bg-background border border-border px-3 py-2 space-y-1">
+                <p className="text-xs font-medium text-foreground">获取步骤：</p>
+                {String((agent.config.credentialGuide as { steps: string }).steps).split('\\n').map((step, i) => (
+                  <p key={i} className="text-xs text-muted-foreground">{step}</p>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                端点：<code className="bg-muted px-1 rounded text-[10px]">{(agent.config.credentialGuide as { endpoint: string }).endpoint}</code>
+              </p>
+            </section>
+          )}
+
           {/* 缺失能力警告：config.missingCapability 标注了无法自动补足的外部依赖 */}
           {agent.config.missingCapability && (
             <section className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-2">
