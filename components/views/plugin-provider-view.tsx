@@ -20,6 +20,7 @@ import {
 import { apiFetch } from '@/lib/api/client'
 import { getAvatarBg, STATUS_PILL } from '@/lib/ui/entity-visuals'
 import { OpenApiImportDialog, DbToolDialog } from '@/components/views/plugin-binding-dialogs'
+import { McpServerSection } from '@/components/views/mcp-server-section'
 import {
   Plus, Loader2, ShieldAlert, ExternalLink, Wrench, Star, FileJson, PlugZap,
   Search, MoreHorizontal, Play, Pause, XCircle,
@@ -274,6 +275,11 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
           <Plus className="h-4 w-4" />新建 {meta.title} Plugin
         </Button>
       </div>
+
+      {/* ADR-023：MCP 页把「连接层（Server）」与「管理层（Plugin）」合并到一处。
+          此前两者分处 /mcp 与 /plugins/mcp，用户按 credentialGuide 的提示来这里填 Key
+          却找不到入口——Plugin 只有目录字段，没有 endpoint 与凭证。 */}
+      {providerType === 'mcp' && <McpServerSection />}
 
       {/* ── Search + Status Tabs ── */}
       <div className="flex items-center gap-3 mb-4">
