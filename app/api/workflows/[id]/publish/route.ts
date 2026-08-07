@@ -3,6 +3,7 @@ import { can } from '@/lib/auth/permissions'
 import { getWorkflow, publishWorkflow } from '@/lib/data/workflow'
 import { validateGraph } from '@/lib/workflow/validate'
 import { validateToolNodes } from '@/lib/workflow/validate-tools'
+import { checkReadiness } from '@/lib/workflow/readiness'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -22,6 +23,19 @@ export async function POST(_req: Request, { params }: Ctx) {
   if (validation.length > 0) {
     return Response.json(
       { error: { code: 'invalid_graph', message: '图不合法，无法发布' }, validation },
+      { status: 422 },
+    )
+  }
+
+  // WF-11 可用性体检：图合法 ≠ 跑得起来。空提示词、编造的假 URL、未挂载的 tool
+  // 都会让流程「看着完整、发布出去就是坏的」，发布这一关必须机器把住。
+  const readiness = checkReadiness(wf.graph)
+  if (!readiness.ready) {
+    return Response.json(
+      {
+        error: { code: 'not_ready', message: '流程未通过可用性体检，请先处理必须项' },
+        readiness,
+      },
       { status: 422 },
     )
   }

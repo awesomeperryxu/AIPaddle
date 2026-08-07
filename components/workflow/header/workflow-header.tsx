@@ -32,6 +32,7 @@ import {
   ChevronDown,
   PlayCircle,
   StepForward,
+  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -56,6 +57,10 @@ export interface WorkflowHeaderProps {
   onRedo?: () => void;
   onRun?: () => void;
   onRunStep?: () => void;
+  /** 打开定时设置（WF-2b：定时与流程内容解耦，不占画布节点） */
+  onOpenSchedule?: () => void;
+  /** 已启用定时时在菜单项上回显 cron */
+  scheduleSummary?: string;
   onPublish?: () => void;
   onVersionHistory?: () => void;
   onExportDsl?: () => void;
@@ -82,6 +87,8 @@ export function WorkflowHeader({
   onRedo,
   onRun,
   onRunStep,
+  onOpenSchedule,
+  scheduleSummary,
   onPublish,
   onVersionHistory,
   onExportDsl,
@@ -369,7 +376,7 @@ export function WorkflowHeader({
                 <ChevronDown className="h-3 w-3 ml-1" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onClick={onRunStep} className="text-xs">
                 <StepForward className="h-4 w-4 mr-2" />
                 单步运行
@@ -378,6 +385,15 @@ export function WorkflowHeader({
               <DropdownMenuItem onClick={onRun} className="text-xs">
                 <PlayCircle className="h-4 w-4 mr-2" />
                 完整运行
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {/* 定时属于「什么时候跑」，挂在运行菜单里；画布只画「跑什么」 */}
+              <DropdownMenuItem onClick={onOpenSchedule} className="text-xs">
+                <Clock className="h-4 w-4 mr-2" />
+                <span className="flex-1">定时设置</span>
+                {scheduleSummary && (
+                  <span className="ml-2 font-mono text-[10px] text-muted-foreground">{scheduleSummary}</span>
+                )}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

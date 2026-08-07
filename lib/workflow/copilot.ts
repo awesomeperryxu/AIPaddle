@@ -2,7 +2,9 @@ import 'server-only'
 import { chat } from '@/lib/ai'
 import { validateGraph, type WorkflowGraph, type GraphError, type GraphNode } from '@/lib/workflow/validate'
 import { layoutGraph } from '@/lib/workflow/layout'
-import type { PersistedGraph, PersistedNode, PersistedEdge } from '@/lib/workflow/graph-adapter'
+import type { PersistedGraph, PersistedNode, PersistedEdge, WorkflowSchedule } from '@/lib/workflow/graph-adapter'
+import { isUsableUrl } from '@/lib/workflow/readiness'
+import { parseCronFromText, mentionsSchedule } from '@/lib/workflow/schedule-parse'
 
 // Workflow Copilot（4.4.5，ADR-005）：自然语言 → 结构化工作流图（draft）。
 // 四道防线：① 白名单节点类型 ② 强制 JSON 结构 ③ 图校验 ④ 仅产 draft、AI 不能发布/保存。
@@ -14,7 +16,6 @@ import type { PersistedGraph, PersistedNode, PersistedEdge } from '@/lib/workflo
 
 const NODE_TYPES = {
   'start': '开始入口',
-  'trigger-schedule': '定时触发入口（周期性需求用它替代 start）',
   'end': '结束输出',
   'llm': '大模型处理',
   'if-else': '条件分支',
@@ -43,7 +44,7 @@ export type ClarificationItem = { field: string; question: string; options?: str
 /** 模型直出的松散节点/边形状（顶层 label/config、边上 branch），规范化后才对外 */
 export type RawNode = { id: string; type: string; label?: string; description?: string; config?: Record<string, unknown> }
 export type RawEdge = { source: string; target: string; branch?: string }
-export type RawGraph = { nodes: RawNode[]; edges: RawEdge[] }
+export type RawGraph = { nodes: RawNode[]; edges: RawEdge[]; schedule?: WorkflowSchedule }
 
 const TYPE_LABELS: Record<string, string> = {
   'start': '开始',
@@ -55,18 +56,37 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 const BASE_RULES = `硬性要求：
-① 恰好一个入口节点（start 或 trigger-schedule 二选一）、至少一个 end 或 answer 节点
+① 恰好一个 start 节点、至少一个 end 或 answer 节点
 ② 每个节点都要连入流程（无孤立节点）
 ③ 不能有环（有向无环图）
 ④ 节点 id 格式：类型-序号（如 llm-1、if-else-2）
 ⑤ 除非需求真的要分支，否则**只留一个 end**，不要为每条路径各造一个结束节点
-⑥ 节点 label 用简短中文动词短语（如「检索昨日AI资讯」），不要写成节点类型名`
+⑥ 需求含「每天/每周/每小时/定时/几点运行」等周期性字眼时，**必须**在 JSON 顶层输出
+   schedule 字段，且**不要**为定时单独加节点——定时是「什么时候跑」的运行属性，
+   与「跑什么」的流程内容解耦。漏掉 schedule 等于把用户的定时需求丢了。
 
-const NODE_FORMAT = `节点配置要求：
+🔴 绝对禁止（违反即整条流程作废，用户拿到就是坏的）：
+⑦ **不要编造 URL、域名、接口地址、API Key**。像「https://api.example-search.com/v1/search」
+   这类假地址一跑就失败。没有真实可用的接口时，**不要用 http-request 节点**。
+⑧ **不要用节点假装完成模型做不到的事**。联网检索、读写外部系统、发消息，
+   只有在下方能力清单里有对应 Skill 时才能编排；没有就**不要硬造这一步**，
+   改为在 clarifications 里问用户「用哪个渠道/接口获取数据」。
+⑨ **不要拆出用户没要求的臆想中间步骤**。以下这类节点一律不许出现：
+   ✗「生成检索关键词」✗「构造查询语句」✗「推断昨天的日期」✗「准备请求参数」——
+   它们是实现细节，不是业务步骤，用户看不懂也没要求。这些工作应当**并进真正干活的那一步的提示词里**。
+   正例（查昨日AI大事件）：抓取前一日的AI资讯 → 筛选重要事件并摘要 → 输出简报，**三步即可**。
+
+命名要求：
+⑩ 节点 label 用**用户视角的业务动作**，短句、中文、动宾结构，
+   例：「抓取前一日的AI大事件」「筛选重要事件并摘要」「输出简报」；
+   不要写成节点类型名（llm/end），也不要写实现细节（「调用LLM生成关键词」）。`
+
+const NODE_FORMAT = `节点配置要求（**每个节点都必须填满自己的配置，不能只给 label**）：
 - llm 节点必须给 config.prompt，写清这一步做什么，用 {{input}} 引用上一步输出；
-  例：{"id":"llm-1","type":"llm","label":"提炼要点","config":{"prompt":"从以下内容提炼要点：\\n{{input}}"}}
-- 需求含「每天/每周/每小时/定时/几点运行」等周期性字眼时，入口节点用 trigger-schedule 而非 start，
-  并把时间翻成 cron：{"id":"trigger-1","type":"trigger-schedule","label":"每天8点触发","config":{"cron":"0 8 * * *","timezone":"Asia/Shanghai"}}
+  例：{"id":"llm-1","type":"llm","label":"筛选重要事件并摘要","config":{"prompt":"从以下内容提炼要点：\\n{{input}}"}}
+- http-request 节点必须给 config.url（**真实可用的地址**）与 config.method；
+  编不出真实地址就不要用这个节点——宁可少一步，也不要给用户一条注定 404 的流程
+- knowledge-retrieval 必须给 config.dataset_ids；if-else 必须给每个分支的判断条件
 - if-else 的每条出边必须标明分支：{"source":"if-else-1","target":"llm-2","branch":"if-true"}，
   取值只能是 if-true / elif-1 / elif-2 / else，且**必须有一条 else 边**。
   不标 branch 的分支边在画布上会挂空，流程跑到分支处就断了。`
@@ -90,6 +110,8 @@ function toModelGraph(graph: WorkflowGraph | PersistedGraph): RawGraph {
       const ee = e as PersistedEdge
       return { source: ee.source, target: ee.target, ...(ee.sourceHandle ? { branch: ee.sourceHandle } : {}) }
     }),
+    // 带上现有定时设置，模型改流程时才不会把它当成「没设过」丢掉
+    ...((graph as PersistedGraph).schedule ? { schedule: (graph as PersistedGraph).schedule } : {}),
   }
 }
 
@@ -107,8 +129,11 @@ ${NODE_FORMAT}
 {
   "nodes": [{"id":"唯一id","type":"节点类型","label":"简短中文名","config":{}}],
   "edges": [{"source":"起点id","target":"终点id","branch":"仅 if-else 出边需要"}],
+  "schedule": {"enabled":true,"cron":"0 8 * * *","timezone":"Asia/Shanghai"},
   "clarifications": [{"field":"需要用户补充的配置项","question":"问用户的问题","options":["选项1","选项2"]}]
 }
+
+schedule 规则：有周期性要求时必填（cron 用五段式），没有就整个省略这个字段。
 
 clarifications 规则：
 - 如果用户描述足够完整，clarifications 为空数组
@@ -200,7 +225,8 @@ function parseResult(text: string): { graph: RawGraph; clarifications: Clarifica
           })
           .filter((c) => c.question)
       : []
-    return { graph: { nodes, edges }, clarifications }
+    const schedule = parseSchedule(obj.schedule)
+    return { graph: { nodes, edges, ...(schedule ? { schedule } : {}) }, clarifications }
   } catch {
     return null
   }
@@ -217,6 +243,22 @@ export function sanitizeToolNodes(graph: RawGraph, allowedIds: Set<string>): Raw
   return {
     ...graph,
     nodes: graph.nodes.map((n) => {
+      // WF-12：http-request 的假 URL 与编造的 tool_id 是同一类病。
+      // 模型很爱写 `https://api.example-search.com/v1/search` 这种看着像真的地址，
+      // 光靠 prompt 说「不要编造」拦不住。这里不删节点（删了流程会缺一环、
+      // 用户也不知道它本来想干什么），而是清空假地址并在 label 上标出来，
+      // 由体检（readiness）把它列为发布拦截项。
+      if (n.type === 'http-request') {
+        const url = typeof n.config?.url === 'string' ? n.config.url : ''
+        if (url && !isUsableUrl(url)) {
+          return {
+            ...n,
+            label: `${n.label || '外部接口调用'}（地址需人工填写）`,
+            config: { ...n.config, url: '' },
+          }
+        }
+        return n
+      }
       if (n.type !== 'tool') return n
       const cfg = n.config ?? {}
       const id = typeof cfg.tool_id === 'string' ? cfg.tool_id
@@ -227,24 +269,104 @@ export function sanitizeToolNodes(graph: RawGraph, allowedIds: Set<string>): Raw
   }
 }
 
-// 与 configs/schedule-config.tsx 的 SCHEDULE_PRESETS 一一对应，
-// 不然面板会把「每天8点」显示成「自定义 cron」
-const CRON_PRESETS: Record<string, string> = {
-  '0 * * * *': 'every_hour',
-  '0 8 * * *': 'daily_8am',
-  '0 9 * * *': 'daily_9am',
-  '0 9 * * 1': 'weekly_monday',
-  '0 9 1 * *': 'monthly_first',
-}
 const CRON_RE = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/
 
-/** 定时触发节点补全：cron 缺失或不合法时回落每天 9 点，并补上配置面板要读的 schedule_preset */
-function normalizeScheduleConfig(config: Record<string, unknown>): Record<string, unknown> {
-  const raw = typeof config.cron === 'string' ? config.cron.trim()
-    : typeof config.cron_expression === 'string' ? String(config.cron_expression).trim() : ''
-  const cron = CRON_RE.test(raw) ? raw : '0 9 * * *'
-  const timezone = typeof config.timezone === 'string' && config.timezone ? config.timezone : 'Asia/Shanghai'
-  return { ...config, cron, timezone, schedule_preset: CRON_PRESETS[cron] ?? 'custom' }
+/**
+ * 解析模型给出的定时设置（WF-2b）。
+ *
+ * 🔴 定时**不落成画布节点**：用户明确要求「定时任务要和流程内容解耦」——
+ * 「什么时候跑」是工作流的运行属性，画布只画「跑什么」。
+ * cron 不合法就整个丢弃，不猜时间：猜错会让用户以为设好了，比没设更危险。
+ */
+function parseSchedule(value: unknown): WorkflowSchedule | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const v = value as Record<string, unknown>
+  const raw = typeof v.cron === 'string' ? v.cron.trim()
+    : typeof v.cron_expression === 'string' ? String(v.cron_expression).trim() : ''
+  if (!CRON_RE.test(raw)) return undefined
+  return {
+    enabled: v.enabled !== false,
+    cron: raw,
+    timezone: typeof v.timezone === 'string' && v.timezone ? v.timezone : 'Asia/Shanghai',
+  }
+}
+
+// 服务端实际在用的模型（lib/ai/index.ts 的 LLM_MODEL 默认值），生成时按它填，
+// 免得面板显示 gpt-4o、真跑却是通义千问这种对不上的情况。
+const DEFAULT_LLM = { provider: 'qwen', name: process.env.LLM_MODEL || 'qwen-plus', completion_params: { temperature: 0.7, max_tokens: 4096 } }
+
+/**
+ * LLM 节点配置补全（WF-10）。
+ *
+ * 🔴 同一份配置有三个读者，字段却对不上：
+ *   - 执行引擎 `execute.ts` 读 `config.prompt`（单条字符串）
+ *   - 配置面板 `llm-config.tsx` 读 `config.model` + `config.prompts`（PromptTemplate[]）
+ *   - Copilot 此前只写 `config.prompt`
+ * 结果就是用户点开生成的 LLM 节点，模型和提示词**全是空的**——看着像没配置，
+ * 一旦在面板里随手保存，反而会把引擎要用的 prompt 覆盖没。
+ * 这里把两种形态一次写全，并保持同一份文本。
+ */
+function normalizeLlmConfig(config: Record<string, unknown>, nodeId: string): Record<string, unknown> {
+  const promptsIn = Array.isArray(config.prompts) ? (config.prompts as Record<string, unknown>[]) : []
+  const fromPrompts = typeof promptsIn[0]?.text === 'string' ? String(promptsIn[0].text) : ''
+  const text = (typeof config.prompt === 'string' && config.prompt.trim() ? config.prompt : fromPrompts).trim()
+  if (!text) return config // 没有提示词就不硬造，交给体检报「待补」
+  return {
+    ...config,
+    prompt: text,
+    model: config.model && typeof config.model === 'object' ? config.model : DEFAULT_LLM,
+    prompts: promptsIn.length ? promptsIn : [{ id: `${nodeId}-p1`, role: 'user', text }],
+  }
+}
+
+/**
+ * 折叠臆想的中间步骤（WF-14）。
+ *
+ * 🔴 模型很爱把实现细节拆成节点：「生成检索关键词」「推断昨天的日期」「构造查询语句」。
+ * 用户看到的是一条步骤莫名其妙的流程——他要的是「抓取 → 筛选 → 输出」，
+ * 不是模型的内心独白。prompt 里明令禁止后仍然复发（实测两轮都犯），只能确定性处理。
+ *
+ * 安全边界（三条同时满足才折叠，避免误删真业务步骤）：
+ *   ① 类型是 llm；② label 命中实现细节黑名单；③ 恰好一进一出。
+ * 折叠不丢信息：被折叠节点的提示词并入下游节点的提示词前段。
+ */
+// 动词与名词之间允许夹修饰语（「推断**昨天的**日期」「生成**昨日AI大事件检索**关键词」），
+// 但名词表保持窄——只收公认的实现细节，避免误伤「生成简报」这类真业务步骤
+const FILLER_LABEL_RE = /(生成|构造|构建|拼接|准备|推断|计算|确定|获取)[^，。；\s]{0,10}?(关键词|关键字|查询语句|查询条件|检索式|请求参数|入参|日期字符串|时间字符串|时间范围|的日期|昨天的日期|日期)(?![一-龥])/
+
+export function collapseFillerNodes(graph: RawGraph): RawGraph {
+  const inDeg = new Map<string, number>()
+  const outDeg = new Map<string, number>()
+  for (const e of graph.edges) {
+    outDeg.set(e.source, (outDeg.get(e.source) ?? 0) + 1)
+    inDeg.set(e.target, (inDeg.get(e.target) ?? 0) + 1)
+  }
+
+  let nodes = graph.nodes
+  let edges = graph.edges
+  for (const n of graph.nodes) {
+    if (n.type !== 'llm' || !FILLER_LABEL_RE.test(n.label ?? '')) continue
+    if ((inDeg.get(n.id) ?? 0) !== 1 || (outDeg.get(n.id) ?? 0) !== 1) continue
+
+    const inEdge = edges.find((e) => e.target === n.id)
+    const outEdge = edges.find((e) => e.source === n.id)
+    if (!inEdge || !outEdge) continue
+    const downstream = nodes.find((x) => x.id === outEdge.target)
+    if (!downstream) continue
+
+    // 提示词并入下游，别把模型想表达的意图丢掉
+    const mine = typeof n.config?.prompt === 'string' ? n.config.prompt.trim() : ''
+    if (mine && downstream.type === 'llm') {
+      const theirs = typeof downstream.config?.prompt === 'string' ? downstream.config.prompt.trim() : ''
+      downstream.config = { ...downstream.config, prompt: theirs ? `${mine}\n\n${theirs}` : mine }
+    }
+
+    nodes = nodes.filter((x) => x.id !== n.id)
+    edges = edges
+      .filter((e) => e !== outEdge)
+      .map((e) => (e === inEdge ? { ...e, target: outEdge.target } : e))
+  }
+  return { ...graph, nodes, edges }
 }
 
 const BRANCH_RE = /^(if-true|else|elif-\d+)$/
@@ -302,7 +424,7 @@ export function normalizeGraph(raw: RawGraph): PersistedGraph {
 
   const persisted: PersistedNode[] = nodes.map((n) => {
     let config = n.config ?? {}
-    if (n.type === 'trigger-schedule') config = normalizeScheduleConfig(config)
+    if (n.type === 'llm') config = normalizeLlmConfig(config, n.id)
     if (n.type === 'if-else') {
       const cases = casesByNode.get(n.id)
       if (cases?.length) config = { ...config, cases }
@@ -319,7 +441,22 @@ export function normalizeGraph(raw: RawGraph): PersistedGraph {
     }
   })
 
-  return { nodes: persisted, edges }
+  // schedule 原样透传：它是图的元数据，不参与布局、不占节点
+  return { nodes: persisted, edges, ...(raw.schedule ? { schedule: raw.schedule } : {}) }
+}
+
+/**
+ * 定时兜底（WF-13）：模型没输出 schedule 时，用确定性规则从用户描述里解析。
+ *
+ * 🔴 实测 qwen-plus 对「每天早上8点运行」连续两次都不输出 schedule 字段，
+ * prompt 怎么强调都压不住。定时是用户明说的需求，不能押在模型的指令遵循上。
+ */
+function withScheduleFallback(graph: PersistedGraph, description: string): PersistedGraph {
+  if (graph.schedule) return graph
+  if (!mentionsSchedule(description)) return graph
+  const cron = parseCronFromText(description)
+  if (!cron) return graph // 说了「定时」却没说清频率：不猜，留给用户在定时设置里填
+  return { ...graph, schedule: { enabled: true, cron, timezone: 'Asia/Shanghai' } }
 }
 
 export type CopilotOptions = {
@@ -348,10 +485,14 @@ export async function generateWorkflowGraph(
     { role: 'system' as const, content: systemPrompt },
     { role: 'user' as const, content: `需求：${description}` },
   ]
+  // 生成 → 折叠臆想步骤 → 净化假 URL/编造 tool → 规范化 → 定时兜底。
+  // 校验看到的必须是最终会落库、会上画布的那张图
+  const finish = (g: RawGraph): PersistedGraph =>
+    withScheduleFallback(normalizeGraph(sanitizeToolNodes(collapseFillerNodes(g), allowedIds)), description)
+
   let raw = await chat(messages, { temperature: 0.2, maxTokens: 2000 })
   const parsed = parseResult(raw)
-  // 先净化再规范化再校验：校验看到的必须是最终会落库、会上画布的那张图
-  let graph = normalizeGraph(sanitizeToolNodes(parsed?.graph ?? { nodes: [], edges: [] }, allowedIds))
+  let graph = finish(parsed?.graph ?? { nodes: [], edges: [] })
   let clarifications = parsed?.clarifications ?? []
   let validation = validateGraph({ nodes: graph.nodes as GraphNode[], edges: graph.edges })
 
@@ -366,7 +507,7 @@ export async function generateWorkflowGraph(
     )
     const fixParsed = parseResult(fix)
     if (fixParsed) {
-      const fixed = normalizeGraph(sanitizeToolNodes(fixParsed.graph, allowedIds))
+      const fixed = finish(fixParsed.graph)
       const fixedErrs = validateGraph({ nodes: fixed.nodes as GraphNode[], edges: fixed.edges })
       if (fixedErrs.length < validation.length) {
         raw = fix; graph = fixed; clarifications = fixParsed.clarifications; validation = fixedErrs
