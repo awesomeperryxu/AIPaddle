@@ -128,12 +128,14 @@ export function ExtensionsView() {
   }
 
   const [editTargetId, setEditTargetId] = useState('')
+  const [editMode, setEditMode] = useState(false)
 
   function openEdit(ext: Extension) {
     setEditPanel(ext)
     setEditOrigins(ext.allowedOrigins.join('\n'))
     setEditRate(String(ext.rateLimitPerMin))
     setEditTargetId(ext.targetId)
+    setEditMode(false) // 默认只读
   }
 
   async function handleEdit() {
@@ -149,7 +151,8 @@ export function ExtensionsView() {
           targetId: editTargetId || undefined,
         }),
       })
-      toast.success('已更新')
+      toast.success('已更新（修改已记录日志）')
+      setEditMode(false)
       setEditPanel(null)
       await reload()
     } catch (e) {
@@ -462,49 +465,85 @@ export function ExtensionsView() {
         </DialogContent>
       </Dialog>
 
-      {/* 编辑白名单/限流（BUG-101：创建后无法修改的缺失功能） */}
-      <Dialog open={!!editPanel} onOpenChange={(o) => { if (!o) setEditPanel(null) }}>
-        <DialogContent>
+      {/* 扩展能力设置面板（灰色只读 + 修改按钮切换编辑） */}
+      <Dialog open={!!editPanel} onOpenChange={(o) => { if (!o) { setEditPanel(null); setEditMode(false); } }}>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editPanel?.name} · 设置</DialogTitle>
-            <DialogDescription>修改来源白名单与限流配置。</DialogDescription>
+            <DialogDescription>查看和修改扩展能力配置。</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>调用目标</Label>
-              <Select value={editTargetId} onValueChange={setEditTargetId}>
-                <SelectTrigger><SelectValue placeholder="选择 Agent" /></SelectTrigger>
-                <SelectContent>
-                  {/* 已发布的 + 当前已绑定的（防止切换后找不回来） */}
-                  {agents
-                    .filter(a => a.status === 'published' || a.id === editTargetId)
-                    .map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}{a.status !== 'published' ? ` (${a.status})` : ''}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+            {/* 调用目标 */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">调用目标</Label>
+                {!editMode && <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setEditMode(true)}>修改</Button>}
+              </div>
+              {editMode ? (
+                <Select value={editTargetId} onValueChange={setEditTargetId}>
+                  <SelectTrigger><SelectValue placeholder="选择 Agent" /></SelectTrigger>
+                  <SelectContent>
+                    {agents
+                      .filter(a => a.status === 'published' || a.id === editTargetId)
+                      .map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}{a.status !== 'published' ? ` (${a.status})` : ''}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-sm text-foreground bg-muted/50 rounded-md px-3 py-2">{agents.find((a) => a.id === editTargetId)?.name ?? editTargetId.slice(0, 12)}</p>
+              )}
             </div>
-            <div>
-              <Label>来源白名单（一行一个域名）</Label>
-              <Textarea rows={4} value={editOrigins} onChange={(e) => setEditOrigins(e.target.value)}
-                placeholder={'https://www.example.com\n留空 = 仅允许服务端调用'} />
-              <p className="text-xs text-muted-foreground mt-1">
-                只填 协议+域名（如 https://example.com），不要带路径。不接受通配符 *。
-                留空表示仅允许服务端调用（BFF 代理），浏览器直连将被拒绝。
-              </p>
+
+            {/* 来源白名单 */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">来源白名单</Label>
+                {!editMode && <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setEditMode(true)}>修改</Button>}
+              </div>
+              {editMode ? (
+                <>
+                  <Textarea rows={4} value={editOrigins} onChange={(e) => setEditOrigins(e.target.value)}
+                    placeholder={'https://www.example.com\n留空 = 仅允许服务端调用'} />
+                  <p className="text-[11px] text-muted-foreground">
+                    只填 协议+域名（如 https://example.com），不接受通配符。留空 = 仅允许服务端调用。
+                  </p>
+                </>
+              ) : (
+                <div className="text-sm bg-muted/50 rounded-md px-3 py-2 space-y-0.5">
+                  {editOrigins ? editOrigins.split('\n').filter(Boolean).map((o, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-foreground"><Globe className="h-3 w-3 text-muted-foreground shrink-0" />{o}</div>
+                  )) : <span className="text-amber-600 text-xs">未配置（拒绝所有跨域请求）</span>}
+                </div>
+              )}
             </div>
-            <div>
-              <Label>限流（次/分钟）</Label>
-              <Input type="number" value={editRate} onChange={(e) => setEditRate(e.target.value)} />
+
+            {/* 限流 */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">限流（次/分钟）</Label>
+                {!editMode && <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setEditMode(true)}>修改</Button>}
+              </div>
+              {editMode ? (
+                <Input type="number" value={editRate} onChange={(e) => setEditRate(e.target.value)} />
+              ) : (
+                <p className="text-sm text-foreground bg-muted/50 rounded-md px-3 py-2">{editRate} 次/分钟</p>
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditPanel(null)}>取消</Button>
-            <Button onClick={handleEdit} disabled={busy === 'edit'}>
-              {busy === 'edit' ? '保存中...' : '保存'}
-            </Button>
+            {editMode ? (
+              <>
+                <Button variant="outline" onClick={() => setEditMode(false)}>取消修改</Button>
+                <Button onClick={handleEdit} disabled={busy === 'edit'}>
+                  {busy === 'edit' ? '保存中...' : '保存'}
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" onClick={() => setEditPanel(null)}>关闭</Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
