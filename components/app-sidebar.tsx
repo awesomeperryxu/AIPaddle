@@ -29,6 +29,7 @@ import {
   LayoutTemplate,
   Cpu,
   Clock,
+  Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from 'next-themes';
@@ -69,6 +70,7 @@ const navSections: NavSection[] = [
     items: [
       { title: '监控', icon: <LayoutDashboard className="h-4 w-4" />, href: 'dashboard' },
       { title: '个人助理', icon: <MessageSquare className="h-4 w-4" />, href: 'assistant' },
+      { title: 'AI 操作记录', icon: <Sparkles className="h-4 w-4" />, href: 'ai-activity' },
     ]
   },
   {
