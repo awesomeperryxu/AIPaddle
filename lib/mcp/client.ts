@@ -24,21 +24,17 @@ export type McpToolResult = {
   isError?: boolean
 }
 
-type AuthConfig = Record<string, string>
-
-/** auth_config 里承载凭证的字段名随 Server 而异，按常见顺序取。 */
-function secretOf(authType: string, authConfig: AuthConfig): string | undefined {
-  if (authType === 'none') return undefined
-  return authConfig.api_key || authConfig.token || authConfig.access_token || undefined
-}
+// 🔴 凭证以**明文 secret** 传入，且只能来自 lib/data/credentials 的服务端解密
+// （credentials 表 AES-256-GCM，AC-15）。不再从 mcp_servers.auth_config 取——
+// 那是 jsonb 明文列，把密钥放进去等于绕过整套加密存储。
 
 /** 发现 MCP Server 暴露的工具列表。失败抛错，由调用方决定如何降级。 */
 export async function listMcpTools(
   endpoint: string,
   authType: string,
-  authConfig: AuthConfig,
+  secret?: string,
 ): Promise<McpTool[]> {
-  const session = await openMcpSession(endpoint, { authType, secret: secretOf(authType, authConfig) })
+  const session = await openMcpSession(endpoint, { authType, secret })
   if (!session.ok) throw new Error(`MCP 连接失败：${session.message}`)
 
   const listed = await session.call('tools/list')
@@ -51,11 +47,11 @@ export async function listMcpTools(
 export async function callMcpTool(
   endpoint: string,
   authType: string,
-  authConfig: AuthConfig,
+  secret: string | undefined,
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<string> {
-  const session = await openMcpSession(endpoint, { authType, secret: secretOf(authType, authConfig) })
+  const session = await openMcpSession(endpoint, { authType, secret })
   if (!session.ok) throw new Error(`MCP 连接失败：${session.message}`)
 
   const called = await session.call('tools/call', { name: toolName, arguments: args })

@@ -16,6 +16,7 @@ import { getAgentResources } from '@/lib/data/agent-resources'
 import { listAgentTools, runToolVersion, type RunnableTool } from '@/lib/tools/run'
 import { createClient } from '@/lib/supabase/server'
 import { listMcpTools, callMcpTool } from '@/lib/mcp/client'
+import { getCredentialPlaintext } from '@/lib/data/credentials'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
@@ -27,7 +28,10 @@ type McpServerRecord = {
   name: string
   endpoint: string
   auth_type: string
-  auth_config: Record<string, string>
+  /** 引用 credentials（AES-256-GCM）；明文只在服务端解密后放进 secret，绝不外泄 */
+  credential_id: string | null
+  /** 运行期填充：解密后的凭证明文。不进响应、不进日志（AC-15） */
+  secret?: string
 }
 
 /**
@@ -170,11 +174,18 @@ export async function POST(req: Request, { params }: Ctx) {
       const supabase = await createClient()
       const { data } = await supabase
         .from('mcp_servers')
-        .select('id,name,endpoint,auth_type,auth_config')
+        .select('id,name,endpoint,auth_type,credential_id')
         .in('id', resources.mcpServerIds)
         .eq('status', 'approved')
         .is('deleted_at', null)
       mcpServers = (data ?? []) as McpServerRecord[]
+      // 🔴 凭证在服务端解密后只留在内存里参与请求；
+      // 2026-08-07 实测 8 个官方远程 MCP 端点全部 401——没有凭证这条链路根本走不通。
+      for (const s of mcpServers) {
+        if (s.credential_id) {
+          s.secret = (await getCredentialPlaintext(ctx, s.credential_id)) ?? undefined
+        }
+      }
     }
   } catch { /* 获取 MCP Server 失败不阻断对话 */ }
 
@@ -197,14 +208,14 @@ export async function POST(req: Request, { params }: Ctx) {
         },
       })
     }
-    // mcpServerName → {endpoint, auth_type, auth_config} 映射，工具名带 server 前缀区分
+    // 工具名 → {Server, 原始工具名} 映射，名字带 Server 前缀以免多 Server 同名工具互相覆盖
     const toolServerMap = new Map<string, { server: McpServerRecord; originalName: string }>()
     // 工具发现失败的 Server：用于在全部不可用时给出可行动的提示，而非静默降级
     const failedServers: { name: string; reason: string }[] = []
 
     for (const server of mcpServers) {
       try {
-        const mcpTools = await listMcpTools(server.endpoint, server.auth_type, server.auth_config ?? {})
+        const mcpTools = await listMcpTools(server.endpoint, server.auth_type, server.secret)
         for (const t of mcpTools) {
           // 工具名格式：{serverId_前6位}__{toolName}，确保唯一性
           const qualifiedName = `${server.id.slice(0, 6)}__${t.name}`
@@ -250,7 +261,7 @@ export async function POST(req: Request, { params }: Ctx) {
         return callMcpTool(
           mapping.server.endpoint,
           mapping.server.auth_type,
-          mapping.server.auth_config ?? {},
+          mapping.server.secret,
           mapping.originalName,
           args,
         )

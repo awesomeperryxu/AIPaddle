@@ -25,6 +25,8 @@ type McpStatus = 'draft' | 'pending' | 'approved' | 'disabled';
 type McpServer = {
   id: string; name: string; description: string; type: string; endpoint: string;
   status: McpStatus; securityLevel: string; allowedRoles: string[]; allowedDepartments: string[];
+  /** 凭证引用；密文永远不下发到前端，这里只用来显示「已配/未配」 */
+  credentialId: string | null; authType?: string;
 };
 type McpTool = { name: string; description: string; inputSchema?: Record<string, unknown> };
 
@@ -57,7 +59,13 @@ export function McpPageView() {
 
   // 展开的 Server 及其实时 tools。不落库——tools 由 Server 动态提供且随时会变
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [toolsState, setToolsState] = useState<{ loading: boolean; tools?: McpTool[]; error?: string; at?: string }>({ loading: false });
+  const [toolsState, setToolsState] = useState<{ loading: boolean; tools?: McpTool[]; error?: string; at?: string; needsCredential?: boolean }>({ loading: false });
+
+  // 凭证配置：密钥只上行、不下行——保存后前端不再持有明文，也无接口能取回
+  const [credFor, setCredFor] = useState<McpServer | null>(null);
+  const [credSecret, setCredSecret] = useState('');
+  const [credSaving, setCredSaving] = useState(false);
+  const [credError, setCredError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch<{ servers: McpServer[] }>('/api/mcp-servers')
@@ -73,23 +81,62 @@ export function McpPageView() {
     } catch { /* 保留旧列表 */ }
   }, []);
 
-  async function toggleExpand(s: McpServer) {
-    if (expandedId === s.id) { setExpandedId(null); return; }
-    setExpandedId(s.id);
+  const loadTools = useCallback(async (s: McpServer) => {
     if (!s.endpoint) {
       setToolsState({ loading: false, error: '该 Server 尚未配置 Endpoint，无法拉取工具清单' });
       return;
     }
     setToolsState({ loading: true });
     try {
-      const r = await apiFetch<{ ok: boolean; tools?: McpTool[]; message?: string; fetchedAt?: string }>(
+      const r = await apiFetch<{ ok: boolean; tools?: McpTool[]; message?: string; fetchedAt?: string; needsCredential?: boolean }>(
         `/api/mcp-servers/${s.id}/tools`,
       );
       setToolsState(r.ok
         ? { loading: false, tools: r.tools ?? [], at: r.fetchedAt }
-        : { loading: false, error: r.message ?? '拉取失败' });
+        : { loading: false, error: r.message ?? '拉取失败', needsCredential: r.needsCredential });
     } catch (e) {
       setToolsState({ loading: false, error: e instanceof Error ? e.message : '拉取失败' });
+    }
+  }, []);
+
+  async function toggleExpand(s: McpServer) {
+    if (expandedId === s.id) { setExpandedId(null); return; }
+    setExpandedId(s.id);
+    await loadTools(s);
+  }
+
+  // 保存凭证：先经 /api/credentials 加密入库，再把**引用**绑到 Server。
+  // 🔴 明文只在这一次请求里上行，此后前端与任何读接口都取不回它（AC-15）。
+  async function saveCredential() {
+    const target = credFor;
+    if (!target || !credSecret.trim()) { setCredError('请填写 API Key / Token'); return; }
+    setCredSaving(true); setCredError(null);
+    try {
+      const created = await apiFetch<{ credential: { id: string } }>('/api/credentials', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: `MCP-${target.name}`,
+          kind: 'api_key',
+          secret: credSecret.trim(),
+          meta: { source: 'mcp_server', mcpServerId: target.id },
+        }),
+      });
+      const credentialId = created?.credential?.id;
+      if (!credentialId) throw new Error('凭证创建失败');
+
+      await apiFetch(`/api/mcp-servers/${target.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ credentialId, authType: 'api_key' }),
+      });
+
+      setCredSecret(''); setCredFor(null);
+      await reload();
+      // 立刻回验：配完就拉一次，让用户当场看到工具清单而不是自己再点一遍
+      await loadTools({ ...target, credentialId });
+    } catch (e) {
+      setCredError(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setCredSaving(false);
     }
   }
 
@@ -195,11 +242,15 @@ export function McpPageView() {
                       <span className="font-medium text-foreground">{s.name}</span>
                       <Badge className={`text-[10px] gap-1 ${meta.cls}`}><Icon className="h-2.5 w-2.5" />{meta.label}</Badge>
                       <Badge variant="outline" className="text-[10px]">{TYPE_LABEL[s.type] ?? s.type}</Badge>
-                      {!s.endpoint && (
+                      {!s.endpoint ? (
                         <Badge variant="outline" className="text-[10px] gap-1 text-amber-600 border-amber-500/30">
                           <KeyRound className="h-2.5 w-2.5" />待填地址
                         </Badge>
-                      )}
+                      ) : !s.credentialId && s.authType !== 'none' ? (
+                        <Badge variant="outline" className="text-[10px] gap-1 text-amber-600 border-amber-500/30">
+                          <KeyRound className="h-2.5 w-2.5" />待配凭证
+                        </Badge>
+                      ) : null}
                     </div>
                     {s.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{s.description}</p>}
                     <p className="text-[11px] text-muted-foreground font-mono mt-1 truncate">
@@ -247,7 +298,15 @@ export function McpPageView() {
                         <Loader2 className="h-3 w-3 animate-spin" />正在连接 Server 拉取工具清单…
                       </div>
                     ) : toolsState.error ? (
-                      <p className="text-xs text-destructive py-1">{toolsState.error}</p>
+                      <div className="py-1 space-y-2">
+                        <p className="text-xs text-destructive">{toolsState.error}</p>
+                        {s.endpoint && (
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                            onClick={() => { setCredFor(s); setCredSecret(''); setCredError(null); }}>
+                            <KeyRound className="h-3 w-3" />{s.credentialId ? '更换凭证' : '配置凭证'}
+                          </Button>
+                        )}
+                      </div>
                     ) : toolsState.tools && toolsState.tools.length > 0 ? (
                       <div className="space-y-1.5">
                         {toolsState.tools.map((t) => (
@@ -267,6 +326,36 @@ export function McpPageView() {
           );
         })}
       </div>
+
+      <Dialog open={!!credFor} onOpenChange={(o) => { if (!o) { setCredFor(null); setCredError(null); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>配置凭证 · {credFor?.name}</DialogTitle>
+            <DialogDescription>
+              官方远程 MCP（Notion / Linear / Stripe / GitHub 等）多数强制鉴权，未配凭证时连接会返回 401。
+              密钥经 AES-256-GCM 加密存储，保存后无法再被读取或回显——只能更换，不能查看。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="mcp-secret">API Key / Token</Label>
+              <Input id="mcp-secret" type="password" autoComplete="off" value={credSecret}
+                placeholder="粘贴该服务签发的密钥"
+                onChange={(e) => setCredSecret(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                在 {credFor?.name} 的官网控制台生成。若该服务只支持 OAuth 授权码流程，此处的 Key 可能不适用。
+              </p>
+            </div>
+            {credError && <p className="text-xs text-destructive">{credError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCredFor(null)} disabled={credSaving}>取消</Button>
+            <Button onClick={saveCredential} disabled={credSaving || !credSecret.trim()}>
+              {credSaving ? '保存中…' : '保存并重新连接'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>

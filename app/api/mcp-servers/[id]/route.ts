@@ -36,6 +36,13 @@ export async function PATCH(request: Request, { params }: Ctx) {
     patch.securityLevel = body.securityLevel as McpSecurityLevel
   if (Array.isArray(body?.allowedRoles)) patch.allowedRoles = body.allowedRoles.map(String)
   if (Array.isArray(body?.allowedDepartments)) patch.allowedDepartments = body.allowedDepartments.map(String)
+  if (['api_key', 'oauth', 'jwt', 'none'].includes(String(body?.authType)))
+    patch.authType = String(body.authType)
+  // 🔴 只接受凭证**引用**，绝不接受密文/明文 secret——密钥一律经
+  //    POST /api/credentials 走 AES-256-GCM 加密存储（AC-15）。
+  //    null 是「解绑」的合法意图，与 undefined（不改）区分开。
+  if (body?.credentialId === null) patch.credentialId = null
+  else if (typeof body?.credentialId === 'string' && body.credentialId) patch.credentialId = body.credentialId
 
   const server = await updateMcpServer(ctx, id, patch)
   if (!server) return Response.json({ error: { code: 'not_found', message: 'MCP Server 不存在' } }, { status: 404 })

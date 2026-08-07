@@ -28,6 +28,8 @@ export type McpServer = {
   type: McpType
   endpoint: string
   authType: string
+  /** 引用 credentials 表的凭证 id；密文只在服务端解密，绝不外泄（0039） */
+  credentialId: string | null
   scope: string
   status: McpStatus
   securityLevel: McpSecurityLevel
@@ -44,6 +46,7 @@ type Row = {
   type: McpType
   endpoint: string
   auth_type: string
+  credential_id: string | null
   scope: string | null
   status: McpStatus
   security_level: McpSecurityLevel
@@ -53,9 +56,11 @@ type Row = {
   updated_at: string | null
 }
 
-// 注意：不含 auth_config（凭据），不外泄
+// 🔴 不含 auth_config（可能承载敏感值），不外泄。
+// credential_id 只是**引用**，不是密文——前端要靠它显示「已配/未配凭证」，故可查。
+// 密文本体在 credentials 表，只有 getCredentialPlaintext 能在服务端解开。
 const COLS =
-  'id,name,description,type,endpoint,auth_type,scope,status,security_level,allowed_roles,allowed_departments,created_at,updated_at'
+  'id,name,description,type,endpoint,auth_type,credential_id,scope,status,security_level,allowed_roles,allowed_departments,created_at,updated_at'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function mapRow(r: Row): McpServer {
@@ -66,6 +71,7 @@ function mapRow(r: Row): McpServer {
     type: r.type,
     endpoint: r.endpoint,
     authType: r.auth_type,
+    credentialId: r.credential_id ?? null,
     scope: r.scope ?? '',
     status: r.status,
     securityLevel: r.security_level,
@@ -123,6 +129,8 @@ export async function createMcpServer(
     description?: string
     scope?: string
     authType?: string
+    /** 引用 credentials 表；密文不经此处，只传 id */
+    credentialId?: string | null
     securityLevel?: McpSecurityLevel
     allowedRoles?: string[]
     allowedDepartments?: string[]
@@ -140,6 +148,7 @@ export async function createMcpServer(
       description: input.description ?? null,
       scope: input.scope ?? null,
       auth_type: input.authType ?? 'api_key',
+      credential_id: input.credentialId ?? null,
       security_level: input.securityLevel ?? 'medium',
       allowed_roles: input.allowedRoles ?? ['Admin'],
       allowed_departments: input.allowedDepartments ?? [],
@@ -159,6 +168,9 @@ export async function updateMcpServer(
     description?: string
     endpoint?: string
     scope?: string
+    authType?: string
+    /** null = 显式解绑凭证；undefined = 不改动 */
+    credentialId?: string | null
     securityLevel?: McpSecurityLevel
     allowedRoles?: string[]
     allowedDepartments?: string[]
@@ -170,6 +182,10 @@ export async function updateMcpServer(
   if (typeof patch.description === 'string') fields.description = patch.description
   if (typeof patch.endpoint === 'string') fields.endpoint = patch.endpoint.trim()
   if (typeof patch.scope === 'string') fields.scope = patch.scope
+  if (typeof patch.authType === 'string') fields.auth_type = patch.authType
+  // 🔴 用 undefined 判定而非真值判定：null 是「解绑凭证」的合法意图，
+  // 写成 if (patch.credentialId) 会让解绑操作被静默忽略。
+  if (patch.credentialId !== undefined) fields.credential_id = patch.credentialId
   if (patch.securityLevel) fields.security_level = patch.securityLevel
   if (Array.isArray(patch.allowedRoles)) fields.allowed_roles = patch.allowedRoles
   if (Array.isArray(patch.allowedDepartments)) fields.allowed_departments = patch.allowedDepartments
