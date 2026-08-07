@@ -312,6 +312,8 @@ function WorkflowPageInner({
   // 🔴 只做发现与起草，安装/发布始终人工点——不联网拉外部代码（供应链风险）。
   const [gapResolutions, setGapResolutions] = useState<GapResolution[]>([]);
   const [gapBusy, setGapBusy] = useState<string | null>(null);
+  // 发布被体检拦住、且其中有可自动修复项时，给一条带按钮的提示（WF-25）
+  const [publishFixable, setPublishFixable] = useState(false);
   const copilotScrollRef = useRef<HTMLDivElement>(null);
 
   // 生成完就地问一句「差什么能力、上哪儿补」，答案直接摆在对话里
@@ -521,6 +523,29 @@ function WorkflowPageInner({
   }, [workflowId, nodes, edges, title]);
 
   // 发布：先 flush 保存最新图 → POST /publish（非法图 422 拒绝并提示）。
+  /**
+   * 一键修复体检拦截项（WF-25）。
+   * 🔴 拦住却不给出路等于把问题丢回用户——老流程里那个「需接入实时资讯检索能力」的节点，
+   * 修法（进节点翻出联网搜索开关）用户根本不知道。修完直接刷新画布并说明改了什么。
+   */
+  const handleAutoFix = useCallback(async () => {
+    if (!workflowId) return;
+    try {
+      const res = await fetch(`/api/workflows/${workflowId}/autofix`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(body?.error?.message ?? '自动修复失败'); return; }
+      const fixes = (body.fixes ?? []) as { nodeLabel: string; action: string }[];
+      if (fixes.length === 0) { showToast('没有可自动修复的项，请按提示手动处理'); return; }
+      setPublishFixable(false);
+      if (body.graph) {
+        const rf = graphToReactFlow(body.graph);
+        setNodes(rf.nodes as unknown as Node[]);
+        setEdges(rf.edges as unknown as Edge[]);
+      }
+      showToast(`已修复 ${fixes.length} 处：${fixes.map((f) => f.nodeLabel).join('、')}${body.readiness?.ready ? '，现在可以发布了' : ''}`);
+    } catch { showToast('自动修复失败：网络错误'); }
+  }, [workflowId, showToast, setNodes, setEdges]);
+
   const handlePublish = useCallback(async () => {
     if (!workflowId) { showToast('请先保存工作流后再发布'); return; }
     try {
@@ -528,12 +553,17 @@ function WorkflowPageInner({
       const res = await fetch(`/api/workflows/${workflowId}/publish`, { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
+        setPublishFixable(false);
         showToast(`已发布 v${body.publishedVersion ?? ''} · 已上线`);
       } else if (res.status === 422 && body.readiness?.issues) {
         // WF-11：体检未通过——把「必须处理」的点直接说清楚，别只丢一句发布失败
         const errs = (body.readiness.issues as { level: string; nodeLabel?: string; message: string }[])
           .filter((i) => i.level === 'error');
         showToast(`无法发布（${errs.length} 项待处理）：${errs.slice(0, 2).map((i) => `「${i.nodeLabel}」${i.message}`).join('；')}${errs.length > 2 ? ' …' : ''}`);
+        // 其中有能自动修的（如需要联网取数却没开搜索）→ 直接给一键修复入口
+        const fixable = errs.filter((i) => (i as { code?: string }).code === 'llm_no_data_source'
+          || (i as { code?: string }).code === 'llm_placeholder_capability');
+        if (fixable.length > 0) setPublishFixable(true);
       } else if (res.status === 422 && Array.isArray(body.validation)) {
         showToast(`无法发布：${body.validation.map((v: { message: string }) => v.message).join('；')}`);
       } else {
@@ -805,6 +835,22 @@ function WorkflowPageInner({
               {saveStatus === 'saved' && '已自动保存'}
               {saveStatus === 'error' && <span className="text-destructive">保存失败</span>}
             </div>
+
+            {/* 体检拦住了发布、但其中有能自动修的（WF-25）——给出路，别让用户自己去翻节点配置 */}
+            {publishFixable && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-50 px-3 py-2 text-xs shadow-md dark:bg-amber-950/60">
+                <span className="text-amber-900 dark:text-amber-200">
+                  有步骤需要联网取数却没开「联网搜索」，可一键修好
+                </span>
+                <Button size="sm" className="h-6 text-[11px]" onClick={handleAutoFix}>一键修复</Button>
+                <button
+                  className="text-amber-700/70 hover:text-amber-900 dark:text-amber-300/70"
+                  onClick={() => setPublishFixable(false)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* ReactFlow Canvas */}
             <div
