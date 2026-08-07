@@ -1,7 +1,7 @@
 /**
  * 单元 · API /api/teams（4.1.19 / ADR-014）
  *   - POST 创建：权限 agent:create（User → 403，Admin → 201）
- *   - PATCH 成员门控（服务端，不信前端）：非数字员工 + 越权者剔除，仅数字员工入库，rejected 回带
+ *   - PATCH 成员门控（服务端，不信前端）：越权者剔除；DE-10 起数字员工与普通 Agent 并级，均可入团队
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { RequestContext } from '@/lib/context'
@@ -73,29 +73,26 @@ describe('PATCH /api/teams/[id] 成员门控', () => {
   beforeEach(() => vi.clearAllMocks())
   const patch = (b: unknown) => PATCH(new Request('http://x', { method: 'PATCH', body: JSON.stringify(b) }), params)
 
-  it('非数字员工 + 越权者被拒，仅数字员工入库，rejected 回带', async () => {
+  // 🔴 DE-10（2026-08-07，D-12 放宽 / ADR-026 §1）：成员**可以是数字员工，
+  // 也可以是普通 Agent，两者在团队 Workflow 中并级**。
+  // 原用例断言「普通 Agent 被拒」，那是放宽前的规则，已随本次改动作废。
+  // 仍要拦住的只有「不是本租户 / 无权使用」。
+  it('普通 Agent 现在可以入团队；只有越权者被拒', async () => {
     mockCtx.mockResolvedValue(admin)
     mockGetTeam.mockResolvedValue({ id: TEAM_ID, name: 'T', description: '', status: 'draft', memberIds: [], updatedAt: '2026-07-25' })
     // 授权集 = 本租户 Agent（含 DE、PLAIN，不含 FOREIGN）
     mockListAgents.mockResolvedValue([{ id: DE, name: '客服数字员工' }, { id: PLAIN, name: '普通 Agent' }] as never)
-    // 数字员工判定：DE 引用了子 Agent → 是；PLAIN 无子 Agent → 否
-    mockGetRes.mockImplementation(async (_ctx, id) =>
-      id === DE
-        ? { knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: ['x'] }
-        : { knowledgeBaseIds: [], skillIds: [], mcpServerIds: [], subAgentIds: [] },
-    )
-    mockUpdate.mockResolvedValue({ id: TEAM_ID, name: 'T', description: '', status: 'draft', memberIds: [DE], updatedAt: '2026-07-25' })
+    mockUpdate.mockResolvedValue({ id: TEAM_ID, name: 'T', description: '', status: 'draft', memberIds: [DE, PLAIN], updatedAt: '2026-07-25' })
 
     const res = await patch({ memberIds: [DE, PLAIN, FOREIGN] })
     expect(res.status).toBe(200)
-    // 仅 accepted（DE）透传给数据层
-    expect(mockUpdate).toHaveBeenCalledWith(admin, TEAM_ID, expect.objectContaining({ memberIds: [DE] }))
+    // 数字员工与普通 Agent 都入库，越权者不入
+    expect(mockUpdate).toHaveBeenCalledWith(admin, TEAM_ID, expect.objectContaining({ memberIds: [DE, PLAIN] }))
     const body = await res.json()
-    const rejectedIds = (body.rejected as { id: string }[]).map((r) => r.id).sort()
-    expect(rejectedIds).toEqual([PLAIN, FOREIGN].sort())
-    // 非数字员工的拒绝文案
-    const plainReason = (body.rejected as { id: string; reason: string }[]).find((r) => r.id === PLAIN)!.reason
-    expect(plainReason).toMatch(/不是数字员工/)
+    const rejectedIds = (body.rejected as { id: string }[]).map((r) => r.id)
+    expect(rejectedIds).toEqual([FOREIGN])
+    const reason = (body.rejected as { id: string; reason: string }[]).find((r) => r.id === FOREIGN)!.reason
+    expect(reason).toMatch(/不是本租户|无权使用/)
   })
 
   it('无权限（User）→ 403，不触碰数据层', async () => {

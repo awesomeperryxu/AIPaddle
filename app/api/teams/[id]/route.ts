@@ -2,8 +2,6 @@ import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { getTeam, updateTeam, deleteTeam } from '@/lib/data/digital-employee-teams'
 import { listAgents } from '@/lib/data/agents'
-import { getAgentResources } from '@/lib/data/agent-resources'
-import { isDigitalEmployee } from '@/lib/agents/digital-employee'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
@@ -19,8 +17,9 @@ export async function GET(_req: Request, { params }: Ctx) {
 }
 
 // PATCH /api/teams/[id] —— 更新团队（名称/描述/成员）。权限 agent:update。
-// 成员门控（服务端，不信前端）：memberIds 只接受「本租户 + 本身是数字员工」的 agent；
-// 越权/非数字员工剔除并回带 rejected。团队不套团队（成员只能是 agent，天然不含 team）。
+// 成员门控（服务端，不信前端）：memberIds 接受「本租户」的 agent——**数字员工与普通
+// Agent 并级**（DE-10 / D-12 放宽，见 ADR-026）；越权者剔除并回带 rejected。
+// 团队不套团队由数据模型保证（成员指向 agents 表，团队在 digital_employee_teams）。
 export async function PATCH(req: Request, { params }: Ctx) {
   const ctx = await getRequestContext()
   if (!ctx) return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
@@ -32,8 +31,17 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const name = typeof body?.name === 'string' ? body.name : undefined
   const description = typeof body?.description === 'string' ? body.description : undefined
 
-  // 成员门控：仅当携带 memberIds 才处理。授权集=本租户 Agent（RLS 隔离）；
-  // 每个候选须本身是数字员工（引用了子 Agent）。非数字员工/越权者剔除并回带 rejected。
+  // 成员门控：仅当携带 memberIds 才处理。授权集=本租户 Agent（RLS 隔离）。
+  //
+  // 🔴 DE-10（2026-08-07，D-12 放宽 / ADR-026 §1）：成员**可以是数字员工，
+  // 也可以是普通 Agent，两者在团队 Workflow 中并级**。原规则「成员必须是数字员工」
+  // 要求任何 Agent 进团队前先包一层数字员工——而这层壳只挂一个 Agent 时不携带
+  // 任何信息，纯属仪式。
+  //
+  // 放宽后**铁律仍完整**：R1 Agent 下不可挂 Agent、R2 Agent 的上级不可以是 Agent
+  // （团队不是 Agent，所以 `团队 → 普通 Agent` 合法，只是跳过了中间那层）。
+  // 唯一要拦的是 **团队不得嵌套团队**——但 memberIds 指向的是 agents 表，
+  // 团队在 digital_employee_teams，天然进不来，这条由数据模型保证。
   let memberIds: string[] | undefined
   const rejected: { id: string; reason: string }[] = []
   if (Array.isArray(body?.memberIds)) {
@@ -48,11 +56,6 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const agent = byId.get(cid)
       if (!agent) {
         rejected.push({ id: cid, reason: `「${cid}」不是本租户 Agent 或你无权使用，不能加入团队` })
-        continue
-      }
-      const res = await getAgentResources(ctx, cid)
-      if (!isDigitalEmployee(res.subAgentIds)) {
-        rejected.push({ id: cid, reason: `「${agent.name}」不是数字员工，不能加入团队` })
         continue
       }
       accepted.push(cid)

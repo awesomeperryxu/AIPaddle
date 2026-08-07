@@ -16,6 +16,15 @@ vi.mock('@/lib/data/reviews', () => ({
   recordReviewDecision: vi.fn(),
 }))
 vi.mock('@/lib/data/audit', () => ({ writeAudit: vi.fn() }))
+// DE-7/DE-8 给本路由加了两道闸（发布门槛 / 下线联动）。它们的数据层若不 mock，
+// 会走到真实 Supabase 客户端并抛「cookies called outside a request scope」。
+// 这里返回"无下级、无上级引用"，即两道闸都不介入，本文件的原有断言语义不变；
+// 闸本身的行为由 api-agents-transition-de.test.ts 覆盖。
+vi.mock('@/lib/data/digital-employee', () => ({ getDigitalEmployeeDetail: vi.fn(async () => null) }))
+vi.mock('@/lib/data/de-dependents', () => ({
+  listDependentDigitalEmployees: vi.fn(async () => []),
+  offlineDigitalEmployees: vi.fn(async () => 0),
+}))
 
 import { getRequestContext } from '@/lib/context'
 import { transitionAgent } from '@/lib/data/agents'
