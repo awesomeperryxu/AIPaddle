@@ -35,7 +35,9 @@ export async function POST(request: Request) {
   const published = (await listSkills(ctx))
     .filter((s) => s.status === 'published')
     .map((s) => ({ id: s.id, name: s.name, description: s.description, type: s.type }))
-  const gen = await generateWorkflowGraph(description, published)
+  // 🔴 type 此前算出来却没传给 Copilot——它于是不知道该用 end 还是 answer，
+  // 给 Workflow 也配了 Chatflow 专用的 answer 收尾，执行时那一步直接被跳过
+  const gen = await generateWorkflowGraph(description, { availableSkills: published, appType: type })
   if (gen.graph.nodes.length === 0) {
     // 🔴 失败同样留痕：只记成功的记录页等于没监督，用户回头也查不到「那次为什么没建出来」
     await writeAudit(ctx, 'workflow.copilot_failed', 'workflow', '-', {
