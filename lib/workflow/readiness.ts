@@ -51,6 +51,21 @@ export function isUsableUrl(url: string): boolean {
   }
 }
 
+/**
+ * 「这一步要拿外部数据」的动词表（WF-21）。
+ *
+ * 🔴 为什么要确定性词表而不是靠模型自觉：生成规则里写了「没有对应能力就在 label 注明
+ * 需接入 XX 能力」，实测模型经常不照做——用户那条「查全网当天 AI 大事件」生成出来的是
+ * 一个干干净净的 llm 节点「抓取前一日的AI大事件」，没有任何标记。跑起来模型无从检索，
+ * 只能编，或者写一长篇「我无法联网」的自白当作最终输出。
+ * 光靠提示词压不住的，就必须用代码拦。
+ */
+const EXTERNAL_DATA_RE =
+  /抓取|爬取|检索|搜索|搜集|收集|查找|采集|获取(?:最新|当天|今日|昨日|实时)|联网|全网|实时(?:数据|资讯|新闻)|最新(?:资讯|新闻|动态|消息)|新闻源|舆情/
+
+/** 能把外部数据带进流程的节点类型——只要有一个，就说明数据有正经来源 */
+const EXTERNAL_SOURCE_TYPES = new Set(['tool', 'http-request', 'knowledge-retrieval', 'agent', 'sub-workflow', 'code'])
+
 /** LLM 提示词：面板 prompts[] 优先，回落引擎侧 prompt（与 execute.ts 的取法一致） */
 function llmPromptOf(cfg: Record<string, unknown>): string {
   const prompts = Array.isArray(cfg.prompts) ? (cfg.prompts as Record<string, unknown>[]) : []
@@ -75,11 +90,22 @@ export function checkReadiness(graph: WorkflowGraph): ReadinessReport {
   const push = (level: ReadinessLevel, code: string, n: LooseNode, message: string) =>
     issues.push({ level, code, nodeId: n.id, nodeLabel: n.data?.label ?? n.type, message })
 
+  // 整张图有没有正经的外部数据入口。没有的话，任何声称「抓取/检索」的步骤都只能是编的。
+  // 判据放在图这一级而不是节点级：llm 节点叫「整理抓取到的资讯」很正常——
+  // 只要上游真有 tool/http 把数据取进来，就不该报错。
+  const hasExternalSource = nodes.some((n) => EXTERNAL_SOURCE_TYPES.has(n.type))
+
   for (const n of nodes) {
     const cfg = n.data?.config ?? {}
 
     if (n.type === 'llm') {
       const prompt = llmPromptOf(cfg)
+      // WF-21：说要联网取数、全图却没有任何外部数据来源 → 拦住，别让它跑出一篇编的
+      if (!hasExternalSource && EXTERNAL_DATA_RE.test(`${n.data?.label ?? ''}\n${prompt}`)) {
+        push('error', 'llm_no_data_source', n,
+          '这一步要拿外部数据（抓取/检索/搜索），但整条流程没有任何联网或数据源能力——' +
+          '直接跑只会得到模型编造的内容。请挂上具备联网检索能力的 Skill，或改用 HTTP 请求节点接真实接口')
+      }
       if (!prompt) {
         push('error', 'llm_no_prompt', n, '未设置提示词，运行时会退化成模型自由发挥')
       } else if (prompt.length < 10) {

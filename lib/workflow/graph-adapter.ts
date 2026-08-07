@@ -20,11 +20,12 @@ export type PersistedNode = {
 // 决定这条边属于哪个分支。执行引擎据此做条件路由（4.4.8a）。单出口节点为空。
 export type PersistedEdge = { id?: string; source: string; target: string; sourceHandle?: string }
 
-// 定时设置（WF-2b）：**与流程内容解耦**——「什么时候跑」是工作流的运行属性，
-// 不是流程图里的一步，所以它落在图的元数据上、不占画布节点。
-// 编辑器入口在 header「运行 ▾ → 定时设置」，画布只画业务流程。
-export type WorkflowSchedule = { enabled: boolean; cron: string; timezone: string }
-export type PersistedGraph = { nodes: PersistedNode[]; edges: PersistedEdge[]; schedule?: WorkflowSchedule }
+// 🔴 WF-24：工作流**不再承载定时**（推翻 WF-2b 的 graph.schedule 元数据做法）。
+// 定时只能以 Agent / 数字员工 / 团队 为单位配置，走 agent_schedules 与「定时作业」页。
+// 理由见 docs/adr/ADR-022：调度的对象必须是有身份、有权限、有审计主体的业务角色，
+// 工作流只是它的「大脑」之一，让流程自己带定时会出现两套互不知情的调度口径。
+// 存量图里若残留 schedule 字段，读取时一并丢弃（不迁移、不生效）。
+export type PersistedGraph = { nodes: PersistedNode[]; edges: PersistedEdge[] }
 
 // React Flow 侧的松散形状（与 reactflow 的 Node/Edge 结构兼容，避免耦合其泛型）。
 export type RFNodeLike = { id: string; type: string; position: { x: number; y: number }; data: Record<string, unknown> }
@@ -57,15 +58,9 @@ export function graphToReactFlow(graph: PersistedGraph | null | undefined): { no
   return { nodes, edges }
 }
 
-/**
- * React Flow 画布节点/边 → 持久化图。把 data 里除 blockType/label/description 外的字段收进 config。
- *
- * 🔴 schedule 必须由调用方传回：它不在画布上（与流程解耦），
- * 每次自动保存都是从画布重建整张图，不显式带上就会被这次保存悄悄抹掉。
- */
-export function reactFlowToGraph(nodes: RFNodeLike[], edges: RFEdgeLike[], schedule?: WorkflowSchedule): PersistedGraph {
+/** React Flow 画布节点/边 → 持久化图。把 data 里除 blockType/label/description 外的字段收进 config。 */
+export function reactFlowToGraph(nodes: RFNodeLike[], edges: RFEdgeLike[]): PersistedGraph {
   return {
-    ...(schedule ? { schedule } : {}),
     nodes: nodes.map((n) => {
       const data = (n.data ?? {}) as Record<string, unknown>
       const { blockType, label, description, ...config } = data

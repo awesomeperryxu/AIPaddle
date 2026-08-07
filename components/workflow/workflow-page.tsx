@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useRef, useEffect, DragEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -36,10 +36,11 @@ import {
   type PersistedGraph,
   type RFNodeLike,
   type RFEdgeLike,
-  type WorkflowSchedule,
 } from '@/lib/workflow/graph-adapter';
-import { ScheduleModal } from './modals/schedule-modal';
 import type { GapResolution } from '@/lib/workflow/capability-gap';
+import { describeCron } from '@/lib/workflow/schedule-parse';
+import { useTabTitle } from '@/components/tab-title';
+import { graphNeedsInput } from '@/lib/workflow/runtime-context';
 import { VariableInspectPanel } from './canvas/variable-inspect-panel';
 import { KeyboardShortcutsModal } from './modals/keyboard-shortcuts-modal';
 import {
@@ -189,6 +190,18 @@ function describeReadiness(r?: ReadinessLike): string {
   return `🧪 自动体检未通过，${errs.length} 项需处理后才能发布：\n${lines}${errs.length > 4 ? '\n　• …' : ''}`;
 }
 
+/**
+ * 识别到定时需求时的引导（WF-24）。
+ *
+ * 🔴 工作流本身不承载定时，但用户说出口的需求不能吞掉——否则他会以为「已经设好了」，
+ * 到点没跑才发现。这里明确告诉他这事要去哪配。
+ */
+function describeScheduleHint(hint?: { cron: string; timezone: string }): string {
+  if (!hint) return '';
+  const when = hint.cron ? `（${describeCron(hint.cron)}）` : '';
+  return `\n⏰ 检测到定时需求${when}：**工作流本身不设定时**——定时以「数字员工 / Agent / 团队」为单位配置，请到该数字员工的「定时作业」里设置。`;
+}
+
 // 保存状态（自动保存指示）
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -220,10 +233,6 @@ function WorkflowPageInner({
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
   const [title, setTitle] = useState(initialTitle);
-  // 定时设置（WF-2b）：与流程内容解耦，存在图的元数据里，不占画布节点。
-  // 🔴 必须单独持有——自动保存每次都从画布重建整张图，不带上就会被抹掉。
-  const [schedule, setSchedule] = useState<WorkflowSchedule | undefined>(initialGraph?.schedule);
-  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [headerMode, setHeaderMode] = useState<'normal' | 'restoring' | 'view-history'>('normal');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -361,8 +370,7 @@ function WorkflowPageInner({
           const rf = graphToReactFlow(data.graph);
           setNodes(rf.nodes as unknown as Node[]);
           setEdges(rf.edges as unknown as Edge[]);
-          if (data.graph.schedule) setSchedule(data.graph.schedule);
-          const sched = data.graph.schedule ? `\n⏰ 已设定定时：${data.graph.schedule.cron}（${data.graph.schedule.timezone}）` : '';
+          const sched = describeScheduleHint(data.scheduleHint);
           setCopilotMessages(prev => [...prev, { role: 'assistant', content: `✅ 已生成工作流（${data.graph.nodes.length} 个节点）${sched}\n${describeReadiness(data.readiness)}` }]);
           // fitView 延迟调用——不在闭包里直接引用 hook 返回值
           setTimeout(() => { try { fitView({ padding: 0.2 }); } catch {} }, 300);
@@ -387,7 +395,7 @@ function WorkflowPageInner({
     setCopilotClarifications([]);
     try {
       // ⑤ 增量修改：将当前画布图传给 Copilot
-      const currentGraph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[], schedule);
+      const currentGraph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
       const res = await fetch('/api/workflows/copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -402,11 +410,7 @@ function WorkflowPageInner({
         const rf = graphToReactFlow(data.graph);
         setNodes(rf.nodes as unknown as Node[]);
         setEdges(rf.edges as unknown as Edge[]);
-        // 定时不落成节点（WF-2b）：写进图元数据，在「运行 ▾ → 定时设置」里改
-        if (data.graph.schedule) setSchedule(data.graph.schedule);
-        const sched = data.graph.schedule
-          ? `\n⏰ 已设定定时：${data.graph.schedule.cron}（${data.graph.schedule.timezone}），在「运行 → 定时设置」可改`
-          : '';
+        const sched = describeScheduleHint(data.scheduleHint);
         const summary = `✅ 已生成工作流（${data.graph.nodes.length} 个节点）${sched}${data.valid ? '' : `\n⚠️ ${data.validation?.length ?? 0} 处校验问题`}\n${describeReadiness(data.readiness)}`;
         setCopilotMessages(prev => [...prev, { role: 'assistant', content: summary }]);
         setTimeout(() => fitView({ padding: 0.2 }), 300);
@@ -433,6 +437,10 @@ function WorkflowPageInner({
   const [versionsLoading, setVersionsLoading] = useState(false);
 
   const router = useRouter();
+  const pathname = usePathname();
+  // WF-19：把流程名报给顶部标签条，标签才不是清一色的「工作流 · 详情」。
+  // 改名后标签跟着变（title 是 state）；在 dashboard 外的原型路由下 Provider 缺席，自动 no-op。
+  useTabTitle(pathname.replace(/^\//, ''), title);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
 
@@ -483,7 +491,7 @@ function WorkflowPageInner({
     const t = setTimeout(async () => {
       setSaveStatus('saving');
       try {
-        const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[], schedule);
+        const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
         const res = await fetch(`/api/workflows/${workflowId}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: title, graph }),
@@ -497,12 +505,12 @@ function WorkflowPageInner({
       } catch { setSaveStatus('error'); showToast('自动保存失败：网络错误'); }
     }, 800);
     return () => clearTimeout(t);
-  }, [nodes, edges, title, workflowId, schedule, showToast]);
+  }, [nodes, edges, title, workflowId, showToast]);
 
   // 立即保存当前画布（运行前 flush，确保引擎跑的是最新图）
   const saveNow = useCallback(async () => {
     if (!workflowId) return;
-    const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[], schedule);
+    const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
     try {
       await fetch(`/api/workflows/${workflowId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -510,7 +518,7 @@ function WorkflowPageInner({
       });
       setSaveStatus('saved');
     } catch { /* 运行前保存失败不阻断，交由 /run 报错 */ }
-  }, [workflowId, nodes, edges, title, schedule]);
+  }, [workflowId, nodes, edges, title]);
 
   // 发布：先 flush 保存最新图 → POST /publish（非法图 422 拒绝并提示）。
   const handlePublish = useCallback(async () => {
@@ -728,6 +736,12 @@ function WorkflowPageInner({
     };
   }, [selectedNode]);
 
+  // WF-20：这条流程跑起来要不要人填输入？只看显式声明（start 的变量 / sys.query 引用）
+  const needsRunInput = useMemo(
+    () => graphNeedsInput(reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[])),
+    [nodes, edges],
+  );
+
   // Get all workflow nodes for variable reference
   const allWorkflowNodes = useMemo(() => {
     return nodes.map((node) => ({
@@ -761,8 +775,6 @@ function WorkflowPageInner({
           setShowRunPanel(true);
         }}
         onPublish={handlePublish}
-        onOpenSchedule={() => setScheduleModalOpen(true)}
-        scheduleSummary={schedule?.enabled ? schedule.cron : undefined}
         onVersionHistory={openVersionHistory}
         onExportDsl={handleExportDsl}
         onEnvVars={() => showToast('环境变量即将上线（W2）')}
@@ -877,13 +889,6 @@ function WorkflowPageInner({
             </div>
 
             <KeyboardShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-
-            <ScheduleModal
-              open={scheduleModalOpen}
-              schedule={schedule}
-              onClose={() => setScheduleModalOpen(false)}
-              onSave={(s) => { setSchedule(s); showToast(s?.enabled ? `定时已设为 ${s.cron}` : '定时已关闭'); }}
-            />
 
             {/* Copilot Toggle Button */}
             <Button
@@ -1099,6 +1104,7 @@ function WorkflowPageInner({
             <WorkflowRunDrawer
               workflowId={workflowId}
               open={showRunPanel}
+              needsInput={needsRunInput}
               beforeRun={saveNow}
               onClose={() => setShowRunPanel(false)}
               onFinished={() => setLogsRefreshKey((k) => k + 1)}

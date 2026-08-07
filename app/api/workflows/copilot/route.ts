@@ -35,5 +35,7 @@ export async function POST(request: Request) {
   return Response.json({
     graph: result.graph, validation: result.validation, valid: result.valid,
     clarifications: result.clarifications, readiness,
+    // WF-24：定时需求只回传为引导（去 Agent 上配），不写进图
+    scheduleHint: result.scheduleHint,
   })
 }

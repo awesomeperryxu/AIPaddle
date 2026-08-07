@@ -4,10 +4,13 @@ import { validateGraph, type WorkflowGraph } from '@/lib/workflow/validate'
 import { retrieveSegments } from '@/lib/kb/rag'
 import { resolveExpr, coerce, type VarPool } from '@/lib/workflow/variables'
 import { getAgentForChat } from '@/lib/data/agents'
+import { buildRuntimeVars, renderRuntimeVars, runtimeSystemPrompt } from '@/lib/workflow/runtime-context'
+import { runToolNode } from '@/lib/workflow/tool-node'
 import type { RequestContext } from '@/lib/context'
 
-// 最小执行引擎（4.4.3）：拓扑串行执行 2-3 种节点（start / llm / end）。
-// Tool/Skill 等节点属 4.4.2（硬等 C 道 Skill 发布），本引擎标记为 skipped、透传输入。
+// 执行引擎（4.4.3 起）：拓扑串行执行 SUPPORTED 里的节点类型。
+// tool 节点自 WF-22 起真调用（Skill → Plugin Tool），不再 skipped；
+// 白名单外的类型（code / iteration / human-input 等）仍标 skipped 并透传输入。
 
 export type NodeTrace = {
   nodeId: string
@@ -27,10 +30,10 @@ export type ExecResult = {
 type GNode = { id: string; type: string; data?: { config?: Record<string, unknown>; label?: string } }
 type GEdge = { source: string; target: string; sourceHandle?: string }
 
-const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request', 'if-else', 'variable-assigner', 'variable-aggregator', 'list-operator', 'agent'])
+const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request', 'if-else', 'variable-assigner', 'variable-aggregator', 'list-operator', 'agent', 'tool'])
 
-// 执行选项：ctx 用于需租户隔离的节点（知识检索）。
-export type ExecOptions = { ctx?: RequestContext }
+// 执行选项：ctx 用于需租户隔离的节点（知识检索）；timezone/now 决定运行时的时间事实（WF-20，可注入以便测试）。
+export type ExecOptions = { ctx?: RequestContext; timezone?: string; now?: Date }
 
 // SSRF 防护：只允许 http/https，拦截 localhost / 私有网段 / 云元数据地址（字面量层，残留 DNS 重绑定风险已知）。
 const PRIVATE_HOST_RE =
@@ -327,6 +330,9 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
   for (const e of edges) if (preds.has(e.target)) preds.get(e.target)!.push(e.source)
 
   const outputs = new Map<string, string>()
+  // WF-20：本次运行的时间事实，整张图共用一份——同一次运行里的「今天」必须是同一天，
+  // 逐节点各取一次 new Date() 会在跨零点的长流程里出现前后不一致
+  const runtime = buildRuntimeVars(opts.timezone, opts.now)
   // ADR-012 P1：运行期变量池（vars 空起步，outputs 复用节点输出 Map，sysQuery=运行输入）
   const pool: VarPool = { vars: {}, outputs, sysQuery: input }
   const traces: NodeTrace[] = []
@@ -373,12 +379,17 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
         // 🔴 提示词有两种落点：引擎侧的 config.prompt 与配置面板写的 config.prompts[]。
         // 用户在面板改过就以面板为准——否则界面显示新提示词、实际跑的还是旧的那条。
         const tmpl = pickLlmPrompt(cfg) || '请根据以下输入给出简洁回复：\n{{input}}'
-        const prompt = tmpl.includes('{{input}}') ? tmpl.replace(/\{\{input\}\}/g, nodeInput) : `${tmpl}\n\n输入：${nodeInput}`
-        out = await chat([{ role: 'user', content: prompt }])
+        const withTime = renderRuntimeVars(tmpl, runtime) // WF-20：{{today}}/{{yesterday}} 等先落成真实日期
+        const prompt = withTime.includes('{{input}}') ? withTime.replace(/\{\{input\}\}/g, nodeInput) : `${withTime}\n\n输入：${nodeInput}`
+        // system 里给时间锚点：提示词多半一个占位符都不写，不明说日期模型就按训练语料答（跑出 2024 年那次就是这么来的）
+        out = await chat([{ role: 'system', content: runtimeSystemPrompt(runtime) }, { role: 'user', content: prompt }])
       } else if (n.type === 'template-transform') {
-        out = renderTemplate(cfg, nodeInput)
+        out = renderRuntimeVars(renderTemplate(cfg, nodeInput), runtime)
       } else if (n.type === 'parameter-extractor') {
-        out = await chat([{ role: 'user', content: buildExtractPrompt(cfg, nodeInput) }])
+        out = await chat([
+          { role: 'system', content: runtimeSystemPrompt(runtime) },
+          { role: 'user', content: renderRuntimeVars(buildExtractPrompt(cfg, nodeInput), runtime) },
+        ])
       } else if (n.type === 'if-else') {
         // 条件分支：透传输入，另定命中分支（activeCase）→ 只放行对应 sourceHandle 的出边
         // ADR-012：条件先经变量池解析选择器，解析不出回退"对节点输入求值"（零回归）
@@ -422,6 +433,21 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
         })
         const text = await res.text()
         out = `HTTP ${res.status}\n${text.slice(0, 4000)}`
+      } else if (n.type === 'tool') {
+        // WF-22：tool 节点真调用（Skill → Plugin Tool → runToolVersion）。
+        // 🔴 失败不静默透传：以前不支持时是 skipped 传原样输入，下游 LLM 拿到的还是上一步的文本，
+        // 看起来「跑通了」，实际数据从没进来过——那正是用户拿到一篇编造报告的成因。
+        // 现在调不通就让整条流程 failed，宁可显式失败也不产出看不出真假的结果。
+        if (!opts.ctx) {
+          traces.push({ nodeId: n.id, type: n.type, status: 'failed', input: nodeInput, error: '缺少运行上下文（ctx），无法调用能力', ms: Date.now() - t0 })
+          return { status: 'failed', output: '', traces }
+        }
+        const r = await runToolNode(opts.ctx, cfg, nodeInput, runtime)
+        if (!r.ok) {
+          traces.push({ nodeId: n.id, type: n.type, status: 'failed', input: nodeInput, error: r.error, ms: Date.now() - t0 })
+          return { status: 'failed', output: '', traces }
+        }
+        out = r.output
       } else if (n.type === 'agent') {
         // 4.1.10：Agent 节点——引用已发布平台 Agent，用其人设 LLM 处理节点输入。
         // （一个 workflow 可由多个 Agent 节点组成；不递归执行被引用 Agent 的大脑工作流，避免环，防环在绑定时已拦。）

@@ -3,6 +3,7 @@ import { can } from '@/lib/auth/permissions'
 import { createClient } from '@/lib/supabase/server'
 import { getWorkflow } from '@/lib/data/workflow'
 import { executeGraph } from '@/lib/workflow/execute'
+import { checkReadiness, summarizeReadiness } from '@/lib/workflow/readiness'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -20,6 +21,21 @@ export async function POST(req: Request, { params }: Ctx) {
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
   const input = typeof body?.input === 'string' ? body.input : ''
+
+  // 🔴 WF-21：运行前先体检，未通过就**不跑**。
+  // 此前体检只拦发布，运行是敞开的——于是一条「抓取全网 AI 大事件」却没有任何联网能力的流程
+  // 照样能跑，模型无从检索只好现编，最终输出是一篇像模像样的假报告（或一长段「我无法联网」的自白）。
+  // 跑出错误答案比跑不起来更糟：用户拿不准哪句是真的。宁可当场说清缺什么。
+  const readiness = checkReadiness(wf.graph)
+  if (!readiness.ready) {
+    return Response.json({
+      error: {
+        code: 'not_ready',
+        message: summarizeReadiness(readiness),
+        issues: readiness.issues.filter((i) => i.level === 'error'),
+      },
+    }, { status: 422 })
+  }
 
   const t0 = Date.now()
   const result = await executeGraph(wf.graph, input, { ctx })
