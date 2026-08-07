@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getRequestContext } from '@/lib/context'
-import { PluginProviderView } from '@/components/views/plugin-provider-view'
+import { McpPageView } from '@/components/views/mcp-page-view'
 
 // V12-4.1：Plugin → MCP 页（PRD §6 一级菜单「Plugin」）。
 // 权限由 API 服务端强制（plugin:read/create/…），此处只挡未登录——
@@ -8,5 +8,6 @@ import { PluginProviderView } from '@/components/views/plugin-provider-view'
 export default async function Page() {
   const ctx = await getRequestContext()
   if (!ctx) redirect('/login')
-  return <PluginProviderView providerType="mcp" />
+  // ADR-024：MCP 以 Server 为主体，不再有 MCP Plugin——tools 由 Server 动态提供
+  return <McpPageView />
 }
