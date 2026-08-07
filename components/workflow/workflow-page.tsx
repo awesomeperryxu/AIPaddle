@@ -39,6 +39,7 @@ import {
   type WorkflowSchedule,
 } from '@/lib/workflow/graph-adapter';
 import { ScheduleModal } from './modals/schedule-modal';
+import type { GapResolution } from '@/lib/workflow/capability-gap';
 import { VariableInspectPanel } from './canvas/variable-inspect-panel';
 import { KeyboardShortcutsModal } from './modals/keyboard-shortcuts-modal';
 import {
@@ -298,7 +299,48 @@ function WorkflowPageInner({
   // ③ 澄清面板状态
   type ClarificationItem = { field: string; question: string; options?: string[] }
   const [copilotClarifications, setCopilotClarifications] = useState<ClarificationItem[]>([]);
+  // 能力缺口（WF-17 find-skill）：流程差什么真实能力、已有资产里有没有能顶上的。
+  // 🔴 只做发现与起草，安装/发布始终人工点——不联网拉外部代码（供应链风险）。
+  const [gapResolutions, setGapResolutions] = useState<GapResolution[]>([]);
+  const [gapBusy, setGapBusy] = useState<string | null>(null);
   const copilotScrollRef = useRef<HTMLDivElement>(null);
+
+  // 生成完就地问一句「差什么能力、上哪儿补」，答案直接摆在对话里
+  const analyzeGaps = useCallback(async (graph: unknown) => {
+    try {
+      const res = await fetch('/api/workflows/capability-gaps', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'analyze', graph }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setGapResolutions(Array.isArray(data.resolutions) ? data.resolutions : []);
+    } catch { /* 缺口分析失败不影响主流程，画布上的流程已经生成好了 */ }
+  }, []);
+
+  // 一键起草：产出 draft 态 Skill，仍需人工提交审核后才能用
+  const draftSkillForGap = useCallback(async (need: string, context: string) => {
+    setGapBusy(need);
+    try {
+      const res = await fetch('/api/workflows/capability-gaps', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'draft-skill', need, context }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCopilotMessages(prev => [...prev, { role: 'assistant', content: `❌ 起草「${need}」失败：${data?.error?.message ?? '未知原因'}` }]);
+        return;
+      }
+      setCopilotMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `✅ 已起草 Skill「${data.skill.name}」（草稿态）\n　还需你补齐凭证并提交审核，通过后即可挂到这一步上。\n　记录已写入「AI 操作记录」。`,
+      }]);
+    } catch {
+      setCopilotMessages(prev => [...prev, { role: 'assistant', content: '❌ 起草失败：网络错误' }]);
+    } finally {
+      setGapBusy(null);
+    }
+  }, []);
 
   // 自动触发：从 URL ?copilot=<描述> 带入。
   // 不在 useEffect 里同步 setState（React 编译器会报级联渲染），
@@ -324,6 +366,7 @@ function WorkflowPageInner({
           setCopilotMessages(prev => [...prev, { role: 'assistant', content: `✅ 已生成工作流（${data.graph.nodes.length} 个节点）${sched}\n${describeReadiness(data.readiness)}` }]);
           // fitView 延迟调用——不在闭包里直接引用 hook 返回值
           setTimeout(() => { try { fitView({ padding: 0.2 }); } catch {} }, 300);
+          void analyzeGaps(data.graph);
         } else {
           setCopilotMessages(prev => [...prev, { role: 'assistant', content: '未能生成有效的工作流，请继续描述。' }]);
         }
@@ -367,6 +410,7 @@ function WorkflowPageInner({
         const summary = `✅ 已生成工作流（${data.graph.nodes.length} 个节点）${sched}${data.valid ? '' : `\n⚠️ ${data.validation?.length ?? 0} 处校验问题`}\n${describeReadiness(data.readiness)}`;
         setCopilotMessages(prev => [...prev, { role: 'assistant', content: summary }]);
         setTimeout(() => fitView({ padding: 0.2 }), 300);
+        void analyzeGaps(data.graph);
       } else {
         setCopilotMessages(prev => [...prev, { role: 'assistant', content: '未能生成有效的工作流节点，请尝试更具体的描述。' }]);
       }
@@ -884,6 +928,52 @@ function WorkflowPageInner({
                     </div>
                   )}
                 </div>
+                {/* 能力缺口（WF-17）：差什么、已有资产里有没有能顶上的、没有就一键起草。
+                    安装与发布不在这里做——起草出来的是 draft，仍要人工提审。 */}
+                {gapResolutions.length > 0 && (
+                  <div className="px-3 py-2 border-t border-sky-500/30 bg-sky-500/5 space-y-2.5 max-h-56 overflow-y-auto">
+                    <p className="text-[11px] font-medium text-sky-600 dark:text-sky-400">
+                      这条流程还差 {gapResolutions.length} 项能力：
+                    </p>
+                    {gapResolutions.map((r) => (
+                      <div key={r.gap.nodeId} className="space-y-1">
+                        <p className="text-xs text-foreground/80">{r.gap.message}</p>
+                        {r.candidates.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">已有可用：</span>
+                            {r.candidates.map((c) => (
+                              <span
+                                key={`${c.source}-${c.id}`}
+                                className="text-[11px] px-2 py-0.5 rounded-full border border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                                title={c.description}
+                              >
+                                {c.name}
+                                <span className="ml-1 opacity-60">
+                                  {c.source === 'mcp' ? 'MCP' : c.status === 'published' ? 'Skill' : 'Skill·草稿'}
+                                </span>
+                              </span>
+                            ))}
+                            <span className="text-[10px] text-muted-foreground">（在节点配置里挂上即可）</span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] text-muted-foreground">工作区里没有现成能力</span>
+                            <button
+                              disabled={gapBusy === r.gap.need}
+                              onClick={() => draftSkillForGap(r.gap.need, r.gap.nodeLabel)}
+                              className="text-[11px] px-2 py-0.5 rounded-full border border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-300 hover:bg-sky-500/25 transition-colors disabled:opacity-50"
+                            >
+                              {gapBusy === r.gap.need ? '起草中…' : `一键起草「${r.gap.need}」Skill`}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <p className="text-[10px] text-muted-foreground">
+                      起草的 Skill 为草稿态，需补齐凭证并提交审核后才能使用；系统不会自动安装外部能力。
+                    </p>
+                  </div>
+                )}
                 {/* ③ 澄清面板 */}
                 {copilotClarifications.length > 0 && (
                   <div className="px-3 py-2 border-t border-amber-500/30 bg-amber-500/5 space-y-2 max-h-48 overflow-y-auto">

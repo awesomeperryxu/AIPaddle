@@ -37,6 +37,10 @@ export async function POST(request: Request) {
     .map((s) => ({ id: s.id, name: s.name, description: s.description, type: s.type }))
   const gen = await generateWorkflowGraph(description, published)
   if (gen.graph.nodes.length === 0) {
+    // 🔴 失败同样留痕：只记成功的记录页等于没监督，用户回头也查不到「那次为什么没建出来」
+    await writeAudit(ctx, 'workflow.copilot_failed', 'workflow', '-', {
+      description, success: false, error: '模型未能生成任何节点',
+    })
     return Response.json(
       { error: { code: 'generate_failed', message: '未能从描述生成流程，请把需求描述得更具体一些' } },
       { status: 422 },
@@ -50,6 +54,9 @@ export async function POST(request: Request) {
   // ③ 存图。失败则把刚建的壳删掉，不留空白工作流
   const saved = await saveWorkflow(ctx, created.id, { graph: gen.graph })
   if (!saved) {
+    await writeAudit(ctx, 'workflow.copilot_failed', 'workflow', created.id, {
+      description, name, success: false, error: '流程已生成但保存失败',
+    })
     return Response.json({ error: { code: 'save_failed', message: '流程已生成但保存失败，请重试' } }, { status: 500 })
   }
 
@@ -61,10 +68,12 @@ export async function POST(request: Request) {
   const readiness = checkReadiness(saved.graph)
 
   await writeAudit(ctx, 'workflow.copilot_created', 'workflow', created.id, {
-    name, nodeCount: gen.graph.nodes.length, edgeCount: gen.graph.edges.length,
+    name, description, // description 用于回溯「是哪句话建出来的」
+    nodeCount: gen.graph.nodes.length, edgeCount: gen.graph.edges.length,
     valid: validation.length === 0,
     ready: readiness.ready,
     readinessIssues: readiness.issues.length,
+    schedule: gen.graph.schedule?.cron ?? null,
   })
 
   return Response.json(
