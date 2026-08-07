@@ -18,8 +18,9 @@
 # 构建期间线上照跑旧产物；且每次全新目录，不会有增量构建残留的不一致清单。
 #
 # 用法：
-#   ./scripts/deploy.sh              # 部署 origin/main
-#   ./scripts/deploy.sh --no-verify  # 跳过部署后验证（不建议）
+#   ./scripts/deploy.sh                  # 部署 origin/main
+#   ./scripts/deploy.sh --no-verify      # 跳过部署后验证（不建议）
+#   ./scripts/deploy.sh --allow-rollback # 允许部署比线上更旧的版本（回滚，见下方防回退护栏）
 set -euo pipefail
 
 HOST="${DEPLOY_HOST:-ubuntu@43.173.99.218}"
@@ -27,12 +28,17 @@ KEY="${DEPLOY_KEY:-$HOME/.ssh/lighthouse.pem}"
 APP_DIR="${DEPLOY_DIR:-/opt/aipaddle}"
 PM2_NAME="${PM2_NAME:-aipaddle}"
 
+ALLOW_ROLLBACK=0
+for arg in "$@"; do
+  [ "$arg" = "--allow-rollback" ] && ALLOW_ROLLBACK=1
+done
+
 echo "=== 部署到 $HOST:$APP_DIR ==="
 
 # 🔴 定界符加单引号：本地一律不展开，脚本原样送达。参数经环境变量传。
 # 🔴 不带 sudo：目录属主就是登录用户。
 ssh -o ConnectTimeout=20 -i "$KEY" "$HOST" \
-  "APP_DIR='$APP_DIR' PM2_NAME='$PM2_NAME' bash -s" <<'REMOTE'
+  "APP_DIR='$APP_DIR' PM2_NAME='$PM2_NAME' ALLOW_ROLLBACK='$ALLOW_ROLLBACK' bash -s" <<'REMOTE'
 set -euo pipefail
 cd "$APP_DIR"
 export CI=true          # 无 TTY 时 pnpm 会中止删除 node_modules
@@ -90,7 +96,31 @@ if [ -f .git/index.lock ]; then
 fi
 
 git fetch origin main
-git reset --hard origin/main
+TARGET=$(git rev-parse FETCH_HEAD)
+
+# 🔴 防回退：目标版本比线上**旧**就拒绝部署。
+# 2026-08-07 实测踩到：两个会话先后部署，后一次的 deploy 基于更早的 main 状态
+# （它启动时我的 PR 还没合并），于是把线上从 40eca8c **覆盖回** 32f0e71，
+# 刚上线的联网搜索能力凭空消失，而两次部署各自都打印「✅ 全部通过」——
+# 谁都不知道结果被冲掉了。flock 只防「同时跑」，防不住「先后互相覆盖」。
+#
+# 判据：目标是当前 HEAD 的祖先且两者不等 → 这是一次回退。
+# 真要回滚（线上出故障往回退）是合法操作，走 --allow-rollback 显式声明。
+if [ "$TARGET" != "$PREV" ] && git merge-base --is-ancestor "$TARGET" "$PREV" 2>/dev/null; then
+  if [ "${ALLOW_ROLLBACK:-0}" = "1" ]; then
+    echo "⚠️  目标版本旧于线上，但已声明 --allow-rollback，继续回滚"
+  else
+    trap - ERR   # 尚未改动任何东西，不需要 rollback
+    echo "🔴 拒绝部署：目标版本比线上**旧**，这会冲掉已上线的改动"
+    echo "   线上：$(git log --oneline -1 "$PREV")"
+    echo "   目标：$(git log --oneline -1 "$TARGET")"
+    echo "   多半是本次部署启动时还没 fetch 到最新 main。请重跑（会重新 fetch）。"
+    echo "   确实要回滚请用：./scripts/deploy.sh --allow-rollback"
+    exit 1
+  fi
+fi
+
+git reset --hard "$TARGET"
 echo "目标版本：$(git log --oneline -1)"
 
 pnpm install --frozen-lockfile 2>&1 | tail -2
