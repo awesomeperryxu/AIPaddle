@@ -8,15 +8,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const rows: unknown[] = []
-const builder = {
-  select: vi.fn(() => builder),
-  in: vi.fn(() => builder),
-  order: vi.fn(() => builder),
-  limit: vi.fn(() => builder),
-  eq: vi.fn(() => builder),
-  then: (res: (v: { data: unknown[]; error: null }) => unknown) => res({ data: rows, error: null }),
+/** 各业务表的“现状”数据：表名 → 行 */
+const liveRows: Record<string, unknown[]> = {}
+
+const makeBuilder = (data: () => unknown[]) => {
+  const b: Record<string, unknown> = {}
+  for (const m of ['select', 'in', 'order', 'limit', 'eq']) b[m] = vi.fn(() => b)
+  b.then = (res: (v: { data: unknown[]; error: null }) => unknown) => res({ data: data(), error: null })
+  return b
 }
-vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({ from: () => builder }) }))
+const builder = makeBuilder(() => rows)
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: async () => ({
+    from: (table: string) => (table === 'audit_logs' ? builder : makeBuilder(() => liveRows[table] ?? [])),
+  }),
+}))
 
 import { listAiActivity, AI_ACTION_KEYS } from '@/lib/data/ai-activity'
 
@@ -26,7 +32,11 @@ const row = (action: string, detail: Record<string, unknown> = {}, id = 'a1') =>
   actor_id: 'u1', created_at: '2026-08-07T00:00:00Z', actor: { name: '张三' },
 })
 
-beforeEach(() => { rows.length = 0; vi.clearAllMocks() })
+beforeEach(() => {
+  rows.length = 0
+  for (const k of Object.keys(liveRows)) delete liveRows[k]
+  vi.clearAllMocks()
+})
 
 describe('记录规格化', () => {
   it('成功的创建记录带上对象类型、创建人、原始描述', async () => {
@@ -100,5 +110,72 @@ describe('查询约束', () => {
   it('limit 上限 500，防止一次拉爆', async () => {
     await listAiActivity(ctx, { limit: 9999 })
     expect(builder.limit).toHaveBeenCalledWith(500)
+  })
+})
+
+describe('WF-27 「查看」列出本次创建的对象', () => {
+  const WF = '11111111-1111-4111-8111-111111111111'
+  const SK = '22222222-2222-4222-8222-222222222222'
+
+  it('列出主对象，并带上它现在的名称与状态', async () => {
+    rows.push(row('workflow.copilot_created', { name: '建流程时的旧名', description: '每天8点汇总AI大事件' }, 'a1'))
+    rows[0].target_id = WF
+    liveRows.workflows = [{ id: WF, name: '改过名的工作流', status: 'published', deleted_at: null }]
+    const [a] = await listAiActivity(ctx)
+    expect(a.targets).toHaveLength(1)
+    expect(a.targets[0]).toMatchObject({ object: 'workflow', id: WF, name: '改过名的工作流', status: 'published', exists: true, primary: true })
+  })
+
+  it('🔴 对象已被删除 → 仍列出但标记 exists=false（引用户去点 404 比不列更糟）', async () => {
+    rows.push(row('workflow.copilot_created', { name: '已删除的流程', description: 'x' }, 'a1'))
+    rows[0].target_id = WF
+    liveRows.workflows = [] // 查不到
+    const [a] = await listAiActivity(ctx)
+    expect(a.targets[0]).toMatchObject({ exists: false, name: '已删除的流程' })
+  })
+
+  it('软删的对象同样算不存在', async () => {
+    rows.push(row('workflow.copilot_created', { name: 'w', description: 'x' }, 'a1'))
+    rows[0].target_id = WF
+    liveRows.workflows = [{ id: WF, name: 'w', status: 'draft', deleted_at: '2026-08-07T00:00:00Z' }]
+    const [a] = await listAiActivity(ctx)
+    expect(a.targets[0].exists).toBe(false)
+  })
+
+  it('同一句需求下建的多个对象聚到一起，主对象排在最前', async () => {
+    const desc = '查全网AI大事件并每天推送'
+    const wf = row('workflow.copilot_created', { name: 'AI日报流程', description: desc }, 'a1')
+    wf.target_id = WF
+    const sk = row('skill.copilot_created', { name: '联网检索能力', description: desc }, 'a2')
+    sk.target_type = 'skill'; sk.target_id = SK
+    rows.push(wf, sk)
+    liveRows.workflows = [{ id: WF, name: 'AI日报流程', status: 'draft', deleted_at: null }]
+    liveRows.skills = [{ id: SK, name: '联网检索能力', status: 'draft', deleted_at: null }]
+
+    const list = await listAiActivity(ctx)
+    const wfItem = list.find((x) => x.id === 'a1')!
+    expect(wfItem.targets.map((t) => t.object)).toEqual(['workflow', 'skill'])
+    expect(wfItem.targets[0].primary).toBe(true)
+    expect(wfItem.targets[1].primary).toBe(false)
+  })
+
+  it('🔴 不同需求不会被硬凑成一组——只靠时间接近会误聚', async () => {
+    const a1 = row('workflow.copilot_created', { name: 'A', description: '需求甲' }, 'a1')
+    a1.target_id = WF
+    const a2 = row('skill.copilot_created', { name: 'B', description: '需求乙' }, 'a2')
+    a2.target_type = 'skill'; a2.target_id = SK
+    rows.push(a1, a2)
+    liveRows.workflows = [{ id: WF, name: 'A', status: 'draft', deleted_at: null }]
+    liveRows.skills = [{ id: SK, name: 'B', status: 'draft', deleted_at: null }]
+    const list = await listAiActivity(ctx)
+    expect(list.find((x) => x.id === 'a1')!.targets).toHaveLength(1)
+  })
+
+  it('失败记录没有可打开的对象', async () => {
+    const f = row('workflow.copilot_failed', { description: 'x', success: false, error: '模型没产出' }, 'a1')
+    f.target_id = '-' // 失败时写的占位，不是 uuid
+    rows.push(f)
+    const [a] = await listAiActivity(ctx)
+    expect(a.targets).toEqual([])
   })
 })
