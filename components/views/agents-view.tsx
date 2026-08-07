@@ -63,6 +63,14 @@ type Team = {
   updatedAt: string;
 };
 
+// 团队状态 pill（与 Agent 管理页同一套配色，状态枚举也相同）
+const TEAM_STATUS: Record<string, { label: string; dotClass: string; pillClass: string }> = {
+  draft:     { label: '草稿',   dotClass: 'bg-muted-foreground', pillClass: 'text-muted-foreground' },
+  pending:   { label: '待审核', dotClass: 'bg-amber-500',        pillClass: 'text-amber-600 bg-amber-50 dark:bg-amber-950/40' },
+  published: { label: '已发布', dotClass: 'bg-green-500',        pillClass: 'text-green-600 bg-green-50 dark:bg-green-950/40' },
+  offline:   { label: '已下线', dotClass: 'bg-destructive',      pillClass: 'text-destructive bg-destructive/10' },
+};
+
 export function AgentsView({
   agents,
   digitalEmployeeIds = [],
@@ -107,13 +115,21 @@ export function AgentsView({
   const allAgents = agents ?? [];
   const deIdSet = new Set(digitalEmployeeIds);
 
-  // 🔴 区分数字员工与数字团队：
-  // 数字团队 = 在 digitalEmployeeIds 里的（引用了子 Agent 的上级，如「内容创作专家团」）
-  // 数字员工 = 已发布但不是团队上级的普通 Agent（如「文博凯」「律守正」）
-  const digitalTeams = allAgents.filter(a => deIdSet.has(a.id));
-  const digitalEmployees = allAgents.filter(a => !deIdSet.has(a.id));
-  // 可选为 base 的 Agent（建团队时的候选）
-  const baseAgentCandidates = allAgents.filter(a => !deIdSet.has(a.id));
+  // 🔴 DE-1：此处此前把两类完全搞反了——
+  // 旧代码把「引用了子 Agent 的 Agent」渲染成「数字团队」、把普通 Agent 渲染成「数字员工」，
+  // 而按 ADR-014/024，引用了下级 Agent 的那个**就是数字员工**，团队是 digital_employee_teams 表。
+  // 于是「数字员工」tab 里列的全是普通 Agent，用户点进去自然查不到任何下级。
+  //
+  // 正确归类（ADR-024 §1）：
+  //   数字员工 = deIdSet 里的（挂了 ≥1 个下级 Agent）
+  //   普通 Agent = 其余（叶子，不挂 Agent）
+  //   数字团队 = digital_employee_teams（另一张表，走 /api/teams）
+  const digitalEmployees = allAgents.filter(a => deIdSet.has(a.id));
+  const plainAgents = allAgents.filter(a => !deIdSet.has(a.id));
+  // DE-2：团队成员按 id 精确查表（此前是按 department 名匹配，纯属瞎猜）
+  const agentById = new Map(allAgents.map(a => [a.id, a]));
+  // 可选为 base 的 Agent（建数字员工时的候选）：只能是普通 Agent（R1：Agent 下不可挂 Agent）
+  const baseAgentCandidates = plainAgents;
 
   // 分类标签（按 department）
   const deDepartments = [...new Set(digitalEmployees.map(a => a.department).filter(Boolean))].sort();
@@ -319,7 +335,7 @@ export function AgentsView({
           </TabsTrigger>
           <TabsTrigger value="teams" className="gap-1.5 text-sm px-4">
             <Users className="h-3.5 w-3.5" />
-            数字团队 ({digitalTeams.length})
+            数字团队 ({teams.length})
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -579,9 +595,18 @@ export function AgentsView({
       )}
 
       {/* ── 数字团队 Tab ── */}
+      {/* 🔴 DE-3：此前这里渲染的是 digitalTeams（= agents 表里挂了下级的 Agent），
+          而创建/编辑对话框写的是 digital_employee_teams 表（走 /api/teams）。
+          两者是不同的东西——teams 这个 state 从头到尾没参与过渲染，
+          于是用户建的团队存进了库却永远看不见。现改为渲染真实的 teams。
+          DE-2：成员也不再按 department 名瞎猜，改用 team.memberIds 精确匹配。 */}
       {activeTab === 'teams' && (
         <div className="flex-1 overflow-y-auto">
-          {digitalTeams.length === 0 ? (
+          {teamsLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : teams.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3">
               <div className="w-12 h-12 rounded-full bg-muted/30 flex items-center justify-center">
                 <Users className="h-6 w-6 text-muted-foreground" />
@@ -593,31 +618,58 @@ export function AgentsView({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 content-start">
-              {digitalTeams.map((team) => {
-                // 团队的成员 = 它引用的子 Agent（从 digitalEmployees 里匹配）
-                // 这里暂用同 department 的个体 Agent 作为成员显示（与导入时的绑定逻辑一致）
-                const memberAgents = digitalEmployees.filter(a => a.department === team.department);
+              {teams.map((team) => {
+                // DE-2：成员 = team.memberIds 精确匹配，不再按 department 猜
+                const memberAgents = team.memberIds
+                  .map(id => agentById.get(id))
+                  .filter((a): a is Agent => !!a);
+                // memberIds 里有、但 agents 列表里查不到的（已删除或未发布）——如实显示数量，不假装成员齐全
+                const missingCount = team.memberIds.length - memberAgents.length;
                 const isExpanded = expandedTeamId === team.id;
+                const sc = TEAM_STATUS[team.status] ?? TEAM_STATUS.draft;
                 return (
-                  <Card key={team.id} className="bg-card border-border shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                    onClick={() => router.push(`/agents-admin/${team.id}`)}>
+                  <Card key={team.id} className="bg-card border-border shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-5">
                       <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center shrink-0`}>
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center shrink-0">
                           <Users className="h-6 w-6 text-white" />
                         </div>
                         <div className="flex items-center gap-1.5">
-                          {team.department && <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground">{team.department}</span>}
+                          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${sc.pillClass}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${sc.dotClass}`} />{sc.label}
+                          </div>
+                          {canManage && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-7 w-7">
+                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-36">
+                                <DropdownMenuItem onSelect={() => openEditTeam(team)}>
+                                  <Edit2 className="h-4 w-4 mr-2" />编辑团队
+                                </DropdownMenuItem>
+                                <DropdownMenuItem className="text-destructive" onSelect={() => handleDeleteTeam(team.id, team.name)}>
+                                  <Trash2 className="h-4 w-4 mr-2" />删除
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
                       </div>
                       <h3 className="font-semibold text-foreground leading-snug mb-1 line-clamp-1">{team.name}</h3>
-                      <p className="text-xs text-primary/80 font-medium mb-1">{memberAgents.length} 名数字员工</p>
+                      <p className="text-xs text-primary/80 font-medium mb-1">
+                        {memberAgents.length} 名数字员工
+                        {missingCount > 0 && (
+                          <span className="text-destructive"> · {missingCount} 名不可用</span>
+                        )}
+                      </p>
                       {team.description && (
                         <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{team.description}</p>
                       )}
 
                       {/* 成员展开 */}
-                      {memberAgents.length > 0 && (
+                      {team.memberIds.length > 0 && (
                         <div className="mt-3">
                           <button
                             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -634,9 +686,14 @@ export function AgentsView({
                                     {a.name[0]}
                                   </div>
                                   <span className="text-xs text-foreground">{a.name}</span>
-                                  <span className="text-[10px] text-muted-foreground">{a.department}</span>
+                                  {a.department && <span className="text-[10px] text-muted-foreground">{a.department}</span>}
                                 </div>
                               ))}
+                              {missingCount > 0 && (
+                                <p className="text-[10px] text-destructive">
+                                  另有 {missingCount} 名成员已删除或未发布，不会参与运行
+                                </p>
+                              )}
                             </div>
                           )}
                         </div>
@@ -748,6 +805,11 @@ export function AgentsView({
               <Input value={teamDesc} onChange={e => setTeamDesc(e.target.value)} placeholder="（可选）描述团队职责" />
             </div>
             <div>
+              {/* DE-1 连带修正：此前这里列的是**普通 Agent**（旧 digitalEmployees 的含义），
+                  而服务端门控只收数字员工（teams/[id]/route.ts:54）——选了必被拒，
+                  于是团队永远是 0 成员。现在列的是真正的数字员工，与服务端一致。
+                  D-12 已放宽为「数字员工与普通 Agent 并级」，但服务端门控放开属 DE-10，
+                  本批不动——选择器先与现行服务端保持一致，避免又出现"选了存不进去"。 */}
               <label className="text-sm font-medium text-foreground block mb-1.5">成员（仅限数字员工）</label>
               {digitalEmployees.length === 0 ? (
                 <p className="text-xs text-muted-foreground py-2">暂无可用的数字员工，请先创建数字员工</p>
