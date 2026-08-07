@@ -75,7 +75,10 @@ jobs:
         with:
           name: next-build-${{ github.sha }}
 
+      # OPS-4：scp 与 ssh 同属「对端没了也察觉不到」的操作，一并设上限。
+      # 产物只有 16MB，正常几秒完成；5 分钟足够覆盖网络抖动。
       - name: 上传产物到服务器
+        timeout-minutes: 5
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
@@ -83,7 +86,17 @@ jobs:
             next-build.tar.gz "ubuntu@${DEPLOY_HOST}:/tmp/next-build.tar.gz"
           echo ">> 产物已上传"
 
+      # 🔴 OPS-4：SSH 步骤最长 10 分钟，超时即失败。
+      # 2026-08-07 事故：一条 run 在本步骤 in_progress **卡了近 2 小时**——
+      # 服务器 load 冲到 200+ 时 ssh 会话被踢，但 runner 侧只是在等命令返回，
+      # 不知道对端已经没了。它占着 concurrency 组 deploy-production，
+      # 后续 4 个部署一进队列就被下一个取代，全部 cancelled；
+      # 而它已执行过 git reset，线上停在「新源码 + 旧产物」半更新态两小时，
+      # 期间所有合并都没上线，且 run 绿、git log 最新、站点 200，毫无异常信号。
+      # 加超时不解决卡住的成因，但把「无限空等」变成「10 分钟后明确失败」，
+      # 队列自动往下走，EXIT/TERM trap 也会把源码回退回去。
       - name: SSH 部署到服务器（原子构建切换 · BUG-87 加固）
+        timeout-minutes: 10
         env:
           GH_PAT: ${{ secrets.GITHUB_TOKEN }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -103,9 +116,13 @@ jobs:
           #    照样会把两次部署的源码和产物错配。锁必须是同一把，否则等于没锁。
           # 拿不到锁 = 另一次部署正在进行，它部署的代码只会更新不会更旧，
           # 直接跳过是安全的；此时尚未改动任何文件，不需要回滚。
+          # 🔴 OPS-4：等锁上限必须**小于**本步骤的 timeout-minutes: 10。
+          # 原值 900s(15min) 比步骤超时还长——真等满就会先被 Actions 超时杀掉，
+          # 走的是「步骤失败」而不是这里设计好的「跳过且不回滚」路径。
+          # 取 480s(8min)，给拿到锁之后的解包+切换+健康检查留约 2 分钟余量。
           exec 9>/tmp/aipaddle-deploy.lock
-          if ! flock -w 900 9; then
-            echo ">> 跳过：另一次部署仍在进行（等待 900s 未获锁）"
+          if ! flock -w 480 9; then
+            echo ">> 跳过：另一次部署仍在进行（等待 480s 未获锁）"
             exit 0
           fi
 
