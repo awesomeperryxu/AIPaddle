@@ -207,6 +207,8 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 interface WorkflowPageInnerProps {
   workflowId?: string;
+  /** 加载时的 updated_at（乐观锁基线，WF-28） */
+  initialUpdatedAt?: string | null;
   title?: string;
   appType?: 'workflow' | 'chatflow';
   initialGraph?: PersistedGraph;
@@ -218,6 +220,7 @@ function WorkflowPageInner({
   title: initialTitle = '未命名工作流',
   appType = 'workflow',
   initialGraph,
+  initialUpdatedAt,
   onlineUsers = [],
 }: WorkflowPageInnerProps) {
   // 从后端图初始化画布；空图则给一个开始节点
@@ -314,6 +317,10 @@ function WorkflowPageInner({
   const [gapBusy, setGapBusy] = useState<string | null>(null);
   // 发布被体检拦住、且其中有可自动修复项时，给一条带按钮的提示（WF-25）
   const [publishFixable, setPublishFixable] = useState(false);
+  // WF-28 乐观锁：加载时的 updated_at 作为基线，每次保存成功后前进。
+  // 🔴 冲突后必须**停掉自动保存**——否则下一次防抖又会拿旧图去覆盖，等于没锁。
+  const baseUpdatedAt = useRef<string | null>(initialUpdatedAt ?? null);
+  const [staleConflict, setStaleConflict] = useState(false);
   const copilotScrollRef = useRef<HTMLDivElement>(null);
 
   // 生成完就地问一句「差什么能力、上哪儿补」，答案直接摆在对话里
@@ -490,16 +497,24 @@ function WorkflowPageInner({
   useEffect(() => {
     if (!workflowId) return;
     if (firstRun.current) { firstRun.current = false; return; } // 跳过首次挂载
+    if (staleConflict) return; // 已冲突：再存就是拿旧图覆盖别人的改动
     const t = setTimeout(async () => {
       setSaveStatus('saving');
       try {
         const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
         const res = await fetch(`/api/workflows/${workflowId}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: title, graph }),
+          body: JSON.stringify({ name: title, graph, baseUpdatedAt: baseUpdatedAt.current }),
         });
+        if (res.status === 409) {
+          // WF-28：库里已被改过。停掉自动保存并挂出提示，别让防抖把对方的改动抹了
+          setStaleConflict(true);
+          setSaveStatus('error');
+          return;
+        }
         if (!res.ok) { setSaveStatus('error'); showToast('自动保存失败：无权限或未登录'); return; }
-        const { valid, validation } = await res.json();
+        const { valid, validation, workflow } = await res.json();
+        if (workflow?.updatedAtIso) baseUpdatedAt.current = workflow.updatedAtIso; // 基线前进
         setSaveStatus('saved');
         if (!valid && Array.isArray(validation) && validation.length > 0) {
           showToast(`已保存（草稿）· ${validation.length} 处校验问题`);
@@ -507,17 +522,20 @@ function WorkflowPageInner({
       } catch { setSaveStatus('error'); showToast('自动保存失败：网络错误'); }
     }, 800);
     return () => clearTimeout(t);
-  }, [nodes, edges, title, workflowId, showToast]);
+  }, [nodes, edges, title, workflowId, staleConflict, showToast]);
 
   // 立即保存当前画布（运行前 flush，确保引擎跑的是最新图）
   const saveNow = useCallback(async () => {
     if (!workflowId) return;
     const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
     try {
-      await fetch(`/api/workflows/${workflowId}`, {
+      const res = await fetch(`/api/workflows/${workflowId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: title, graph }),
+        body: JSON.stringify({ name: title, graph, baseUpdatedAt: baseUpdatedAt.current }),
       });
+      if (res.status === 409) { setStaleConflict(true); setSaveStatus('error'); return; }
+      const body = await res.json().catch(() => ({}));
+      if (body?.workflow?.updatedAtIso) baseUpdatedAt.current = body.workflow.updatedAtIso;
       setSaveStatus('saved');
     } catch { /* 运行前保存失败不阻断，交由 /run 报错 */ }
   }, [workflowId, nodes, edges, title]);
@@ -835,6 +853,20 @@ function WorkflowPageInner({
               {saveStatus === 'saved' && '已自动保存'}
               {saveStatus === 'error' && <span className="text-destructive">保存失败</span>}
             </div>
+
+            {/* WF-28：库里已被别处改过，自动保存已停。给出唯一安全的出路——刷新。
+                🔴 不提供「强行覆盖」按钮：这条路径的典型场景是后台修复或另一个窗口，
+                覆盖掉的往往正是刚修好的东西。 */}
+            {staleConflict && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs shadow-md">
+                <span className="text-destructive">
+                  这条工作流已被别处更新（另一个窗口或后台修复），<b>自动保存已暂停</b>，以免覆盖对方的改动
+                </span>
+                <Button size="sm" className="h-6 text-[11px]" onClick={() => window.location.reload()}>
+                  刷新载入最新
+                </Button>
+              </div>
+            )}
 
             {/* 体检拦住了发布、但其中有能自动修的（WF-25）——给出路，别让用户自己去翻节点配置 */}
             {publishFixable && (
@@ -1164,6 +1196,8 @@ function WorkflowPageInner({
 
 export interface WorkflowPageProps {
   workflowId?: string;
+  /** 加载时的 updated_at（乐观锁基线，WF-28） */
+  initialUpdatedAt?: string | null;
   title?: string;
   appType?: 'workflow' | 'chatflow';
   initialGraph?: PersistedGraph;

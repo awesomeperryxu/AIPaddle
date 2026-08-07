@@ -1,6 +1,6 @@
 import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
-import { getWorkflow, saveWorkflow, deleteWorkflow } from '@/lib/data/workflow'
+import { getWorkflow, saveWorkflowChecked, deleteWorkflow } from '@/lib/data/workflow'
 import { validateGraph } from '@/lib/workflow/validate'
 import { validateToolNodes } from '@/lib/workflow/validate-tools'
 
@@ -35,11 +35,24 @@ export async function PATCH(req: Request, { params }: Ctx) {
           edges: Array.isArray((body.graph as { edges?: unknown }).edges) ? (body.graph as { edges: [] }).edges : [] }
       : undefined
 
-  const workflow = await saveWorkflow(ctx, id, {
+  // WF-28 乐观锁：前端带上它加载时的 updatedAt，服务端发现库里已经更新过就拒绝写入。
+  // 🔴 没有这道闸时，开着的编辑器会用内存里的旧图整张覆盖回去，把别人（或后台修复）
+  // 刚写进去的改动**静默抹掉**——不带 baseUpdatedAt 的老客户端仍按原样放行，不破坏兼容。
+  const baseUpdatedAt = typeof body?.baseUpdatedAt === 'string' ? body.baseUpdatedAt : undefined
+  const outcome = await saveWorkflowChecked(ctx, id, {
     name: typeof body?.name === 'string' ? body.name : undefined,
     graph,
-  })
-  if (!workflow) return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
+  }, baseUpdatedAt)
+  if (!outcome.ok && outcome.reason === 'not_found') {
+    return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
+  }
+  if (!outcome.ok) {
+    return Response.json({
+      error: { code: 'conflict', message: '这条工作流已被更新（可能是另一个窗口或后台修复），请刷新后再改，以免覆盖对方的改动' },
+      current: outcome.current,
+    }, { status: 409 })
+  }
+  const workflow = outcome.workflow
 
   // 结构校验 + Tool 节点校验（4.4.2：Tool 只引用已发布 Skill、拒直连 MCP）
   const validation = [...validateGraph(workflow.graph), ...(await validateToolNodes(ctx, workflow.graph))]
