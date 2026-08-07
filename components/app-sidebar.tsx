@@ -30,6 +30,8 @@ import {
   Cpu,
   Clock,
   Sparkles,
+  Check,
+  Loader2,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from 'next-themes';
@@ -167,6 +169,41 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—', userName
   // 租户默认模型：初值来自服务端 prop；管理员切换时乐观更新 + 失败回滚。
   const [model, setModel] = useState(defaultModel);
   const [modelHint, setModelHint] = useState<string | null>(null);
+
+  // 组织切换（ADR-025）。列表按需拉取——绝大多数账号只有一个组织，
+  // 不该为此在每次渲染侧边栏时都多打一个请求。
+  type MyOrg = { id: string; name: string; status: string; active: boolean; home: boolean; roles: string[] };
+  const [myOrgs, setMyOrgs] = useState<MyOrg[]>([]);
+  const [switchingOrg, setSwitchingOrg] = useState<string | null>(null);
+
+  const loadMyOrgs = async () => {
+    if (myOrgs.length > 0) return;
+    try {
+      const res = await fetch('/api/orgs/mine');
+      if (!res.ok) return;
+      const data = await res.json();
+      setMyOrgs(Array.isArray(data.orgs) ? data.orgs : []);
+    } catch { /* 拉不到就退化成只显示当前组织，不影响其它功能 */ }
+  };
+
+  const handleSwitchOrg = async (orgId: string, name: string) => {
+    if (orgId === 'current') return;
+    setSwitchingOrg(orgId);
+    try {
+      const res = await fetch('/api/orgs/switch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { setModelHint(body?.error?.message ?? `切换到「${name}」失败`); setSwitchingOrg(null); return; }
+      // 🔴 必须整页重载：当前页面上的数据全是按旧组织的 RLS 取的，
+      // 只更新侧边栏会让用户对着 A 组织的数据以为自己在 B 组织。
+      window.location.reload();
+    } catch {
+      setModelHint('切换组织失败：网络错误');
+      setSwitchingOrg(null);
+    }
+  };
   const currentModelLabel = AGENT_MODELS.find((m) => m.value === model)?.label ?? model;
 
   const handleSelectModel = (value: string) => {
@@ -213,7 +250,10 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—', userName
       <div className="px-3 py-2.5 border-b border-sidebar-border">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="w-full flex items-center justify-between px-2.5 py-2 rounded-md bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors text-left">
+            <button
+              onClick={loadMyOrgs}
+              className="w-full flex items-center justify-between px-2.5 py-2 rounded-md bg-sidebar-accent/50 hover:bg-sidebar-accent transition-colors text-left"
+            >
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-6 h-6 rounded bg-primary/20 flex items-center justify-center shrink-0">
                   <Building2 className="h-3.5 w-3.5 text-primary" />
@@ -223,11 +263,27 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—', userName
               <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/60 shrink-0" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-52">
-            <DropdownMenuItem>
-              <Building2 className="h-4 w-4 mr-2" />
-              {orgName}
-            </DropdownMenuItem>
+          <DropdownMenuContent align="start" className="w-60">
+            {/* 组织切换（ADR-025）：一个账号可归属多组织，切到哪个就以哪个组织的身份操作。
+                🔴 切换是账号级而非会话级——同一账号的其它标签页/设备也会跟着变，故明示。 */}
+            <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+              {myOrgs.length > 1 ? '切换组织（影响该账号所有窗口）' : '当前组织'}
+            </DropdownMenuLabel>
+            {(myOrgs.length > 0 ? myOrgs : [{ id: 'current', name: orgName, active: true, home: true, status: 'active', roles: [] }]).map((o) => (
+              <DropdownMenuItem
+                key={o.id}
+                disabled={o.active || switchingOrg !== null || o.status === 'suspended'}
+                onClick={() => handleSwitchOrg(o.id, o.name)}
+                className="gap-2"
+              >
+                <Building2 className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                {o.home && <span className="shrink-0 text-[10px] text-muted-foreground">主</span>}
+                {o.status === 'suspended' && <span className="shrink-0 text-[10px] text-destructive">已停用</span>}
+                {o.active && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                {switchingOrg === o.id && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />}
+              </DropdownMenuItem>
+            ))}
             <DropdownMenuSeparator />
             {/* 模型选择（以租户为单位）：Admin 可切换，其他角色只读展示 */}
             {canManageTenant ? (
