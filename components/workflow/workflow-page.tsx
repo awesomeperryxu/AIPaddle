@@ -366,7 +366,7 @@ function WorkflowPageInner({
       setCopilotLoading(true);
       fetch('/api/workflows/copilot', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: desc }),
+        body: JSON.stringify({ description: desc, appType }),
       }).then(r => r.json()).then(data => {
         if (data.graph?.nodes?.length > 0) {
           const rf = graphToReactFlow(data.graph);
@@ -401,7 +401,7 @@ function WorkflowPageInner({
       const res = await fetch('/api/workflows/copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: text, existingGraph: currentGraph }),
+        body: JSON.stringify({ description: text, existingGraph: currentGraph, appType }),
       });
       const data = await res.json();
       if (!res.ok) {

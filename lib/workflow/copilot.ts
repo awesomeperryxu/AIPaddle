@@ -56,7 +56,7 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 const BASE_RULES = `硬性要求：
-① 恰好一个 start 节点、至少一个 end 或 answer 节点
+① 恰好一个 start 节点、至少一个终点节点（类型见下方"本次生成的是…"）
 ② 每个节点都要连入流程（无孤立节点）
 ③ 不能有环（有向无环图）
 ④ 节点 id 格式：类型-序号（如 llm-1、if-else-2）
@@ -120,13 +120,21 @@ function toModelGraph(graph: WorkflowGraph | PersistedGraph): RawGraph {
   }
 }
 
-function buildSystemPrompt(existingGraph?: WorkflowGraph, skills?: AvailableSkill[]): string {
+function buildSystemPrompt(
+  existingGraph?: WorkflowGraph,
+  skills?: AvailableSkill[],
+  appType: 'workflow' | 'chatflow' = 'workflow',
+): string {
   let prompt = `你是工作流编排助手。根据用户需求生成或修改工作流图。只输出 JSON，不要任何解释或 markdown 代码块。
 
 可用节点类型：
 ${NODE_LIST}
 
 ${BASE_RULES}
+
+${appType === 'chatflow'
+  ? '本次生成的是 **Chatflow**（对话式），终点节点用 answer（对话回复），不要用 end。'
+  : '本次生成的是 **Workflow**（流程式），终点节点一律用 end，**禁止使用 answer**——answer 只属于 Chatflow。'}
 
 ${NODE_FORMAT}
 
@@ -442,8 +450,12 @@ function assignBranches(nodes: RawNode[], edges: RawEdge[]): { edges: PersistedE
  * 顶层 label 会被整个丢掉，画布上于是显示 "llm"/"end" 这种类型名）；
  * ② if-else 出边补 sourceHandle 并回填 cases；③ 自动布局算出 position。
  */
-export function normalizeGraph(raw: RawGraph): PersistedGraph {
-  const nodes = raw.nodes.filter((n) => n.id && n.type)
+export function normalizeGraph(raw: RawGraph, appType: 'workflow' | 'chatflow' = 'workflow'): PersistedGraph {
+  // answer 是 Chatflow 专属；混进 Workflow 里，执行引擎按对话回复处理、
+  // 语义也对不上。又一次「prompt 说了不算」——写死了禁止仍会出现，故代码换掉。
+  const nodes = raw.nodes
+    .filter((n) => n.id && n.type)
+    .map((n) => (appType === 'workflow' && n.type === 'answer' ? { ...n, type: 'end' } : n))
   const { edges, casesByNode } = assignBranches(nodes, raw.edges.filter((e) => e.source && e.target))
   const positions = layoutGraph(nodes, edges)
 
@@ -488,6 +500,8 @@ function detectScheduleHint(description: string, fromModel?: ScheduleHint): Sche
 export type CopilotOptions = {
   existingGraph?: WorkflowGraph
   availableSkills?: AvailableSkill[]
+  /** workflow 用 end 收尾，chatflow 用 answer；不传按 workflow */
+  appType?: 'workflow' | 'chatflow'
 }
 
 /** 根据描述生成工作流图（draft）。支持增量修改、Skill 清单、澄清面板。 */
@@ -506,7 +520,8 @@ export async function generateWorkflowGraph(
   }
 
   const allowedIds = new Set((opts.availableSkills ?? []).map((s) => s.id))
-  const systemPrompt = buildSystemPrompt(opts.existingGraph, opts.availableSkills)
+  const appType = opts.appType ?? 'workflow'
+  const systemPrompt = buildSystemPrompt(opts.existingGraph, opts.availableSkills, appType)
   const messages = [
     { role: 'system' as const, content: systemPrompt },
     { role: 'user' as const, content: `需求：${description}` },
@@ -514,7 +529,7 @@ export async function generateWorkflowGraph(
   // 生成 → 折叠臆想步骤 → 净化假 URL/编造 tool → 规范化。
   // 校验看到的必须是最终会落库、会上画布的那张图
   const finish = (g: RawGraph): PersistedGraph =>
-    normalizeGraph(sanitizeToolNodes(collapseFillerNodes(g), allowedIds))
+    normalizeGraph(sanitizeToolNodes(collapseFillerNodes(g), allowedIds), appType)
 
   let raw = await chat(messages, { temperature: 0.2, maxTokens: 2000 })
   const parsed = parseResult(raw)

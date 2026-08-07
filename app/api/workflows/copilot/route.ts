@@ -28,7 +28,10 @@ export async function POST(request: Request) {
   const availableSkills = (await listSkills(ctx))
     .filter((s) => s.status === 'published')
     .map((s) => ({ id: s.id, name: s.name, description: s.description, type: s.type }))
-  const result = await generateWorkflowGraph(description, { existingGraph: existingGraph as never, availableSkills })
+  // Workflow 用 end 收尾、Chatflow 用 answer——不告诉它就会混用，
+  // 而 answer 混进 Workflow 会在执行时被当成对话回复处理
+  const appType = body?.appType === 'chatflow' ? 'chatflow' : 'workflow'
+  const result = await generateWorkflowGraph(description, { existingGraph: existingGraph as never, availableSkills, appType })
   // WF-11：生成后立刻做零成本静态体检，把「跑不起来」的点当场摊给用户，
   // 而不是等他发布或运行时才发现（发布端点会用同一套规则拦截）
   const readiness = checkReadiness(result.graph)
