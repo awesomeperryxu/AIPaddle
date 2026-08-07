@@ -22,14 +22,29 @@ yarn.lock
 /playwright-report/
 
 # ── 商业机密文档：不同步到公开 GitHub（本地保留；2026-07-21 决定）──
-docs/requirements/
-docs/visily/
-docs/design/
+#
+# 🔴 本段的规则口径必须与 CI 的 confidential-guard（.github/workflows/ci.yml）保持一致。
+#    口径不一致 = 本地 `git add .` 放行、要等 CI 才拦，而 docs/ 下的 docx 里有明文密码，
+#    仓库是公开的。守卫查 `docs/*.docx` 与 `docs/AIPaddle-*.xlsx`，这里就不能只点名个别文件。
+#
+# 🔴 不要写结尾斜杠。这些路径在本地是**指向外置真身 AIPaddle-docs/ 的软链**（见 _relink.sh），
+#    而 `docs/adr/` 这种带斜杠的规则只匹配真目录，匹配不到同名软链——软链会照样被 git 看见。
+#    去掉斜杠后目录与软链都能匹配。
+
+# 整类文档：不论文件名，docs/ 下的 Office 文档一律不同步
+docs/*.docx
+docs/*.xlsx
+docs/*.pptx
+
+# 产品 / 设计 / 需求（目录，可能是软链）
+docs/requirements
+docs/visily
+docs/design
+docs/templates
 docs/IMPLEMENTATION_AUDIT.md
 docs/PARALLEL_EXECUTION_PLAN.md
-docs/templates/
-docs/测试与CI操作手册-v0-ai-llmops-prototype.docx
 _legacy/
+
 # Excel 临时锁文件（Excel 打开时生成，勿入库）
 ~$*
 docs/~$*
@@ -37,10 +52,16 @@ docs/~$*
 # ── 追踪与架构文档：也停止同步（2026-07-21 用户决定，本地保留）──
 ROADMAP.md
 docs/ISSUES.md
-docs/adr/
-docs/AIPaddle-项目进度管控.xlsx
+docs/adr
 # security 管理文档（本地专用，含机密文件清单，绝不同步）
 docs/SECURITY-机密与不同步清单.md
+
+# 外置文档真身若被整体软链/复制进仓库，也一并挡掉
+AIPaddle-docs
+docs/AIPaddle-docs
+
+# 重复嵌套的测试用例副本（正本在 docs/test-cases/，勿再嵌一层）
+docs/test-cases/test-cases/
 
 # Playwright 登录态（含会话 token，勿提交）
 playwright/.auth/
