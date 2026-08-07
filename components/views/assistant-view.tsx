@@ -82,6 +82,8 @@ export function AssistantView() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
+  // 标记「正在发送中创建的会话」，防止 activeId effect 用空消息覆盖本地已添加的用户消息
+  const sendingNewConv = useRef(false);
 
   // 办公文件处理（合并自 office-tools 页面）
   const [officeOpen, setOfficeOpen] = useState(false);
@@ -233,10 +235,12 @@ export function AssistantView() {
     }).catch(() => {});
   }, []);
 
-  // 用户手动切换会话时加载消息（跳过已预加载的初始会话）
+  // 用户手动切换会话时加载消息（跳过已预加载的初始会话 + 发送中新建的会话）
   useEffect(() => {
     if (!activeId) { setMessages([]); return; }
     if (activeId === preloadedId.current) { preloadedId.current = null; return; }
+    // 发送中新建的会话：跳过加载（此时 DB 还没有消息，加载会覆盖本地已添加的用户消息）
+    if (sendingNewConv.current) { sendingNewConv.current = false; return; }
     apiFetch<{ messages: Msg[] }>(`/api/assistant/conversations/${activeId}/messages`)
       .then((r) => setMessages(r.messages))
       .catch(() => setMessages([]));
@@ -273,6 +277,7 @@ export function AssistantView() {
 
   async function ensureConversation(): Promise<string> {
     if (activeId) return activeId;
+    sendingNewConv.current = true; // 阻止 activeId effect 覆盖消息
     const r = await apiFetch<{ conversation: Conversation }>('/api/assistant/conversations', { method: 'POST' });
     setConversations((c) => [r.conversation, ...c]);
     setActiveId(r.conversation.id);
@@ -345,6 +350,60 @@ export function AssistantView() {
     }
   }
 
+  // ── 多步编排器（创建 workflow + agent + 定时）──
+  type OrchestrateStep = { id: string; label: string; status: 'pending' | 'running' | 'done' | 'error' | 'skipped'; result?: string; error?: string };
+  const [orchestrateSteps, setOrchestrateSteps] = useState<OrchestrateStep[]>([]);
+  const [orchestrating, setOrchestrating] = useState(false);
+
+  async function runOrchestrate(description: string) {
+    setOrchestrating(true);
+    try {
+      const res = await fetch('/api/assistant/orchestrate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ description }),
+      });
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({ error: { message: '编排失败' } }));
+        setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ ${err?.error?.message ?? '编排失败'}`, citations: [] }]);
+        return;
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const events = buf.split('\n\n');
+        buf = events.pop() ?? '';
+        for (const ev of events) {
+          const line = ev.trim();
+          if (!line.startsWith('data:')) continue;
+          const obj = JSON.parse(line.slice(5).trim()) as {
+            type: string; steps?: OrchestrateStep[]; id?: string; status?: string; result?: string; error?: string; description?: string;
+          };
+          if (obj.type === 'plan') {
+            setOrchestrateSteps(obj.steps ?? []);
+          } else if (obj.type === 'step') {
+            setOrchestrateSteps((prev) =>
+              prev.map((s) => s.id === obj.id ? { ...s, status: obj.status as OrchestrateStep['status'], result: obj.result, error: obj.error } : s)
+            );
+          } else if (obj.type === 'done') {
+            const allDone = true; // stream ended
+            if (allDone) {
+              setMessages((m) => [...m, { id: `orch-${Date.now()}`, role: 'assistant', content: '编排完成，请查看上方执行结果。', citations: [] }]);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ 编排失败：${e instanceof Error ? e.message : '未知错误'}`, citations: [] }]);
+    } finally {
+      setOrchestrating(false);
+    }
+  }
+
   async function send() {
     let text = input.trim();
     const atts = attachments;
@@ -389,7 +448,14 @@ export function AssistantView() {
       setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: full, citations: cites }]);
       loadConversations();
       if (redirect) {
-        setTimeout(() => router.push(`${redirect!.target}?assistant=${encodeURIComponent(redirect!.description)}`), 700);
+        // 创建 workflow 意图：改走编排器（原地多步执行），不跳转页面
+        if (redirect.target === '/workflows') {
+          // 替换 AI 的 redirect 通知为编排器执行
+          setMessages((m) => m.filter((msg) => msg.id !== `a-${Date.now()}`)); // 移除刚加的通知
+          void runOrchestrate(redirect.description);
+        } else {
+          setTimeout(() => router.push(`${redirect!.target}?assistant=${encodeURIComponent(redirect!.description)}`), 700);
+        }
       }
     } catch (e) {
       setMessages((m) => [...m, { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ ${e instanceof Error ? e.message : '发送失败'}`, citations: [] }]);
@@ -493,6 +559,64 @@ export function AssistantView() {
               ))}
               {sending && (
                 <MessageBubble role="assistant" content={streamText} citations={streamCitations} streaming />
+              )}
+
+              {/* 多步编排进度面板 */}
+              {orchestrateSteps.length > 0 && (
+                <div className="flex gap-3 mt-2">
+                  <div className="shrink-0 w-7 h-7 rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mt-0.5 ring-1 ring-border/30">
+                    <Zap className="h-3.5 w-3.5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium text-primary/80 mb-2">自动编排执行</p>
+                    <div className="space-y-0">
+                      {orchestrateSteps.map((step, i) => {
+                        const isRunning = step.status === 'running';
+                        const isDone = step.status === 'done';
+                        const isError = step.status === 'error';
+                        const isPending = step.status === 'pending';
+                        return (
+                          <div key={step.id}>
+                            <div className={`flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all ${
+                              isRunning ? 'bg-primary/5 ring-1 ring-primary/20' :
+                              isDone ? 'bg-emerald-500/5' :
+                              isError ? 'bg-red-500/5' : ''
+                            }`}>
+                              {/* 状态图标 */}
+                              <div className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                isDone ? 'bg-emerald-500 text-white' :
+                                isError ? 'bg-red-500 text-white' :
+                                isRunning ? 'bg-primary text-primary-foreground animate-pulse' :
+                                'bg-muted text-muted-foreground'
+                              }`}>
+                                {isDone ? '✓' : isError ? '✕' : isRunning ? '⋯' : i + 1}
+                              </div>
+                              {/* 步骤名 */}
+                              <div className="flex-1 min-w-0">
+                                <span className={`text-xs font-medium ${
+                                  isRunning ? 'text-primary' :
+                                  isDone ? 'text-emerald-600' :
+                                  isError ? 'text-red-600' :
+                                  'text-muted-foreground'
+                                }`}>{step.label}</span>
+                                {step.result && <p className="text-[11px] text-muted-foreground mt-0.5">{step.result}</p>}
+                                {step.error && <p className="text-[11px] text-red-500 mt-0.5">{step.error}</p>}
+                              </div>
+                              {/* loading 动画 */}
+                              {isRunning && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />}
+                            </div>
+                            {/* 箭头连接线 */}
+                            {i < orchestrateSteps.length - 1 && (
+                              <div className="flex items-center pl-5 py-0.5">
+                                <div className={`w-px h-3 ${isDone ? 'bg-emerald-300' : 'bg-border'}`} />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}
