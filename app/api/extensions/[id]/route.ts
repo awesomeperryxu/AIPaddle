@@ -40,10 +40,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
         ? (b.targetVersion as string | null) : undefined,
     })
     if (!ext) return Response.json({ error: { code: 'not_found', message: '不存在或无权访问' } }, { status: 404 })
-    // 改来源白名单/限流会直接影响对外可访问性，留痕
-    if (b?.allowedOrigins !== undefined || b?.rateLimitPerMin !== undefined) {
+    // 改来源白名单/限流/调用目标会直接影响对外可访问性，留痕
+    if (b?.allowedOrigins !== undefined || b?.rateLimitPerMin !== undefined || b?.targetId !== undefined) {
       await writeAudit(ctx, 'extension.governance_updated', 'extension', id, {
         allowedOrigins: ext.allowedOrigins, rateLimitPerMin: ext.rateLimitPerMin,
+        targetId: ext.targetId,
       })
     }
     return Response.json({ extension: ext })
