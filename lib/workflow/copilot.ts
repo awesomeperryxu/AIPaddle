@@ -68,9 +68,12 @@ const BASE_RULES = `硬性要求：
 🔴 绝对禁止（违反即整条流程作废，用户拿到就是坏的）：
 ⑦ **不要编造 URL、域名、接口地址、API Key**。像「https://api.example-search.com/v1/search」
    这类假地址一跑就失败。没有真实可用的接口时，**不要用 http-request 节点**。
-⑧ **不要用节点假装完成模型做不到的事**。联网检索、读写外部系统、发消息，
-   只有在下方能力清单里有对应 Skill 时才能编排；没有就**不要硬造这一步**，
-   改为在 clarifications 里问用户「用哪个渠道/接口获取数据」。
+⑧ **需要实时/联网信息时，给那个 llm 节点开联网搜索**：config 里加 "enableSearch": true。
+   平台的模型原生支持联网检索，这是首选做法，不要写成「需接入能力」，也不要编 http 地址。
+   例：{"id":"llm-1","type":"llm","label":"抓取前一日的AI大事件",
+        "config":{"enableSearch":true,"prompt":"检索并列出昨天全球AI领域的重大事件，注明日期与来源媒体。只列事实，不要编造。"}}
+   读写外部系统、发消息这类**联网搜索也做不到**的动作，才看下方能力清单；
+   清单里没有就不要硬造这一步，改为在 clarifications 里问用户用哪个渠道。
 ⑨ **不要拆出用户没要求的臆想中间步骤**。以下这类节点一律不许出现：
    ✗「生成检索关键词」✗「构造查询语句」✗「推断昨天的日期」✗「准备请求参数」——
    它们是实现细节，不是业务步骤，用户看不懂也没要求。这些工作应当**并进真正干活的那一步的提示词里**。
@@ -89,6 +92,7 @@ const NODE_FORMAT = `节点配置要求（**每个节点都必须填满自己的
   例：{"id":"llm-1","type":"llm","label":"筛选重要事件并摘要","config":{"prompt":"从以下内容提炼要点：\\n{{input}}"}}
 - http-request 节点必须给 config.url（**真实可用的地址**）与 config.method；
   编不出真实地址就不要用这个节点——宁可少一步，也不要给用户一条注定 404 的流程
+- 需要查最新消息/实时数据的 llm 节点必须给 config.enableSearch=true，否则跑起来是模型凭记忆编的
 - knowledge-retrieval 必须给 config.dataset_ids；if-else 必须给每个分支的判断条件
 - if-else 的每条出边必须标明分支：{"source":"if-else-1","target":"llm-2","branch":"if-true"}，
   取值只能是 if-true / elif-1 / elif-2 / else，且**必须有一条 else 边**。
@@ -149,8 +153,9 @@ tool 节点格式：{"id":"唯一id","type":"tool","label":"简短中文名","co
 若清单里没有能满足需求的能力，就用 llm 节点并在 label 注明「需接入 XX 能力」。`
   } else {
     prompt += `\n\n⚠️ 当前工作区没有可用的已发布 Skill，**禁止**生成 tool 节点。
-若需求涉及联网检索、调用外部系统等本模型做不到的能力，仍照常编排 llm 节点，
-但在该节点 label 上注明「需接入 XX 能力」。`
+需要联网查资料的步骤，用 llm 节点 + config.enableSearch=true 解决（平台模型自带联网检索）。
+只有**联网搜索也办不到**的动作（写入外部系统、发送消息、调用企业内部接口）才在 label 上
+注明「需接入 XX 能力」，并在 clarifications 里问清用哪个渠道。`
   }
 
   // ⑤ 增量修改
@@ -310,13 +315,16 @@ const DEFAULT_LLM = { provider: 'qwen', name: process.env.LLM_MODEL || 'qwen-plu
  * 一旦在面板里随手保存，反而会把引擎要用的 prompt 覆盖没。
  * 这里把两种形态一次写全，并保持同一份文本。
  */
-function normalizeLlmConfig(config: Record<string, unknown>, nodeId: string): Record<string, unknown> {
+function normalizeLlmConfig(config: Record<string, unknown>, nodeId: string, label = ''): Record<string, unknown> {
   const promptsIn = Array.isArray(config.prompts) ? (config.prompts as Record<string, unknown>[]) : []
   const fromPrompts = typeof promptsIn[0]?.text === 'string' ? String(promptsIn[0].text) : ''
   const text = (typeof config.prompt === 'string' && config.prompt.trim() ? config.prompt : fromPrompts).trim()
   if (!text) return config // 没有提示词就不硬造，交给体检报「待补」
+  // 这一步明显要取外部数据、模型却没开联网 → 补上，否则跑出来是编的
+  const enableSearch = config.enableSearch === true || NEEDS_WEB_RE.test(`${label}\n${text}`)
   return {
     ...config,
+    ...(enableSearch ? { enableSearch: true } : {}),
     prompt: text,
     model: config.model && typeof config.model === 'object' ? config.model : DEFAULT_LLM,
     prompts: promptsIn.length ? promptsIn : [{ id: `${nodeId}-p1`, role: 'user', text }],
@@ -373,6 +381,17 @@ export function collapseFillerNodes(graph: RawGraph): RawGraph {
   return { ...graph, nodes, edges }
 }
 
+/**
+ * 需要外部数据的动词表，与 readiness.ts 的 EXTERNAL_DATA_RE 同源。
+ * 命中且模型没开联网搜索 → 代码补上（WF-22）。
+ *
+ * 🔴 又一次「prompt 说了不算」：生成规则里已把 enableSearch 写成首选做法，
+ * 实测模型仍会产出没开开关的「抓取…」节点。这类步骤不开开关跑出来就是编的，
+ * 与其让体检拦下再让用户手动开，不如生成时就补对。
+ */
+const NEEDS_WEB_RE =
+  /抓取|爬取|检索|搜索|搜集|查找|采集|获取(?:最新|当天|今日|昨日|实时)|联网|全网|实时(?:数据|资讯|新闻)|最新(?:资讯|新闻|动态|消息)|舆情/
+
 const BRANCH_RE = /^(if-true|else|elif-\d+)$/
 
 /**
@@ -428,7 +447,7 @@ export function normalizeGraph(raw: RawGraph): PersistedGraph {
 
   const persisted: PersistedNode[] = nodes.map((n) => {
     let config = n.config ?? {}
-    if (n.type === 'llm') config = normalizeLlmConfig(config, n.id)
+    if (n.type === 'llm') config = normalizeLlmConfig(config, n.id, n.label ?? '')
     if (n.type === 'if-else') {
       const cases = casesByNode.get(n.id)
       if (cases?.length) config = { ...config, cases }

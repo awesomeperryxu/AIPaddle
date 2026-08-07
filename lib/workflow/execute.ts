@@ -382,7 +382,11 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
         const withTime = renderRuntimeVars(tmpl, runtime) // WF-20：{{today}}/{{yesterday}} 等先落成真实日期
         const prompt = withTime.includes('{{input}}') ? withTime.replace(/\{\{input\}\}/g, nodeInput) : `${withTime}\n\n输入：${nodeInput}`
         // system 里给时间锚点：提示词多半一个占位符都不写，不明说日期模型就按训练语料答（跑出 2024 年那次就是这么来的）
-        out = await chat([{ role: 'system', content: runtimeSystemPrompt(runtime) }, { role: 'user', content: prompt }])
+        // WF-22 联网搜索：开了开关这一步是真的联网取数，而不是凭模型记忆编
+        out = await chat(
+          [{ role: 'system', content: runtimeSystemPrompt(runtime) }, { role: 'user', content: prompt }],
+          { enableSearch: cfg.enableSearch === true },
+        )
       } else if (n.type === 'template-transform') {
         out = renderRuntimeVars(renderTemplate(cfg, nodeInput), runtime)
       } else if (n.type === 'parameter-extractor') {
