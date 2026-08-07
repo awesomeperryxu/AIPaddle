@@ -18,6 +18,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       title={wf.name}
       appType={wf.type}
       initialGraph={wf.graph}
+      initialUpdatedAt={wf.updatedAtIso}
     />
   )
 }

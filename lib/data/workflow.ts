@@ -10,7 +10,10 @@ export type WorkflowItem = {
   type: 'workflow' | 'chatflow'
   status: 'draft' | 'published'
   version: number
+  /** 展示用，已截成 YYYY-MM-DD */
   updatedAt: string
+  /** 完整时间戳，乐观锁比对用（WF-28）——展示用的 updatedAt 被截过，比不出并发 */
+  updatedAtIso: string | null
 }
 
 export type WorkflowDetail = WorkflowItem & { graph: WorkflowGraph }
@@ -36,6 +39,7 @@ function mapItem(r: Row): WorkflowItem {
     status: r.status,
     version: r.version,
     updatedAt: (r.updated_at ?? '').slice(0, 10),
+    updatedAtIso: r.updated_at,
   }
 }
 
@@ -86,6 +90,44 @@ export async function createWorkflow(
 }
 
 /** 保存工作流（图 + 名称）。草稿允许非法图（前端据校验结果提示）；RLS 兜底租户隔离。 */
+/** 保存结果：冲突时不写入，调用方据此回 409（WF-28） */
+export type SaveOutcome =
+  | { ok: true; workflow: WorkflowDetail }
+  | { ok: false; reason: 'not_found' }
+  | { ok: false; reason: 'conflict'; current: WorkflowDetail }
+
+/**
+ * 保存工作流（乐观锁版，WF-28）。
+ *
+ * 🔴 为什么需要锁：编辑器把图读进内存后就只认内存那份，800ms 防抖自动保存会整张覆盖回去。
+ * 于是「后台修过数据 / 另一个人同时在改 / 同一账号开了两个标签页」时，
+ * 旧页面随便拖一下就把新数据**静默抹掉**——2026-08-07 后台修完用户的流程后差点就这样丢掉。
+ *
+ * 用 updated_at 而非表里的 version 列：那个 version 是**发布版本号**（发布时 +1），
+ * 草稿保存不动它，拿来当并发版本会把两种语义搅在一起。
+ */
+export async function saveWorkflowChecked(
+  ctx: RequestContext,
+  id: string,
+  patch: { name?: string; graph?: WorkflowGraph },
+  baseUpdatedAt?: string,
+): Promise<SaveOutcome> {
+  const supabase = await createClient()
+  if (baseUpdatedAt) {
+    const { data: cur } = await supabase
+      .from('workflows').select(DETAIL_COLS).eq('id', id).is('deleted_at', null).maybeSingle()
+    if (!cur) return { ok: false, reason: 'not_found' }
+    const row = cur as Row
+    // 毫秒级比较：时间戳字符串格式可能不同（+00 / Z / 小数位），直接比字符串会误判
+    const same = new Date(row.updated_at ?? 0).getTime() === new Date(baseUpdatedAt).getTime()
+    if (!same) {
+      return { ok: false, reason: 'conflict', current: { ...mapItem(row), graph: row.graph ?? { nodes: [], edges: [] } } }
+    }
+  }
+  const saved = await saveWorkflow(ctx, id, patch)
+  return saved ? { ok: true, workflow: saved } : { ok: false, reason: 'not_found' }
+}
+
 export async function saveWorkflow(
   _ctx: RequestContext,
   id: string,
