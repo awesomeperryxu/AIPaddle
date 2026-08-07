@@ -6,6 +6,7 @@ import { createWorkflow, saveWorkflow } from '@/lib/data/workflow'
 import { validateGraph } from '@/lib/workflow/validate'
 import { validateToolNodes } from '@/lib/workflow/validate-tools'
 import { writeAudit } from '@/lib/data/audit'
+import { checkReadiness } from '@/lib/workflow/readiness'
 
 // POST /api/workflows/copilot/create —— 描述 → 直接建出一条**已填好流程**的工作流。
 //
@@ -55,14 +56,19 @@ export async function POST(request: Request) {
   // ④ 复校验：以**落库后**的图为准，而非生成时的内存对象——
   //    保存过程若对图做了规整，校验结论必须跟着落库结果走
   const validation = [...validateGraph(saved.graph), ...(await validateToolNodes(ctx, saved.graph))]
+  // WF-11：自动创建后立即体检——「先测试、通过再交人工发布」的机器把关那一步。
+  // 静态检查，不调模型不发请求；未通过时流程照样留着（草稿），只是发布会被拦。
+  const readiness = checkReadiness(saved.graph)
 
   await writeAudit(ctx, 'workflow.copilot_created', 'workflow', created.id, {
     name, nodeCount: gen.graph.nodes.length, edgeCount: gen.graph.edges.length,
     valid: validation.length === 0,
+    ready: readiness.ready,
+    readinessIssues: readiness.issues.length,
   })
 
   return Response.json(
-    { workflow: saved, validation, valid: validation.length === 0 },
+    { workflow: saved, validation, valid: validation.length === 0, readiness },
     { status: 201 },
   )
 }

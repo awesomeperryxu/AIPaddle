@@ -36,7 +36,9 @@ import {
   type PersistedGraph,
   type RFNodeLike,
   type RFEdgeLike,
+  type WorkflowSchedule,
 } from '@/lib/workflow/graph-adapter';
+import { ScheduleModal } from './modals/schedule-modal';
 import { VariableInspectPanel } from './canvas/variable-inspect-panel';
 import { KeyboardShortcutsModal } from './modals/keyboard-shortcuts-modal';
 import {
@@ -167,6 +169,25 @@ function makeDefaultNodes(): Node[] {
   ];
 }
 
+// 自动体检结论（WF-11）：生成后立刻告诉用户「能不能发布、还差什么」，
+// 而不是等他点发布被拒才知道。规则与服务端 lib/workflow/readiness.ts 同源。
+type ReadinessLike = {
+  ready: boolean;
+  checked: number;
+  issues: { level: string; nodeLabel?: string; message: string }[];
+};
+
+function describeReadiness(r?: ReadinessLike): string {
+  if (!r) return '';
+  const errs = r.issues.filter((i) => i.level === 'error');
+  if (errs.length === 0) {
+    const warns = r.issues.length;
+    return `🧪 自动体检通过（${r.checked} 个节点）${warns ? ` · ${warns} 项提示` : ''}，可以发布`;
+  }
+  const lines = errs.slice(0, 4).map((i) => `　• 「${i.nodeLabel}」${i.message}`).join('\n');
+  return `🧪 自动体检未通过，${errs.length} 项需处理后才能发布：\n${lines}${errs.length > 4 ? '\n　• …' : ''}`;
+}
+
 // 保存状态（自动保存指示）
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -198,6 +219,10 @@ function WorkflowPageInner({
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
   const [title, setTitle] = useState(initialTitle);
+  // 定时设置（WF-2b）：与流程内容解耦，存在图的元数据里，不占画布节点。
+  // 🔴 必须单独持有——自动保存每次都从画布重建整张图，不带上就会被抹掉。
+  const [schedule, setSchedule] = useState<WorkflowSchedule | undefined>(initialGraph?.schedule);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [headerMode, setHeaderMode] = useState<'normal' | 'restoring' | 'view-history'>('normal');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -294,7 +319,9 @@ function WorkflowPageInner({
           const rf = graphToReactFlow(data.graph);
           setNodes(rf.nodes as unknown as Node[]);
           setEdges(rf.edges as unknown as Edge[]);
-          setCopilotMessages(prev => [...prev, { role: 'assistant', content: `✅ 已生成工作流（${data.graph.nodes.length} 个节点）` }]);
+          if (data.graph.schedule) setSchedule(data.graph.schedule);
+          const sched = data.graph.schedule ? `\n⏰ 已设定定时：${data.graph.schedule.cron}（${data.graph.schedule.timezone}）` : '';
+          setCopilotMessages(prev => [...prev, { role: 'assistant', content: `✅ 已生成工作流（${data.graph.nodes.length} 个节点）${sched}\n${describeReadiness(data.readiness)}` }]);
           // fitView 延迟调用——不在闭包里直接引用 hook 返回值
           setTimeout(() => { try { fitView({ padding: 0.2 }); } catch {} }, 300);
         } else {
@@ -317,7 +344,7 @@ function WorkflowPageInner({
     setCopilotClarifications([]);
     try {
       // ⑤ 增量修改：将当前画布图传给 Copilot
-      const currentGraph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
+      const currentGraph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[], schedule);
       const res = await fetch('/api/workflows/copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -332,7 +359,12 @@ function WorkflowPageInner({
         const rf = graphToReactFlow(data.graph);
         setNodes(rf.nodes as unknown as Node[]);
         setEdges(rf.edges as unknown as Edge[]);
-        const summary = `✅ 已生成工作流（${data.graph.nodes.length} 个节点）${data.valid ? '' : `\n⚠️ ${data.validation?.length ?? 0} 处校验问题`}`;
+        // 定时不落成节点（WF-2b）：写进图元数据，在「运行 ▾ → 定时设置」里改
+        if (data.graph.schedule) setSchedule(data.graph.schedule);
+        const sched = data.graph.schedule
+          ? `\n⏰ 已设定定时：${data.graph.schedule.cron}（${data.graph.schedule.timezone}），在「运行 → 定时设置」可改`
+          : '';
+        const summary = `✅ 已生成工作流（${data.graph.nodes.length} 个节点）${sched}${data.valid ? '' : `\n⚠️ ${data.validation?.length ?? 0} 处校验问题`}\n${describeReadiness(data.readiness)}`;
         setCopilotMessages(prev => [...prev, { role: 'assistant', content: summary }]);
         setTimeout(() => fitView({ padding: 0.2 }), 300);
       } else {
@@ -407,7 +439,7 @@ function WorkflowPageInner({
     const t = setTimeout(async () => {
       setSaveStatus('saving');
       try {
-        const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
+        const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[], schedule);
         const res = await fetch(`/api/workflows/${workflowId}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: title, graph }),
@@ -421,12 +453,12 @@ function WorkflowPageInner({
       } catch { setSaveStatus('error'); showToast('自动保存失败：网络错误'); }
     }, 800);
     return () => clearTimeout(t);
-  }, [nodes, edges, title, workflowId, showToast]);
+  }, [nodes, edges, title, workflowId, schedule, showToast]);
 
   // 立即保存当前画布（运行前 flush，确保引擎跑的是最新图）
   const saveNow = useCallback(async () => {
     if (!workflowId) return;
-    const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[]);
+    const graph = reactFlowToGraph(nodes as unknown as RFNodeLike[], edges as unknown as RFEdgeLike[], schedule);
     try {
       await fetch(`/api/workflows/${workflowId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -434,7 +466,7 @@ function WorkflowPageInner({
       });
       setSaveStatus('saved');
     } catch { /* 运行前保存失败不阻断，交由 /run 报错 */ }
-  }, [workflowId, nodes, edges, title]);
+  }, [workflowId, nodes, edges, title, schedule]);
 
   // 发布：先 flush 保存最新图 → POST /publish（非法图 422 拒绝并提示）。
   const handlePublish = useCallback(async () => {
@@ -445,6 +477,11 @@ function WorkflowPageInner({
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast(`已发布 v${body.publishedVersion ?? ''} · 已上线`);
+      } else if (res.status === 422 && body.readiness?.issues) {
+        // WF-11：体检未通过——把「必须处理」的点直接说清楚，别只丢一句发布失败
+        const errs = (body.readiness.issues as { level: string; nodeLabel?: string; message: string }[])
+          .filter((i) => i.level === 'error');
+        showToast(`无法发布（${errs.length} 项待处理）：${errs.slice(0, 2).map((i) => `「${i.nodeLabel}」${i.message}`).join('；')}${errs.length > 2 ? ' …' : ''}`);
       } else if (res.status === 422 && Array.isArray(body.validation)) {
         showToast(`无法发布：${body.validation.map((v: { message: string }) => v.message).join('；')}`);
       } else {
@@ -680,6 +717,8 @@ function WorkflowPageInner({
           setShowRunPanel(true);
         }}
         onPublish={handlePublish}
+        onOpenSchedule={() => setScheduleModalOpen(true)}
+        scheduleSummary={schedule?.enabled ? schedule.cron : undefined}
         onVersionHistory={openVersionHistory}
         onExportDsl={handleExportDsl}
         onEnvVars={() => showToast('环境变量即将上线（W2）')}
@@ -794,6 +833,13 @@ function WorkflowPageInner({
             </div>
 
             <KeyboardShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+            <ScheduleModal
+              open={scheduleModalOpen}
+              schedule={schedule}
+              onClose={() => setScheduleModalOpen(false)}
+              onSave={(s) => { setSchedule(s); showToast(s?.enabled ? `定时已设为 ${s.cron}` : '定时已关闭'); }}
+            />
 
             {/* Copilot Toggle Button */}
             <Button

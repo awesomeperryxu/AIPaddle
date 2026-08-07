@@ -2,6 +2,7 @@ import { getRequestContext } from '@/lib/context'
 import { can } from '@/lib/auth/permissions'
 import { generateWorkflowGraph } from '@/lib/workflow/copilot'
 import { listSkills } from '@/lib/data/skills'
+import { checkReadiness } from '@/lib/workflow/readiness'
 
 // POST /api/workflows/copilot —— Workflow Copilot（4.4.5，ADR-005）。
 // 描述 → 生成工作流图（draft）+ 校验结果。AI 只产 draft、不保存不发布；
@@ -28,8 +29,11 @@ export async function POST(request: Request) {
     .filter((s) => s.status === 'published')
     .map((s) => ({ id: s.id, name: s.name, description: s.description, type: s.type }))
   const result = await generateWorkflowGraph(description, { existingGraph: existingGraph as never, availableSkills })
+  // WF-11：生成后立刻做零成本静态体检，把「跑不起来」的点当场摊给用户，
+  // 而不是等他发布或运行时才发现（发布端点会用同一套规则拦截）
+  const readiness = checkReadiness(result.graph)
   return Response.json({
     graph: result.graph, validation: result.validation, valid: result.valid,
-    clarifications: result.clarifications,
+    clarifications: result.clarifications, readiness,
   })
 }

@@ -43,6 +43,20 @@ function assertSafeHttpUrl(raw: string): URL {
   return u
 }
 
+/**
+ * 取 LLM 节点的提示词。面板（config.prompts[]）优先于引擎侧的 config.prompt——
+ * 用户在面板里改过就该以面板为准，否则界面显示新提示词、实际跑的还是旧那条。
+ */
+export function pickLlmPrompt(cfg: Record<string, unknown>): string {
+  const prompts = Array.isArray(cfg.prompts) ? (cfg.prompts as Record<string, unknown>[]) : []
+  const fromPanel = prompts
+    .filter((p) => typeof p?.text === 'string' && String(p.text).trim())
+    .map((p) => String(p.text).trim())
+    .join('\n\n')
+  if (fromPanel) return fromPanel
+  return typeof cfg.prompt === 'string' && cfg.prompt.trim() ? String(cfg.prompt).trim() : ''
+}
+
 // 模板转换：把 config.template 里的 {{input}} 替换为节点输入（当前引擎单值模型）。
 function renderTemplate(cfg: Record<string, unknown>, input: string): string {
   const tmpl = typeof cfg.template === 'string' ? cfg.template : ''
@@ -356,7 +370,9 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
       let out = nodeInput
       const cfg = n.data?.config ?? {}
       if (n.type === 'llm') {
-        const tmpl = typeof cfg.prompt === 'string' && cfg.prompt.trim() ? String(cfg.prompt) : '请根据以下输入给出简洁回复：\n{{input}}'
+        // 🔴 提示词有两种落点：引擎侧的 config.prompt 与配置面板写的 config.prompts[]。
+        // 用户在面板改过就以面板为准——否则界面显示新提示词、实际跑的还是旧的那条。
+        const tmpl = pickLlmPrompt(cfg) || '请根据以下输入给出简洁回复：\n{{input}}'
         const prompt = tmpl.includes('{{input}}') ? tmpl.replace(/\{\{input\}\}/g, nodeInput) : `${tmpl}\n\n输入：${nodeInput}`
         out = await chat([{ role: 'user', content: prompt }])
       } else if (n.type === 'template-transform') {
