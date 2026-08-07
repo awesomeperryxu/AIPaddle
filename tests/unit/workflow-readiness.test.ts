@@ -122,6 +122,49 @@ describe('isUsableUrl', () => {
   })
 })
 
+describe('WF-21 声称联网取数却没有数据源', () => {
+  // 🔴 用户实测：「查全网当天 AI 大事件」生成出的是一个干净的 llm 节点「抓取前一日的AI大事件」，
+  // 没有任何「需接入」标记。跑起来模型无从检索，输出了一整篇 2024 年的假报告 + 自白。
+  // 生成规则压不住的坏模式，只能在这里用确定性规则拦。
+  const fetchNews = (label: string) => node('llm-1', 'llm', {
+    prompt: '整理要点：{{input}}',
+    model: { provider: 'qwen', name: 'qwen-plus' },
+  }, label)
+
+  it.each([
+    '抓取前一日的AI大事件',
+    '检索全网AI资讯',
+    '搜索最新新闻',
+    '联网获取当天动态',
+    '采集舆情数据',
+  ])('「%s」+ 全图无数据源 → error', (label) => {
+    const r = checkReadiness(graphOf(node('start-1', 'start'), fetchNews(label), node('end-1', 'end')))
+    expect(r.ready).toBe(false)
+    expect(r.issues.some((i) => i.code === 'llm_no_data_source' && i.level === 'error')).toBe(true)
+  })
+
+  it('图里有 tool 节点提供数据源 → 不再报这一项', () => {
+    const r = checkReadiness(graphOf(
+      node('tool-1', 'tool', { tool_id: 'skill-abc' }, '联网搜索'),
+      fetchNews('整理抓取到的AI大事件'),
+    ))
+    expect(r.issues.some((i) => i.code === 'llm_no_data_source')).toBe(false)
+  })
+
+  it('图里有 http-request 提供数据源 → 不报', () => {
+    const r = checkReadiness(graphOf(
+      node('http-1', 'http-request', { url: 'https://news.example.org/api/v1/list' }, '拉取新闻'),
+      fetchNews('抓取当天资讯'),
+    ))
+    expect(r.issues.some((i) => i.code === 'llm_no_data_source')).toBe(false)
+  })
+
+  it('纯加工步骤不误伤——「筛选重要事件并摘要」不含取数动词', () => {
+    const r = checkReadiness(graphOf(node('start-1', 'start'), okLlm(), node('end-1', 'end')))
+    expect(r.issues.some((i) => i.code === 'llm_no_data_source')).toBe(false)
+  })
+})
+
 describe('摘要文案', () => {
   it('未通过时说清有几项必须处理', () => {
     const r = checkReadiness(graphOf(node('llm-1', 'llm', {}), node('http-1', 'http-request', {})))

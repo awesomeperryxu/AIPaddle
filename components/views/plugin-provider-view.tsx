@@ -7,6 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
@@ -14,9 +18,11 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { apiFetch } from '@/lib/api/client'
+import { getAvatarBg, STATUS_PILL } from '@/lib/ui/entity-visuals'
 import { OpenApiImportDialog, DbToolDialog } from '@/components/views/plugin-binding-dialogs'
 import {
   Plus, Loader2, ShieldAlert, ExternalLink, Wrench, Star, FileJson, PlugZap,
+  Search, MoreHorizontal, Play, Pause, XCircle,
 } from 'lucide-react'
 
 // V12-4.1/4.2/4.3/4.4：Plugin 的三个 Provider 页共用本组件，靠 providerType 区分。
@@ -77,6 +83,13 @@ const ACTIONS: Record<PluginStatus, { action: string; label: string }[]> = {
   offline: [{ action: 'online', label: '重新上线' }],
 }
 
+// 流转动作图标：与 Agent 管理页的三点菜单同一套（下线=暂停、驳回=叉、其余=播放）
+function actionIcon(action: string) {
+  if (action === 'offline') return <Pause className="h-4 w-4 mr-2" />
+  if (action === 'reject') return <XCircle className="h-4 w-4 mr-2" />
+  return <Play className="h-4 w-4 mr-2" />
+}
+
 const RISK_META: Record<string, { label: string; cls: string }> = {
   low: { label: '低', cls: 'text-muted-foreground' },
   medium: { label: '中', cls: 'text-amber-600' },
@@ -92,6 +105,10 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
 
   const [createOpen, setCreateOpen] = useState(false)
   const [form, setForm] = useState({ name: '', description: '', repo: '', docsUrl: '' })
+
+  // 搜索 + 状态筛选（与 Agent 管理页同一套交互）
+  const [searchTerm, setSearchTerm] = useState('')
+  const [activeTab, setActiveTab] = useState('all')
 
   // Tool 面板
   const [toolPanel, setToolPanel] = useState<Plugin | null>(null)
@@ -234,89 +251,129 @@ export function PluginProviderView({ providerType }: { providerType: ProviderTyp
     )
   }
 
+  const filtered = items.filter((p) => {
+    const kw = searchTerm.toLowerCase()
+    const matchesSearch =
+      p.name.toLowerCase().includes(kw) ||
+      (p.description ?? '').toLowerCase().includes(kw) ||
+      (p.repo ?? '').toLowerCase().includes(kw)
+    if (activeTab !== 'all') return matchesSearch && p.status === activeTab
+    return matchesSearch
+  })
+
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-start justify-between">
+    <div className="flex flex-col h-full">
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-medium">Plugin · {meta.title}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{meta.desc}</p>
+          <h1 className="text-xl font-semibold text-foreground">Plugin · {meta.title}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{meta.desc}</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} data-testid={`create-plugin-${providerType}`}>
-          <Plus className="h-4 w-4 mr-2" />新建 {meta.title} Plugin
+        <Button className="gap-1.5 shadow-sm" onClick={() => setCreateOpen(true)}
+          data-testid={`create-plugin-${providerType}`}>
+          <Plus className="h-4 w-4" />新建 {meta.title} Plugin
         </Button>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="py-16 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></div>
-          ) : items.length === 0 ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">
-              还没有 {meta.title} Plugin。点击右上角新建。
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>名称</TableHead>
-                  <TableHead>来源</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((p) => {
-                  const st = STATUS_META[p.status]
-                  return (
-                    <TableRow key={p.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{p.name}</span>
-                          {p.origin === 'platform' && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">平台</Badge>
-                          )}
-                          {typeof p.stars === 'number' && p.stars > 0 && (
-                            <span className="flex items-center gap-0.5 text-[11px] text-muted-foreground">
-                              <Star className="h-3 w-3" />{(p.stars / 1000).toFixed(1)}k
-                            </span>
-                          )}
-                        </div>
-                        {p.description && (
-                          <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{p.description}</div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {p.repo ? (
-                          <span className="flex items-center gap-1">
-                            {p.repo}
-                            {p.docsUrl && (
-                              <a href={p.docsUrl} target="_blank" rel="noreferrer" className="hover:text-foreground">
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            )}
-                          </span>
-                        ) : '—'}
-                      </TableCell>
-                      <TableCell><Badge className={st.cls}>{st.label}</Badge></TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button variant="ghost" size="sm" onClick={() => openTools(p)}>
-                          <Wrench className="h-4 w-4 mr-1" />Tool
-                        </Button>
-                        {ACTIONS[p.status].map((a) => (
-                          <Button key={a.action} variant="outline" size="sm"
-                            disabled={busy === p.id} onClick={() => handleTransition(p, a.action)}>
-                            {a.label}
-                          </Button>
-                        ))}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      {/* ── Search + Status Tabs ── */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder={`搜索 ${meta.title} Plugin 名称或说明...`}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 h-9"
+          />
+        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="h-9">
+            <TabsTrigger value="all" className="text-xs px-3">全部</TabsTrigger>
+            <TabsTrigger value="published" className="text-xs px-3">已发布</TabsTrigger>
+            <TabsTrigger value="pending" className="text-xs px-3">待审核</TabsTrigger>
+            <TabsTrigger value="draft" className="text-xs px-3">草稿</TabsTrigger>
+            <TabsTrigger value="offline" className="text-xs px-3">已下线</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {/* ── Plugin 卡片网格 ── */}
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="py-16 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></div>
+        ) : filtered.length === 0 ? (
+          <p className="text-center text-sm text-muted-foreground py-16">
+            {items.length === 0 ? `还没有 ${meta.title} Plugin。点击右上角新建。` : '没有符合条件的 Plugin'}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filtered.map((p) => {
+              const sc = STATUS_PILL[p.status] ?? STATUS_PILL.draft
+              const actions = ACTIONS[p.status] ?? []
+              return (
+                <div
+                  key={p.id}
+                  className="group bg-card border border-border rounded-2xl p-5 hover:border-primary/40 hover:shadow-md transition-all cursor-pointer flex flex-col"
+                  onClick={() => openTools(p)}
+                  data-testid="plugin-card"
+                  data-plugin-name={p.name}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold text-white shrink-0 ${getAvatarBg(p.name)}`}>
+                      {p.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${sc.pillClass}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${sc.dotClass}`} />{sc.label}
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon"
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => e.stopPropagation()}><MoreHorizontal className="h-3.5 w-3.5" /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuItem onSelect={() => openTools(p)}>
+                            <Wrench className="h-4 w-4 mr-2" />查看 Tool
+                          </DropdownMenuItem>
+                          {actions.map((a) => (
+                            <DropdownMenuItem key={a.action} disabled={busy === p.id}
+                              onSelect={(e) => { e.preventDefault(); void handleTransition(p, a.action) }}>
+                              {actionIcon(a.action)}
+                              {busy === p.id ? '处理中...' : a.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  <h3 className="font-semibold text-foreground leading-snug mb-1 line-clamp-1">{p.name}</h3>
+                  {p.origin === 'platform' && (
+                    <span className="text-xs text-primary/80 font-medium mb-1.5">平台内置</span>
+                  )}
+                  <p className="text-xs text-muted-foreground line-clamp-2 flex-1 mb-3">{p.description || '暂无描述'}</p>
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50">
+                    {p.repo
+                      ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground truncate">{p.repo}</span>
+                      : <span />}
+                    <span className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
+                      {typeof p.stars === 'number' && p.stars > 0 && (
+                        <span className="flex items-center gap-0.5"><Star className="h-3 w-3" />{(p.stars / 1000).toFixed(1)}k</span>
+                      )}
+                      {p.docsUrl && (
+                        <a href={p.docsUrl} target="_blank" rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()} className="hover:text-foreground">
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {/* ── 新建 ── */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

@@ -5,13 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -29,10 +22,6 @@ import {
   Upload,
   AlertTriangle,
   Info,
-  ChevronDown,
-  PlayCircle,
-  StepForward,
-  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -56,11 +45,6 @@ export interface WorkflowHeaderProps {
   onUndo?: () => void;
   onRedo?: () => void;
   onRun?: () => void;
-  onRunStep?: () => void;
-  /** 打开定时设置（WF-2b：定时与流程内容解耦，不占画布节点） */
-  onOpenSchedule?: () => void;
-  /** 已启用定时时在菜单项上回显 cron */
-  scheduleSummary?: string;
   onPublish?: () => void;
   onVersionHistory?: () => void;
   onExportDsl?: () => void;
@@ -86,9 +70,6 @@ export function WorkflowHeader({
   onUndo,
   onRedo,
   onRun,
-  onRunStep,
-  onOpenSchedule,
-  scheduleSummary,
   onPublish,
   onVersionHistory,
   onExportDsl,
@@ -363,40 +344,18 @@ export function WorkflowHeader({
             </Tooltip>
           )}
 
-          {/* Run Button with Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
-              >
-                <Play className="h-3.5 w-3.5 mr-1.5 fill-current" />
-                运行
-                <ChevronDown className="h-3 w-3 ml-1" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem onClick={onRunStep} className="text-xs">
-                <StepForward className="h-4 w-4 mr-2" />
-                单步运行
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onRun} className="text-xs">
-                <PlayCircle className="h-4 w-4 mr-2" />
-                完整运行
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {/* 定时属于「什么时候跑」，挂在运行菜单里；画布只画「跑什么」 */}
-              <DropdownMenuItem onClick={onOpenSchedule} className="text-xs">
-                <Clock className="h-4 w-4 mr-2" />
-                <span className="flex-1">定时设置</span>
-                {scheduleSummary && (
-                  <span className="ml-2 font-mono text-[10px] text-muted-foreground">{scheduleSummary}</span>
-                )}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* 运行（WF-18）：菜单里只剩这一项，下拉纯属多一次点击，直接做成按钮。
+              「单步运行」的回调从未接线、点了没反应，一并移除；真要做再另开任务。
+              「定时设置」按 WF-24 撤出——定时以 Agent / 数字员工 / 团队 为单位配置，不在工作流里配。 */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRun}
+            className="h-8 text-xs text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+          >
+            <Play className="h-3.5 w-3.5 mr-1.5 fill-current" />
+            运行
+          </Button>
 
           {/* Publish Button */}
           <Button size="sm" className="h-8 text-xs" onClick={onPublish}>

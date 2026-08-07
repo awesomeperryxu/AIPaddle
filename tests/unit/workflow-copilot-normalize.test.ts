@@ -8,8 +8,8 @@
  *      "llm"/"end" 这种类型名，看不出每一步在干什么；
  *   ③ if-else 出边没有 sourceHandle → 既挂不上画布的 IF/ELSE 句柄，
  *      执行引擎也永远匹配不到分支，流程跑到判断处就断。
- * 外加 WF-2b：「每天早上 8 点」以前被静默吞掉；现在落成图的 schedule 元数据——
- * **不占画布节点**，因为「什么时候跑」与「跑什么」是两件事（用户明确要求解耦）。
+ * 外加 WF-24（推翻 WF-2b）：「每天早上 8 点」既不落成节点、**也不再进图的元数据**——
+ * 定时以 Agent / 数字员工 / 团队 为单位配置，工作流只描述「跑什么」（见 ADR-022）。
  */
 import { describe, it, expect } from 'vitest'
 import { normalizeGraph, sanitizeToolNodes, collapseFillerNodes, type RawGraph } from '@/lib/workflow/copilot'
@@ -118,23 +118,24 @@ describe('WF-6 if-else 分支句柄', () => {
   })
 })
 
-describe('WF-2b 定时与流程解耦', () => {
-  // 🔴 用户明确要求：定时不要占画布的第一个节点。
-  // 「什么时候跑」是运行属性，落在图的 schedule 元数据上，画布只画「跑什么」。
-  it('schedule 落在图元数据上，不产生任何节点', () => {
+describe('WF-24 工作流不承载定时', () => {
+  // 🔴 推翻 WF-2b：定时既不占画布节点，**也不再进图的元数据**。
+  // 用户拍板：定时只能以 Agent / 数字员工 / 团队 为单位配置（见 ADR-022）。
+  // 模型即便仍输出 schedule，规范化后也必须落不进图——否则会出现两套互不知情的调度口径。
+  it('模型给了 schedule 也不落进图，且不产生定时节点', () => {
     const g = normalizeGraph({
       nodes: [{ id: 's', type: 'start', label: '开始' }, { id: 'e', type: 'end', label: '结束' }],
       edges: [{ source: 's', target: 'e' }],
       schedule: { enabled: true, cron: '0 8 * * *', timezone: 'Asia/Shanghai' },
-    })
-    expect(g.schedule).toEqual({ enabled: true, cron: '0 8 * * *', timezone: 'Asia/Shanghai' })
+    } as RawGraph & { schedule: unknown })
+    expect('schedule' in g).toBe(false)
     expect(g.nodes.map((n) => n.type)).toEqual(['start', 'end'])
     expect(g.nodes.some((n) => n.type.startsWith('trigger'))).toBe(false)
   })
 
-  it('没有定时需求时不产出 schedule 字段', () => {
+  it('正常图只有 nodes / edges 两个键', () => {
     const g = normalizeGraph(linear)
-    expect(g.schedule).toBeUndefined()
+    expect(Object.keys(g).sort()).toEqual(['edges', 'nodes'])
   })
 })
 
@@ -149,15 +150,14 @@ describe('脏数据不炸', () => {
   })
 })
 
-describe('schedule 透传边界', () => {
-  it('模型给的 schedule 原样透传，不参与布局', () => {
+describe('schedule 残留不污染图', () => {
+  it('脏数据里的 schedule 被丢弃，布局照常完成', () => {
     const g = normalizeGraph({
       nodes: [{ id: 's', type: 'start' }, { id: 'e', type: 'end' }],
       edges: [{ source: 's', target: 'e' }],
       schedule: { enabled: false, cron: '0 9 * * 1', timezone: 'UTC' },
-    })
-    expect(g.schedule?.enabled).toBe(false)
-    expect(Object.keys(g)).toEqual(expect.arrayContaining(['nodes', 'edges', 'schedule']))
+    } as RawGraph & { schedule: unknown })
+    expect('schedule' in g).toBe(false)
     expect(g.nodes.every((n) => n.position)).toBe(true)
   })
 })

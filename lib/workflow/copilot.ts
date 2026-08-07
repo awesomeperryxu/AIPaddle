@@ -2,7 +2,7 @@ import 'server-only'
 import { chat } from '@/lib/ai'
 import { validateGraph, type WorkflowGraph, type GraphError, type GraphNode } from '@/lib/workflow/validate'
 import { layoutGraph } from '@/lib/workflow/layout'
-import type { PersistedGraph, PersistedNode, PersistedEdge, WorkflowSchedule } from '@/lib/workflow/graph-adapter'
+import type { PersistedGraph, PersistedNode, PersistedEdge } from '@/lib/workflow/graph-adapter'
 import { isUsableUrl } from '@/lib/workflow/readiness'
 import { parseCronFromText, mentionsSchedule } from '@/lib/workflow/schedule-parse'
 
@@ -44,7 +44,7 @@ export type ClarificationItem = { field: string; question: string; options?: str
 /** 模型直出的松散节点/边形状（顶层 label/config、边上 branch），规范化后才对外 */
 export type RawNode = { id: string; type: string; label?: string; description?: string; config?: Record<string, unknown> }
 export type RawEdge = { source: string; target: string; branch?: string }
-export type RawGraph = { nodes: RawNode[]; edges: RawEdge[]; schedule?: WorkflowSchedule }
+export type RawGraph = { nodes: RawNode[]; edges: RawEdge[] }
 
 const TYPE_LABELS: Record<string, string> = {
   'start': '开始',
@@ -61,9 +61,9 @@ const BASE_RULES = `硬性要求：
 ③ 不能有环（有向无环图）
 ④ 节点 id 格式：类型-序号（如 llm-1、if-else-2）
 ⑤ 除非需求真的要分支，否则**只留一个 end**，不要为每条路径各造一个结束节点
-⑥ 需求含「每天/每周/每小时/定时/几点运行」等周期性字眼时，**必须**在 JSON 顶层输出
-   schedule 字段，且**不要**为定时单独加节点——定时是「什么时候跑」的运行属性，
-   与「跑什么」的流程内容解耦。漏掉 schedule 等于把用户的定时需求丢了。
+⑥ 需求含「每天/每周/每小时/定时/几点运行」等周期性字眼时，**不要**为定时加节点，
+   也**不要**输出 schedule 字段——工作流本身不承载定时（WF-24）。定时以 Agent /
+   数字员工 / 团队 为单位配置，由平台的「定时作业」统一调度。你只管编排「跑什么」。
 
 🔴 绝对禁止（违反即整条流程作废，用户拿到就是坏的）：
 ⑦ **不要编造 URL、域名、接口地址、API Key**。像「https://api.example-search.com/v1/search」
@@ -82,6 +82,9 @@ const BASE_RULES = `硬性要求：
    不要写成节点类型名（llm/end），也不要写实现细节（「调用LLM生成关键词」）。`
 
 const NODE_FORMAT = `节点配置要求（**每个节点都必须填满自己的配置，不能只给 label**）：
+- 提示词里可以用这些运行时占位符，它们在每次运行时被替换成真实值（WF-20）：
+  {{today}} 今天 · {{yesterday}} 昨天 · {{tomorrow}} 明天 · {{now}} 当前时刻 · {{weekday}} 星期几
+  涉及「当天/昨天/前一天」的需求**用占位符表达，不要写死具体日期**，也不要为「推断日期」单开一步
 - llm 节点必须给 config.prompt，写清这一步做什么，用 {{input}} 引用上一步输出；
   例：{"id":"llm-1","type":"llm","label":"筛选重要事件并摘要","config":{"prompt":"从以下内容提炼要点：\\n{{input}}"}}
 - http-request 节点必须给 config.url（**真实可用的地址**）与 config.method；
@@ -110,8 +113,6 @@ function toModelGraph(graph: WorkflowGraph | PersistedGraph): RawGraph {
       const ee = e as PersistedEdge
       return { source: ee.source, target: ee.target, ...(ee.sourceHandle ? { branch: ee.sourceHandle } : {}) }
     }),
-    // 带上现有定时设置，模型改流程时才不会把它当成「没设过」丢掉
-    ...((graph as PersistedGraph).schedule ? { schedule: (graph as PersistedGraph).schedule } : {}),
   }
 }
 
@@ -129,11 +130,8 @@ ${NODE_FORMAT}
 {
   "nodes": [{"id":"唯一id","type":"节点类型","label":"简短中文名","config":{}}],
   "edges": [{"source":"起点id","target":"终点id","branch":"仅 if-else 出边需要"}],
-  "schedule": {"enabled":true,"cron":"0 8 * * *","timezone":"Asia/Shanghai"},
   "clarifications": [{"field":"需要用户补充的配置项","question":"问用户的问题","options":["选项1","选项2"]}]
 }
-
-schedule 规则：有周期性要求时必填（cron 用五段式），没有就整个省略这个字段。
 
 clarifications 规则：
 - 如果用户描述足够完整，clarifications 为空数组
@@ -162,12 +160,20 @@ tool 节点格式：{"id":"唯一id","type":"tool","label":"简短中文名","co
   return prompt
 }
 
+/**
+ * 识别到的定时需求（WF-24）。**不写进图**，只用来告诉用户「这事要去 Agent 上配」。
+ * cron 为空 = 说了要定时但没说清频率，同样要提示，只是提示里不给具体时间。
+ */
+export type ScheduleHint = { cron: string; timezone: string }
+
 export type CopilotResult = {
   graph: PersistedGraph
   validation: GraphError[]
   valid: boolean
   clarifications: ClarificationItem[]
   raw?: string
+  /** 用户描述里提到了定时 → 引导去 Agent / 数字员工 / 团队 配置定时作业 */
+  scheduleHint?: ScheduleHint
 }
 
 function extractJson(text: string): string {
@@ -186,7 +192,7 @@ function pickConfig(nn: Record<string, unknown>): Record<string, unknown> {
   return { ...inner, ...top }
 }
 
-function parseResult(text: string): { graph: RawGraph; clarifications: ClarificationItem[] } | null {
+function parseResult(text: string): { graph: RawGraph; clarifications: ClarificationItem[]; scheduleHint?: ScheduleHint } | null {
   try {
     const obj = JSON.parse(extractJson(text)) as Record<string, unknown>
     const nodes: RawNode[] = Array.isArray(obj.nodes)
@@ -225,8 +231,7 @@ function parseResult(text: string): { graph: RawGraph; clarifications: Clarifica
           })
           .filter((c) => c.question)
       : []
-    const schedule = parseSchedule(obj.schedule)
-    return { graph: { nodes, edges, ...(schedule ? { schedule } : {}) }, clarifications }
+    return { graph: { nodes, edges }, clarifications, scheduleHint: parseScheduleHint(obj.schedule) }
   } catch {
     return null
   }
@@ -272,20 +277,19 @@ export function sanitizeToolNodes(graph: RawGraph, allowedIds: Set<string>): Raw
 const CRON_RE = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/
 
 /**
- * 解析模型给出的定时设置（WF-2b）。
+ * 模型若仍输出 schedule，只取来当「识别到定时需求」的证据，**不落进图**（WF-24）。
  *
- * 🔴 定时**不落成画布节点**：用户明确要求「定时任务要和流程内容解耦」——
- * 「什么时候跑」是工作流的运行属性，画布只画「跑什么」。
- * cron 不合法就整个丢弃，不猜时间：猜错会让用户以为设好了，比没设更危险。
+ * 🔴 定时不再是工作流的属性：用户明确要求定时只能以 Agent / 数字员工 / 团队
+ * 为单位配置。但需求本身不能吞掉——识别到就转成 hint，由前端明确告诉用户去哪配。
+ * cron 不合法就丢弃，不猜时间：猜错会让用户以为设好了，比没识别更危险。
  */
-function parseSchedule(value: unknown): WorkflowSchedule | undefined {
+function parseScheduleHint(value: unknown): ScheduleHint | undefined {
   if (!value || typeof value !== 'object') return undefined
   const v = value as Record<string, unknown>
   const raw = typeof v.cron === 'string' ? v.cron.trim()
     : typeof v.cron_expression === 'string' ? String(v.cron_expression).trim() : ''
   if (!CRON_RE.test(raw)) return undefined
   return {
-    enabled: v.enabled !== false,
     cron: raw,
     timezone: typeof v.timezone === 'string' && v.timezone ? v.timezone : 'Asia/Shanghai',
   }
@@ -441,22 +445,23 @@ export function normalizeGraph(raw: RawGraph): PersistedGraph {
     }
   })
 
-  // schedule 原样透传：它是图的元数据，不参与布局、不占节点
-  return { nodes: persisted, edges, ...(raw.schedule ? { schedule: raw.schedule } : {}) }
+  return { nodes: persisted, edges }
 }
 
 /**
- * 定时兜底（WF-13）：模型没输出 schedule 时，用确定性规则从用户描述里解析。
+ * 定时需求识别（WF-13 的规则复用，WF-24 改了去向）：模型没输出 schedule 时，
+ * 用确定性规则从用户描述里解析。
  *
  * 🔴 实测 qwen-plus 对「每天早上8点运行」连续两次都不输出 schedule 字段，
- * prompt 怎么强调都压不住。定时是用户明说的需求，不能押在模型的指令遵循上。
+ * prompt 怎么强调都压不住。定时是用户明说的需求，不能押在模型的指令遵循上——
+ * 但它现在的去向不是工作流的图，而是「去 Agent 上配定时作业」的引导（WF-24）。
  */
-function withScheduleFallback(graph: PersistedGraph, description: string): PersistedGraph {
-  if (graph.schedule) return graph
-  if (!mentionsSchedule(description)) return graph
+function detectScheduleHint(description: string, fromModel?: ScheduleHint): ScheduleHint | undefined {
+  if (fromModel) return fromModel
+  if (!mentionsSchedule(description)) return undefined
   const cron = parseCronFromText(description)
-  if (!cron) return graph // 说了「定时」却没说清频率：不猜，留给用户在定时设置里填
-  return { ...graph, schedule: { enabled: true, cron, timezone: 'Asia/Shanghai' } }
+  // 说了「定时」却没说清频率：不猜具体时间，但仍要提示用户去 Agent 上配
+  return cron ? { cron, timezone: 'Asia/Shanghai' } : { cron: '', timezone: 'Asia/Shanghai' }
 }
 
 export type CopilotOptions = {
@@ -485,10 +490,10 @@ export async function generateWorkflowGraph(
     { role: 'system' as const, content: systemPrompt },
     { role: 'user' as const, content: `需求：${description}` },
   ]
-  // 生成 → 折叠臆想步骤 → 净化假 URL/编造 tool → 规范化 → 定时兜底。
+  // 生成 → 折叠臆想步骤 → 净化假 URL/编造 tool → 规范化。
   // 校验看到的必须是最终会落库、会上画布的那张图
   const finish = (g: RawGraph): PersistedGraph =>
-    withScheduleFallback(normalizeGraph(sanitizeToolNodes(collapseFillerNodes(g), allowedIds)), description)
+    normalizeGraph(sanitizeToolNodes(collapseFillerNodes(g), allowedIds))
 
   let raw = await chat(messages, { temperature: 0.2, maxTokens: 2000 })
   const parsed = parseResult(raw)
@@ -515,5 +520,12 @@ export async function generateWorkflowGraph(
     }
   }
 
-  return { graph, validation, valid: validation.length === 0, clarifications, raw }
+  return {
+    graph,
+    validation,
+    valid: validation.length === 0,
+    clarifications,
+    raw,
+    scheduleHint: detectScheduleHint(description, parsed?.scheduleHint),
+  }
 }

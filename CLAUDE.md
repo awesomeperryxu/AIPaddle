@@ -41,7 +41,18 @@ AIPaddle 是面向企业的 AI 业务赋能与 LLMOps 管理平台，统一管�
    - 未同时满足即**停在本地**，只做本地修改与测试，等待用户裁决。此条**优先于**"完成即 commit/push"等其它表述——本地 commit 可以，但 **push 与 PR 必须过双闸**。
    - **批次提交（2026-07-21 起）**：**不再以单个任务为单位提 PR**。开发仍小批量、一次一件事、本地逐个 commit；但 PR 以**批次**攒交——多个已完成且**各自阶段测试通过**的改动累积成一批，整批 `pnpm check` 通过后，**经用户同意**再一次性 push + 建 PR。批次边界与提交时机由用户拍板。
 10. 🔴 **主目录只停在 main + 各道独立 worktree（2026-07-21 起）**：项目本地主目录 = `/Users/perryxu/github/aipaddle`（= `AIPaddle`，权威主目录）。**主目录必须始终停在 `main` 分支，禁止在主目录 `git checkout`/切分支/开发**——否则会清掉 gitignore 的本地机密文件（ROADMAP/ISSUES/进度 Excel），且与其它道互撞。每条并行道（A/B/C/D/E）**只在自己的独立 worktree**（`git worktree add ../aipaddle-<道> feat/<分支>`）里开发；主目录仅用于停在 main 看权威进度文件与本地机密文档。见 `docs/PARALLEL_EXECUTION_PLAN.md`。
-   - **追踪文件权威位置 = `aipaddle-e-track/docs/`（2026-07-21，方案B）**：因主目录反复被其它道 `git clean -fdx`/重建清掉，进度追踪文件（ROADMAP/ISSUES/进度 Excel）的**唯一权威副本改放稳定的 E 道 worktree `aipaddle-e-track/docs/`**（不被切分支清）。**每次更新权威副本后，同步复制一份只读快照到主目录 `/aipaddle/docs/` 供用户查看**（主目录快照若被强清，下次更新时自动恢复）。更新追踪时：先写 e-track 权威版 → 再 `cp` 快照到主目录（主目录在 main 时）。
+   - **追踪与机密文档 = 外置真身 + 软链（2026-07-22 起；取代旧的「e-track 权威副本 + 快照」方案）**：
+     `ROADMAP.md`、`docs/ISSUES.md`、进度 Excel、`docs/adr/`、`docs/requirements/` 等的**唯一真身**存放在
+     **`/Users/perryxu/github/AIPaddle-docs/`**（git 之外的独立本地仓库，无远程），各仓库/worktree 内的
+     同名路径**全是指向它的软链**。真身不随 `clone`/`clean -fdx`/`reset --hard` 丢失，
+     **不存在「副本」，也不需要 cp 快照**——读写软链即读写真身。软链被清掉后重跑
+     `bash /Users/perryxu/github/AIPaddle-docs/_relink.sh <仓库或worktree路径>` 恢复。
+     ⚠️ 旧文所述的权威位置 `aipaddle-e-track/docs/` —— **该 worktree 已删除，勿再引用**。
+   - 🔴 **主目录当参考前必须先 `git fetch`**：主目录长期停在 main 但**不会自动更新**，
+     实测曾落后 `origin/main` **41 个提交**，连整个 `app/(dashboard)/plugins/` 目录都还没有。
+     照着过期主目录里的组件抄实现，会抄到**早已被替换掉的旧版本**——2026-08-07 改 Plugin 布局时，
+     主目录的 `agents-admin-view` 还是已废弃的行式列表，而线上早已改成卡片网格。
+     凡「参照现有页面/模块」的工作，**一律以 `origin/main` 为基准**，不以主目录工作区为准。
 
 ## 代码约定
 
@@ -56,6 +67,26 @@ AIPaddle 是面向企业的 AI 业务赋能与 LLMOps 管理平台，统一管�
 - 新功能至少配一条自动化测试；修 bug 先写复现测试。测试写在哪一层（单元/集成/E2E）按 `docs/TESTING.md` 判断。
 - **E2E 用例是可执行规格**：开发新页面/功能时必须遵守 `tests/e2e/README.md` 的选择器约定（Label 关联、语义按钮、约定的 data-testid），并让 `tests/e2e/stages/` 中对应用例通过；seed 脚本必须与 `tests/e2e/fixtures/test-data.ts` 保持一致。
 - 功能开发走分支 + PR 合并 main，不直接 push main；CI 红灯时先修 CI，不开新任务。
+- 🔴 **PR squash 合并后，原分支作废**：必须 `git reset --hard origin/main` 重开，
+  再 `cherry-pick` 合并之后新增的提交。继续用老分支，下个 PR 必然 `CONFLICTING`。（PR #138）
+- 🔴 **ssh heredoc 必须用单引号定界符**（`<<'REMOTE'`）：不加引号时**本地 shell 会先展开**再下发，
+  连注释里的反引号都会被当成命令执行，服务器收到的是一份被改坏的脚本。
+  2026-08-03 部署脚本前两次实跑都栽在这，而报错（`syntax error near |`、`usage: mv`、
+  `A previous build that didn't exit cleanly`）**全都指向服务器**，排查方向被彻底带偏。
+  需要传值就走 ssh 的环境变量：`ssh host "VAR='$v' bash -s" <<'EOF'`。
+  同理，`git commit -m "…"` 的信息里含反引号会被吃掉——用 `git commit -F -` 加 heredoc。
+- 🔴 **部署走 `scripts/deploy.sh`，不要手敲**：手工部署已出过一次生产故障——
+  `git reset` 先执行、构建失败在后，线上处于「新源码 + 旧 `.next`」的半更新状态，
+  多条路由 500 且日志里的 `InvariantError` 看着像 Next.js 自身 bug。
+  脚本已处理：不带 sudo（pm2 在 ubuntu 用户下）、`CI=true`、构建到 `.next.new` 再原子切换
+  （零停机）、失败即回滚、部署后自动跑 `scripts/verify-deploy.sh`。
+- 🔴 **迁移走 `scripts/apply-migration.sh`**：本地 psql 被 fake-ip 代理挡、服务器 `DATABASE_URL`
+  指向仅 IPv6 的域名、Supabase 无 exec_sql RPC——唯一可行的是 IPv4 Session Pooler。
+- 🔴 **`.gitignore` 必须与 CI `confidential-guard` 口径一致**：守卫查 `docs/*.docx`、
+  `docs/AIPaddle-*.xlsx` 等**整类通配**，`.gitignore` 就不能只点名个别文件——否则本地
+  `git add .` 放行、要等 CI 才拦。而 `docs/` 下的 docx 里有明文测试密码，**仓库是公开的**。
+  另：机密目录规则**不要写结尾斜杠**（写 `docs/adr` 而非 `docs/adr/`）——本地这些路径是
+  指向外置真身的**软链**，带斜杠的规则只匹配真目录，匹配不到同名软链，git 照样会看见它。
 
 ## 常用命令
 

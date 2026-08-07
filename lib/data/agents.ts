@@ -149,9 +149,14 @@ export async function createAgent(
     model?: string
     origin?: AgentOrigin
     mandatory?: boolean
+    /** 完整编排配置（brainMode / brainWorkflowId 等）。与 systemPrompt/model 并存时以本字段为底、后两者覆盖 */
+    config?: Record<string, unknown>
   },
 ): Promise<Agent> {
-  const config: Record<string, unknown> = {}
+  // WF-6：助理编排需要建 Agent 时直接绑定 brainMode/brainWorkflowId——
+  // 那是「定时到点真正跑工作流」的开关，缺了会静默退化成模型自由发挥。
+  // 此前这里只认 systemPrompt/model 两个字段，其余配置无处可传。
+  const config: Record<string, unknown> = { ...(input.config ?? {}) }
   if (input.systemPrompt) config.systemPrompt = input.systemPrompt
   if (input.model) config.model = input.model
   const supabase = await createClient()

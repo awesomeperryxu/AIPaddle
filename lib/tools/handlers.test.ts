@@ -267,3 +267,84 @@ describe('SMTP Handler', () => {
     expect(getHandler('smtp.send_mail')).not.toBeNull()
   })
 })
+
+describe('联网搜索 Handler（WF-23）', () => {
+  const cfg = { handler_id: 'websearch.google', query: '2026年8月6日 AI 领域重大新闻' }
+  const grounded = (text: string, sources: { title: string; uri: string }[]) => json({
+    candidates: [{
+      content: { parts: [{ text }] },
+      groundingMetadata: {
+        webSearchQueries: ['AI news August 6 2026'],
+        groundingChunks: sources.map((s) => ({ web: s })),
+      },
+    }],
+  })
+
+  it('返回正文并附上真实来源——没有来源就与「模型编的」无从区分', async () => {
+    mockFetch.mockResolvedValueOnce(grounded('今日 AI 要闻三条……', [
+      { title: 'openai.com', uri: 'https://openai.com/blog/x' },
+      { title: '9to5mac.com', uri: 'https://9to5mac.com/y' },
+    ]))
+    const r = await runHandler({ handlerId: 'websearch.google', config: cfg, secret: 'KEY', probeOnly: false })
+    expect(r.ok).toBe(true)
+    expect(r.message).toContain('今日 AI 要闻三条')
+    expect(r.message).toContain('https://openai.com/blog/x')
+    expect(r.detail?.sourceCount).toBe(2)
+  })
+
+  it('未绑定凭证 → 明确指向凭证管理，不去发请求', async () => {
+    const r = await runHandler({ handlerId: 'websearch.google', config: cfg, secret: null, probeOnly: false })
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('凭证')
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('缺检索词 → 不发请求', async () => {
+    const r = await runHandler({ handlerId: 'websearch.google', config: { handler_id: 'websearch.google' }, secret: 'K', probeOnly: false })
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('检索词')
+  })
+
+  it('probeOnly 用固定轻量查询验证 Key，不需要业务检索词', async () => {
+    mockFetch.mockResolvedValueOnce(grounded('今天是 2026-08-07', []))
+    const r = await runHandler({ handlerId: 'websearch.google', config: { handler_id: 'websearch.google' }, secret: 'K', probeOnly: true })
+    expect(r.ok).toBe(true)
+    expect(r.message).toContain('连通')
+  })
+
+  it('🔴 出站域名锁死在 Google 的 API 主机上', async () => {
+    mockFetch.mockResolvedValueOnce(grounded('x', []))
+    await runHandler({ handlerId: 'websearch.google', config: cfg, secret: 'K', probeOnly: false })
+    const [url, hosts] = mockFetch.mock.calls[0]
+    expect(String(url)).toContain('generativelanguage.googleapis.com')
+    expect(hosts).toEqual(['generativelanguage.googleapis.com'])
+  })
+
+  it('🔴 API Key 走请求头，不出现在 URL 里（URL 会进日志/审计）', async () => {
+    mockFetch.mockResolvedValueOnce(grounded('x', []))
+    await runHandler({ handlerId: 'websearch.google', config: cfg, secret: 'SUPER_SECRET_KEY', probeOnly: false })
+    const [url, , init] = mockFetch.mock.calls[0]
+    expect(String(url)).not.toContain('SUPER_SECRET_KEY')
+    expect((init?.headers as Record<string, string>)['x-goog-api-key']).toBe('SUPER_SECRET_KEY')
+  })
+
+  it('模型下线（404）时给出可操作提示——写死模型名踩过这个坑', async () => {
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'no longer available' } }), { status: 404 }))
+    const r = await runHandler({ handlerId: 'websearch.google', config: cfg, secret: 'K', probeOnly: false })
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('模型名不存在或已下线')
+  })
+
+  it('Key 无效（403）时不把 Key 抖出去', async () => {
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'permission denied' } }), { status: 403 }))
+    const r = await runHandler({ handlerId: 'websearch.google', config: cfg, secret: 'SUPER_SECRET_KEY', probeOnly: false })
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('API Key 无效')
+    expect(JSON.stringify(r)).not.toContain('SUPER_SECRET_KEY')
+  })
+
+  it('websearch.google 已注册在白名单里', () => {
+    expect(HANDLER_IDS).toContain('websearch.google')
+    expect(getHandler('websearch.google')).not.toBeNull()
+  })
+})
