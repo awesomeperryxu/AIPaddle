@@ -126,7 +126,25 @@ export async function deleteAgent(_ctx: RequestContext, id: string): Promise<Del
     .select('id')
     .maybeSingle()
   if (error) throw new Error(error.message)
-  if (data) return 'deleted'
+  if (data) {
+    // 🔴 DE-11：删掉 Agent 的同时，必须软删**指向它的**下级引用。
+    // 此前只删 agents 行、不动 agent_resources，于是上级数字员工里留下一条
+    // 指向"不存在的 Agent"的活跃引用——页面上表现为"组成里少了一个"，
+    // 不主动查根本发现不了。2026-08-07 清理时线上有 **65 行**这样的悬空引用，
+    // 波及 19 个数字员工里的 16 个，根因就是 #161 删腾讯 Agent 时没清引用。
+    //
+    // 放在删除成功之后：删不成（published / 已删）就不该动引用。
+    // 失败只记日志不回滚——Agent 已经删了，引用清理失败最多是留下悬空数据，
+    // 而回滚删除会让"删除成功"变成"删除又活了"，更难解释。
+    const { error: refErr } = await supabase
+      .from('agent_resources')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('resource_type', 'agent')
+      .eq('resource_id', id)
+      .is('deleted_at', null)
+    if (refErr) console.error('[deleteAgent] 清理下级引用失败，可能留下悬空引用:', id, refErr.message)
+    return 'deleted'
+  }
 
   // 0 行有两种原因，回查一次仅用于**区分错误码**（不参与是否删除的判定，
   // 因此不重新引入并发窗口）：还在且是 published → 让用户知道要先下线。

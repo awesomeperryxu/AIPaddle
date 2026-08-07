@@ -147,9 +147,28 @@ export function AgentsAdminView({
       await apiFetch(`/api/agents/${agent.id}`, { method: 'DELETE' });
       router.refresh();
     } catch (e) {
-      // 用页内提示而非 window.alert：alert 的文案不进 DOM，用户无法复制、
-      // e2e 也断言不到（S1-CRUD-04 一直挂在这），且与本页其它提示不一致
-      showNotice(e instanceof Error ? e.message : '删除失败');
+      // DE-11：被数字员工引用时服务端回 409 + 受影响清单。
+      // 把清单摊给用户再让其确认——照搬 Tool 下线那套（plugin-provider-view）。
+      // 🔴 不能只把 409 当普通错误提示：用户看到"删除失败"却不知道是谁在挡，
+      // 只会反复重试。服务端把清单给了，前端就该用上。
+      const msg = e instanceof Error ? e.message : '删除失败';
+      if (/数字员工正把它当下级使用/.test(msg)) {
+        if (window.confirm(`${msg}\n\n确定继续删除？`)) {
+          try {
+            await apiFetch(`/api/agents/${agent.id}`, {
+              method: 'DELETE',
+              body: JSON.stringify({ confirm: true }),
+            });
+            router.refresh();
+          } catch (e2) {
+            showNotice(e2 instanceof Error ? e2.message : '删除失败');
+          }
+        }
+      } else {
+        // 用页内提示而非 window.alert：alert 的文案不进 DOM，用户无法复制、
+        // e2e 也断言不到（S1-CRUD-04 一直挂在这），且与本页其它提示不一致
+        showNotice(msg);
+      }
     } finally { setDeletingId(null); }
   }
 
