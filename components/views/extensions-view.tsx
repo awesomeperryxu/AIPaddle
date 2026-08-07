@@ -99,9 +99,9 @@ export function ExtensionsView() {
   }, [])
 
   useEffect(() => {
-    // 只有已发布的 Agent 才能作为对外目标——草稿态开放出去等于把半成品暴露给外部
+    // 加载全部 Agent（列表需显示名称；编辑下拉只展示已发布的，但需认识已绑定的非发布态 Agent）
     apiFetch<{ agents: AgentLite[] }>('/api/agents')
-      .then((r) => setAgents((r?.agents ?? []).filter((a) => a.status === 'published')))
+      .then((r) => setAgents(r?.agents ?? []))
       .catch(() => { /* 目标列表拉不到不阻塞主流程，新建时会提示 */ })
   }, [])
 
@@ -146,7 +146,7 @@ export function ExtensionsView() {
         body: JSON.stringify({
           allowedOrigins: origins,
           rateLimitPerMin: Number(editRate) || 60,
-          ...(editTargetId !== editPanel.targetId ? { targetId: editTargetId } : {}),
+          targetId: editTargetId || undefined,
         }),
       })
       toast.success('已更新')
@@ -352,10 +352,10 @@ export function ExtensionsView() {
               <Label htmlFor="ext-target">调用目标（仅已发布 Agent）</Label>
               <Select value={form.targetId} onValueChange={(v) => setForm({ ...form, targetId: v })}>
                 <SelectTrigger id="ext-target">
-                  <SelectValue placeholder={agents.length ? '选择 Agent' : '暂无已发布的 Agent'} />
+                  <SelectValue placeholder={agents.filter(a => a.status === 'published').length ? '选择 Agent' : '暂无已发布的 Agent'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  {agents.filter(a => a.status === 'published').map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -471,16 +471,20 @@ export function ExtensionsView() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>调用目标（仅已发布 Agent）</Label>
+              <Label>调用目标</Label>
               <Select value={editTargetId} onValueChange={setEditTargetId}>
                 <SelectTrigger><SelectValue placeholder="选择 Agent" /></SelectTrigger>
                 <SelectContent>
-                  {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                  {/* 已发布的 + 当前已绑定的（防止切换后找不回来） */}
+                  {agents
+                    .filter(a => a.status === 'published' || a.id === editTargetId)
+                    .map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}{a.status !== 'published' ? ` (${a.status})` : ''}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                当前：{agents.find((a) => a.id === editTargetId)?.name ?? editTargetId.slice(0, 8)}
-              </p>
             </div>
             <div>
               <Label>来源白名单（一行一个域名）</Label>
