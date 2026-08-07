@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import type { Agent } from '@/lib/mock-data'
 import { apiFetch } from '@/lib/api/client'
+import { validateCron } from '@/lib/agents/cron-validate'
 import {
   ArrowLeft, Send, Loader2, Check, Clock, Bot, ChevronDown,
 } from 'lucide-react'
@@ -38,6 +39,9 @@ export function AgentScheduleNewView({ agents, digitalEmployeeIds, defaultAgentI
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [parsed, setParsed] = useState<ParsedSchedule | null>(null)
+  // 用户手改解析结果后的校验。cron 写错会让定时静默不触发——
+  // 存下去要到第一次该跑却没跑时才发现，所以在保存前就拦住
+  const [cronError, setCronError] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -81,8 +85,21 @@ export function AgentScheduleNewView({ agents, digitalEmployeeIds, defaultAgentI
     }
   }
 
+  /** 就地修改 AI 解析结果，并即时校验 cron */
+  function updateParsed(patch: Partial<ParsedSchedule>) {
+    setParsed((p) => (p ? { ...p, ...patch } : p))
+    if (patch.cronExpr !== undefined) setCronError(validateCron(patch.cronExpr))
+  }
+
   async function saveSchedule() {
     if (!parsed || !selectedAgentId || saving) return
+    // 手改过的 cron 必须先合法，否则存进去到点不触发、还查不出原因
+    const err = validateCron(parsed.cronExpr)
+    if (err) { setCronError(err); return }
+    if (!parsed.triggerPrompt.trim()) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ 触发指令不能为空——到点时没有指令可发给 Agent。' }])
+      return
+    }
     setSaving(true)
     try {
       await apiFetch('/api/agent-schedules', {
@@ -232,15 +249,40 @@ export function AgentScheduleNewView({ agents, digitalEmployeeIds, defaultAgentI
             </div>
           ) : (
             <div className="flex-1 p-4 space-y-4">
+              {/* AI 解析结果可直接改：解析未必每次都合心意，
+                  只读的话用户得回到左侧重新描述一遍，改一个小时点也要重来 */}
               <div className="rounded-lg border border-border p-3 space-y-3">
                 <div>
-                  <div className="text-[11px] text-muted-foreground mb-1">执行计划</div>
-                  <div className="text-sm font-medium">{parsed.summary}</div>
-                  <code className="text-xs text-muted-foreground font-mono">{parsed.cronExpr}</code>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-[11px] text-muted-foreground">执行计划</div>
+                    {cronError && <span className="text-[10px] text-destructive">{cronError}</span>}
+                  </div>
+                  <div className="text-sm font-medium mb-1.5">{parsed.summary}</div>
+                  <input
+                    value={parsed.cronExpr}
+                    onChange={(e) => updateParsed({ cronExpr: e.target.value })}
+                    aria-label="cron 表达式"
+                    className={`w-full rounded-md border px-2 py-1.5 text-xs font-mono bg-background outline-none focus:ring-1 ${
+                      cronError ? 'border-destructive focus:ring-destructive/30' : 'border-border focus:ring-primary/30'
+                    }`}
+                    placeholder="分 时 日 月 周，如 0 8 * * *"
+                  />
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    五段式：分 时 日 月 周（Asia/Shanghai）。改动后下方「接下来 5 次」是 AI 按原计划算的，仅供参考。
+                  </p>
                 </div>
                 <div>
                   <div className="text-[11px] text-muted-foreground mb-1">触发指令</div>
-                  <p className="text-xs text-foreground leading-relaxed">{parsed.triggerPrompt}</p>
+                  <textarea
+                    value={parsed.triggerPrompt}
+                    onChange={(e) => updateParsed({ triggerPrompt: e.target.value })}
+                    aria-label="触发指令"
+                    rows={3}
+                    className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs leading-relaxed outline-none focus:ring-1 focus:ring-primary/30 resize-y"
+                  />
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    到点时发给该 Agent 的指令。若 Agent 以工作流为大脑，这段会作为流程的输入。
+                  </p>
                 </div>
               </div>
 

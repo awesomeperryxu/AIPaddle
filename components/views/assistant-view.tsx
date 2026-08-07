@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { apiFetch } from '@/lib/api/client';
+import { AssistantOrchestrateCard, type OrchestrateState } from './assistant-orchestrate-card';
 import {
   Send, Bot, Sparkles, SquarePen, Zap, FileText, Image as ImageIcon, Upload, Download,
   Loader2, Trash2, MessageSquare, X, Paperclip, AtSign, ChevronRight, Users,
@@ -14,7 +15,10 @@ import {
 
 type Citation = { documentId: string; filename: string; snippet: string; similarity: number };
 type MsgAttachment = { kind: 'doc' | 'image'; filename: string; dataUrl?: string };
-type Msg = { id: string; role: 'user' | 'assistant' | 'system'; content: string; citations: Citation[]; attachments?: MsgAttachment[]; label?: string };
+// WF-6：编排态挂在消息上，让「做到第几步」留在对话历史里——
+// 用弹窗的话这些痕迹会随窗口关闭消失，用户回头看不出发生过什么。
+
+type Msg = { id: string; role: 'user' | 'assistant' | 'system'; content: string; citations: Citation[]; attachments?: MsgAttachment[]; label?: string; orchestrate?: OrchestrateState };
 type Conversation = { id: string; title: string; updatedAt: string };
 type Res = { id: string; name: string; openingStatement?: string; suggestedQuestions?: string[] };
 // 4.1.20：@@ 唤醒目标——数字员工 或 数字员工团队
@@ -126,6 +130,32 @@ export function AssistantView() {
   const [uploading, setUploading] = useState(false);
   const docInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
+
+  // ── WF-6 编排：三步驱动 ────────────────────────────────
+  // 每步只改对应那条消息的 orchestrate 态，其余消息不动——
+  // 编排进度是这条对话的一部分，不该做成全局状态
+  const patchOrchestrate = useCallback((msgId: string, patch: Partial<OrchestrateState>) => {
+    setMessages((ms) => ms.map((m) =>
+      m.id === msgId && m.orchestrate ? { ...m, orchestrate: { ...m.orchestrate, ...patch } } : m,
+    ));
+  }, []);
+
+  const runOrchestrateStep = useCallback(async (
+    msgId: string,
+    body: Record<string, unknown>,
+    onOk: (data: Record<string, unknown>) => Partial<OrchestrateState>,
+  ) => {
+    patchOrchestrate(msgId, { busy: true, error: undefined });
+    try {
+      const data = await apiFetch<Record<string, unknown>>('/api/assistant/orchestrate', {
+        method: 'POST', body: JSON.stringify(body),
+      });
+      patchOrchestrate(msgId, { busy: false, ...onOk(data) });
+    } catch (e) {
+      // 失败停在当前步，保留已完成的部分，用户可重试而不必从头再说一遍需求
+      patchOrchestrate(msgId, { busy: false, error: e instanceof Error ? e.message : '执行失败' });
+    }
+  }, [patchOrchestrate]);
 
   function autoResize() {
     const el = textareaRef.current;
@@ -369,7 +399,7 @@ export function AssistantView() {
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = '', full = '', cites: Citation[] = [];
-      let redirect: { target: string; description: string } | null = null;
+      let redirect: { target: string; description: string; kind?: string } | null = null;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -382,13 +412,19 @@ export function AssistantView() {
           const obj = JSON.parse(line.slice(5).trim());
           if (obj.type === 'citations') { cites = obj.citations; setStreamCitations(cites); }
           else if (obj.type === 'delta') { full += obj.text; setStreamText(full); }
-          else if (obj.type === 'redirect') { redirect = { target: obj.target, description: obj.description }; }
+          else if (obj.type === 'redirect') { redirect = { target: obj.target, description: obj.description, kind: obj.kind }; }
           else if (obj.type === 'error') throw new Error(obj.message);
         }
       }
-      setMessages((m) => [...m, { id: `a-${Date.now()}`, role: 'assistant', content: full, citations: cites }]);
+      // WF-6：组合意图不跳走，在对话里就地编排——计划刚讲完就跳页，
+      // 用户还没看清要做什么就换了场景
+      const isOrchestrate = redirect?.kind === 'create-scheduled-workflow';
+      setMessages((m) => [...m, {
+        id: `a-${Date.now()}`, role: 'assistant', content: full, citations: cites,
+        ...(isOrchestrate ? { orchestrate: { stage: 'plan' as const, description: redirect!.description } } : {}),
+      }]);
       loadConversations();
-      if (redirect) {
+      if (redirect && !isOrchestrate && redirect.target) {
         setTimeout(() => router.push(`${redirect!.target}?assistant=${encodeURIComponent(redirect!.description)}`), 700);
       }
     } catch (e) {
@@ -482,14 +518,57 @@ export function AssistantView() {
           ) : (
             <div className="max-w-2xl mx-auto w-full px-4 py-6 space-y-6">
               {messages.map((msg) => (
-                <MessageBubble
-                  key={msg.id}
-                  role={msg.role}
-                  content={msg.content}
-                  citations={msg.citations}
-                  attachments={msg.attachments}
-                  label={msg.label}
-                />
+                <div key={msg.id}>
+                  <MessageBubble
+                    role={msg.role}
+                    content={msg.content}
+                    citations={msg.citations}
+                    attachments={msg.attachments}
+                    label={msg.label}
+                  />
+                  {/* WF-6：编排卡片内联在计划那条回复下方（方案 A），
+                      每步完成后原地更新，操作痕迹留在对话历史里 */}
+                  {msg.orchestrate && (
+                    <div className="max-w-2xl">
+                      <AssistantOrchestrateCard
+                        state={msg.orchestrate}
+                        onDraftWorkflow={() => runOrchestrateStep(
+                          msg.id,
+                          { step: 'draft-workflow', description: msg.orchestrate!.description },
+                          (d) => {
+                            const draft = d.draft as OrchestrateState['workflow'] & { workflowId: string };
+                            return {
+                              stage: 'workflow-drafted',
+                              workflow: {
+                                id: draft.workflowId, name: draft.name,
+                                nodeCount: draft.nodeCount, edgeCount: draft.edgeCount,
+                                pendingAbilityNodes: draft.pendingAbilityNodes,
+                                valid: draft.valid, validation: draft.validation,
+                              },
+                            };
+                          },
+                        )}
+                        onPublishWorkflow={() => runOrchestrateStep(
+                          msg.id,
+                          { step: 'publish-workflow', workflowId: msg.orchestrate!.workflow?.id, description: msg.orchestrate!.description },
+                          (d) => {
+                            const a = d.agent as { agentId: string; agentName: string };
+                            return { stage: 'agent-drafted', agent: { id: a.agentId, name: a.agentName } };
+                          },
+                        )}
+                        onPublishAgent={() => runOrchestrateStep(
+                          msg.id,
+                          { step: 'publish-agent', agentId: msg.orchestrate!.agent?.id },
+                          (d) => ({ stage: 'done', pendingReview: !!d.pendingReview }),
+                        )}
+                        onGotoSchedule={() => router.push(
+                          `/agent-schedules/new?agentId=${msg.orchestrate!.agent?.id}`,
+                        )}
+                        onOpenWorkflow={(id) => router.push(`/workflows/${id}`)}
+                      />
+                    </div>
+                  )}
+                </div>
               ))}
               {sending && (
                 <MessageBubble role="assistant" content={streamText} citations={streamCitations} streaming />

@@ -2,7 +2,8 @@ import { getRequestContext } from '@/lib/context'
 import { chatStream, VL_MODEL, type ChatMessage } from '@/lib/ai'
 import { parseAttachments, buildDocPreface, buildUserContent } from '@/lib/assistant/attachments'
 import { retrieveSegments } from '@/lib/kb/rag'
-import { classifyIntent, INTENT_ROUTE, INTENT_LABEL } from '@/lib/assistant/intent'
+import { classifyIntent, INTENT_ROUTE } from '@/lib/assistant/intent'
+import { buildCreationPlan, renderPlan } from '@/lib/assistant/plan'
 import { getAgentForChat } from '@/lib/data/agents'
 import { getSkillById } from '@/lib/data/skills'
 import { evaluateSkillCall } from '@/lib/skills/invoke'
@@ -97,10 +98,12 @@ export async function POST(req: Request, { params }: Ctx) {
   // 带附件时用户明确是要总结/分析，跳过创建跳转。
   const intent = (agentId || attachments.length) ? { kind: 'chat' as const, description: '' } : await classifyIntent(content)
   if (intent.kind !== 'chat') {
-    const label = INTENT_LABEL[intent.kind]
     const target = INTENT_ROUTE[intent.kind]
     const desc = intent.description || content
-    const notice = `我识别到你想创建「${label}」，正在带你去创建页面并预填你的描述…`
+    // WF-7：动手前先把计划讲清楚——要建哪些对象、先后顺序、哪几步需要人确认、
+    // 最终实现什么。此前只回一句「正在带你去创建页面」，用户既不知道会创建几个
+    // 对象，也不知道中间还需要自己确认，跳过去才发现。
+    const notice = renderPlan(buildCreationPlan(intent.kind, desc))
     await appendMessage(ctx, id, { role: 'assistant', content: notice, citations: [] })
     const enc = new TextEncoder()
     const s = new ReadableStream({
