@@ -69,6 +69,21 @@ export async function embedOne(text: string): Promise<number[]> {
   return (await embed([text]))[0]
 }
 
+/**
+ * 联网搜索参数（WF-22）。DashScope（通义）OpenAI 兼容接口原生支持，用现有 Key 即可，
+ * 不必再接第三方搜索 API。
+ *
+ * 🔴 为什么需要它：此前「查全网当天 AI 大事件」这类需求，平台没有任何联网能力，
+ * Copilot 只能生成一个 llm 节点假装检索、体检再把它拦下——用户拿到的是一条永远发不了的流程。
+ * 开了这个开关，那一步是真的联网取数。
+ *
+ * forced_search：强制走搜索，不让模型自行决定（否则它常常凭记忆答，正是「编造」的来源）。
+ */
+function searchParams(enable?: boolean): Record<string, unknown> {
+  if (!enable) return {}
+  return { enable_search: true, search_options: { forced_search: true, enable_source: true } }
+}
+
 // ── 对话 ─────────────────────────────────────────────────────
 // content 支持纯字符串或多模态数组（DashScope OpenAI 兼容：text + image_url）。
 export type ContentPart =
@@ -78,13 +93,14 @@ export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: stri
 
 export async function chat(
   messages: ChatMessage[],
-  opts: { temperature?: number; maxTokens?: number; model?: string } = {},
+  opts: { temperature?: number; maxTokens?: number; model?: string; enableSearch?: boolean } = {},
 ): Promise<string> {
   const json = await postJson('/chat/completions', {
     model: opts.model ?? LLM_MODEL,
     messages,
     temperature: opts.temperature ?? 0.3,
     max_tokens: opts.maxTokens ?? 1024,
+    ...searchParams(opts.enableSearch),
   })
   const choices = json.choices as { message?: { content?: string } }[] | undefined
   return choices?.[0]?.message?.content ?? ''

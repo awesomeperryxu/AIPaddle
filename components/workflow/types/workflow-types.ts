@@ -62,6 +62,8 @@ export interface EndNodeConfig extends BaseNodeConfig {
 export interface LLMNodeConfig extends BaseNodeConfig {
   model: ModelConfig;
   prompts: PromptTemplate[];
+  /** 联网搜索（WF-22）：开启后这一步真的联网取数，而非凭模型记忆作答 */
+  enableSearch?: boolean;
   context?: {
     enabled: boolean;
     variable_selector?: ValueSelector;

@@ -30,7 +30,7 @@ export type ExecResult = {
 type GNode = { id: string; type: string; data?: { config?: Record<string, unknown>; label?: string } }
 type GEdge = { source: string; target: string; sourceHandle?: string }
 
-const SUPPORTED = new Set(['start', 'end', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request', 'if-else', 'variable-assigner', 'variable-aggregator', 'list-operator', 'agent', 'tool'])
+const SUPPORTED = new Set(['start', 'end', 'answer', 'llm', 'template-transform', 'parameter-extractor', 'knowledge-retrieval', 'http-request', 'if-else', 'variable-assigner', 'variable-aggregator', 'list-operator', 'agent', 'tool'])
 
 // 执行选项：ctx 用于需租户隔离的节点（知识检索）；timezone/now 决定运行时的时间事实（WF-20，可注入以便测试）。
 export type ExecOptions = { ctx?: RequestContext; timezone?: string; now?: Date }
@@ -382,7 +382,19 @@ export async function executeGraph(graph: WorkflowGraph, input: string, opts: Ex
         const withTime = renderRuntimeVars(tmpl, runtime) // WF-20：{{today}}/{{yesterday}} 等先落成真实日期
         const prompt = withTime.includes('{{input}}') ? withTime.replace(/\{\{input\}\}/g, nodeInput) : `${withTime}\n\n输入：${nodeInput}`
         // system 里给时间锚点：提示词多半一个占位符都不写，不明说日期模型就按训练语料答（跑出 2024 年那次就是这么来的）
-        out = await chat([{ role: 'system', content: runtimeSystemPrompt(runtime) }, { role: 'user', content: prompt }])
+        // WF-22 联网搜索：开了开关这一步是真的联网取数，而不是凭模型记忆编
+        out = await chat(
+          [{ role: 'system', content: runtimeSystemPrompt(runtime) }, { role: 'user', content: prompt }],
+          { enableSearch: cfg.enableSearch === true },
+        )
+      } else if (n.type === 'answer') {
+        // 对话回复节点（WF-26）。此前不在 SUPPORTED 里，整条流程的**最后一步被标 skipped**——
+        // 用户看到「运行成功」但自己定义的输出格式压根没生效，实际拿到的是上一步的原始输出。
+        // config.answer 是带变量插值的回复模板；没写模板就透传上游输出（等同 end）。
+        const tmpl = typeof cfg.answer === 'string' ? cfg.answer.trim() : ''
+        out = tmpl
+          ? renderRuntimeVars(tmpl.replace(/\{\{\s*input\s*\}\}/g, nodeInput), runtime)
+          : nodeInput
       } else if (n.type === 'template-transform') {
         out = renderRuntimeVars(renderTemplate(cfg, nodeInput), runtime)
       } else if (n.type === 'parameter-extractor') {

@@ -33,6 +33,8 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  Info,
+  Settings,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -446,6 +448,15 @@ export function AgentsView({
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" onClick={e => e.stopPropagation()}>
+                              {/* DE-4：此前点卡片只会打开对话，看不到它由哪些下级组成、谁建的、还能不能用 */}
+                              <DropdownMenuItem onSelect={() => router.push(`/agents/${agent.id}`)}>
+                                <Info className="h-4 w-4 mr-2" />
+                                查看详情
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => router.push(`/agents-admin/${agent.id}`)}>
+                                <Settings className="h-4 w-4 mr-2" />
+                                编辑配置
+                              </DropdownMenuItem>
                               <DropdownMenuItem onSelect={() => router.push(`/agent-schedules/new?agentId=${agent.id}`)}>
                                 <Clock className="h-4 w-4 mr-2" />
                                 配置定时执行
