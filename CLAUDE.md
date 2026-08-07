@@ -82,6 +82,16 @@ AIPaddle 是面向企业的 AI 业务赋能与 LLMOps 管理平台，统一管�
   （零停机）、失败即回滚、部署后自动跑 `scripts/verify-deploy.sh`。
 - 🔴 **迁移走 `scripts/apply-migration.sh`**：本地 psql 被 fake-ip 代理挡、服务器 `DATABASE_URL`
   指向仅 IPv6 的域名、Supabase 无 exec_sql RPC——唯一可行的是 IPv4 Session Pooler。
+- 🔴 **`ALTER TABLE ADD COLUMN` 之后必须重建依赖视图**：视图哪怕写的是 `select m.*`，
+  Postgres 也会在**创建时把 `*` 展开并固化列清单**，基表加列**不会**跟着变。
+  2026-08-07 实例（0039→0040）：给 `mcp_servers` 加 `credential_id` 后忘了
+  `my_mcp_servers` 视图，于是 `listMcpServers` 查表正常、`listMyMcpServers` 查视图报
+  `column ... does not exist`。而唯一用到该视图的 `/skill-hub` 是 Server Component，
+  抛错即整页渲染失败，e2e 报的是 **`locator('main') 找不到`**——
+  一个看不出跟数据库有任何关系的前端报错；单测 1592 全绿、`pnpm check` 退出码 0、
+  MCP 页面完全正常，全都掩盖了它。真因只在 CI 的 WebServer 日志里。
+  查依赖：`pg_depend` + `pg_rewrite` 反查（见 0040 注释）；
+  防回归守卫见 `tests/integration/view-column-sync.test.ts`。
 - 🔴 **`.gitignore` 必须与 CI `confidential-guard` 口径一致**：守卫查 `docs/*.docx`、
   `docs/AIPaddle-*.xlsx` 等**整类通配**，`.gitignore` 就不能只点名个别文件——否则本地
   `git add .` 放行、要等 CI 才拦。而 `docs/` 下的 docx 里有明文测试密码，**仓库是公开的**。

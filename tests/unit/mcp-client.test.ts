@@ -115,22 +115,29 @@ describe('SSRF 防护', () => {
 })
 
 describe('凭证传递', () => {
-  it.each([
-    ['api_key', { api_key: 'sk-1' }, 'sk-1'],
-    ['api_key', { token: 'tk-2' }, 'tk-2'],
-    ['api_key', { access_token: 'at-3' }, 'at-3'],
-  ])('%s 型从 auth_config 取凭证并以 Bearer 发送', async (authType, cfg, expected) => {
+  // 🔴 凭证只以明文 secret 传入，且只能来自 lib/data/credentials 的服务端解密。
+  // 不再从 mcp_servers.auth_config（jsonb 明文列）取——那等于绕过整套加密存储。
+  const authHeaderOf = (i: number) =>
+    ((vi.mocked(fetch).mock.calls[i][1] as RequestInit).headers as Record<string, string>).Authorization
+
+  it('带 secret 时以 Bearer 发送', async () => {
     mockSeq([{ body: JSON.stringify(okInit) }, { body: JSON.stringify(okList) }])
-    await listMcpTools('https://mcp.example.com/mcp', authType, cfg as Record<string, string>)
-    const headers = (vi.mocked(fetch).mock.calls[0][1] as RequestInit).headers as Record<string, string>
-    expect(headers.Authorization).toBe(`Bearer ${expected}`)
+    await listMcpTools('https://mcp.example.com/mcp', 'api_key', 'sk-live-1')
+    expect(authHeaderOf(0)).toBe('Bearer sk-live-1')
   })
 
-  it('none 型不发 Authorization', async () => {
+  it('tools/call 同样带上凭证', async () => {
+    mockSeq([{ body: JSON.stringify(okInit) }, { body: JSON.stringify(okCall) }])
+    await callMcpTool('https://mcp.example.com/mcp', 'api_key', 'sk-live-2', 'search', {})
+    // 握手与调用两次请求都要带，否则会话在第二步被拒
+    expect(authHeaderOf(0)).toBe('Bearer sk-live-2')
+    expect(authHeaderOf(1)).toBe('Bearer sk-live-2')
+  })
+
+  it('未配凭证时不发 Authorization', async () => {
     mockSeq([{ body: JSON.stringify(okInit) }, { body: JSON.stringify(okList) }])
-    await listMcpTools('https://mcp.example.com/mcp', 'none', { api_key: '不该被用' })
-    const headers = (vi.mocked(fetch).mock.calls[0][1] as RequestInit).headers as Record<string, string>
-    expect(headers.Authorization).toBeUndefined()
+    await listMcpTools('https://mcp.example.com/mcp', 'api_key', undefined)
+    expect(authHeaderOf(0)).toBeUndefined()
   })
 })
 
