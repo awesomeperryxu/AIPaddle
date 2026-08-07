@@ -319,9 +319,11 @@ function normalizeLlmConfig(config: Record<string, unknown>, nodeId: string, lab
   const promptsIn = Array.isArray(config.prompts) ? (config.prompts as Record<string, unknown>[]) : []
   const fromPrompts = typeof promptsIn[0]?.text === 'string' ? String(promptsIn[0].text) : ''
   const text = (typeof config.prompt === 'string' && config.prompt.trim() ? config.prompt : fromPrompts).trim()
-  if (!text) return config // 没有提示词就不硬造，交给体检报「待补」
-  // 这一步明显要取外部数据、模型却没开联网 → 补上，否则跑出来是编的
+  // 这一步明显要取外部数据、模型却没开联网 → 补上，否则跑出来是编的。
+  // 🔴 判定必须在「没有提示词就返回」之前：模型漏写 prompt 的节点同样需要联网，
+  // 早退会让这类节点永远补不上开关（线上实测到的漏洞）。
   const enableSearch = config.enableSearch === true || NEEDS_WEB_RE.test(`${label}\n${text}`)
+  if (!text) return enableSearch ? { ...config, enableSearch: true } : config // 提示词不硬造，交给体检报「待补」
   return {
     ...config,
     ...(enableSearch ? { enableSearch: true } : {}),
