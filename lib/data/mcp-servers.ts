@@ -3,18 +3,20 @@ import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
 import { TRANSITIONS, type McpTransitionAction, type McpStatus } from '@/lib/mcp/status'
 
-// ⚠️ 已弃用（V12-4.2 / ADR-021，2026-08-03）
+// MCP 连接层（ADR-004 + ADR-023）。
 //
-// MCP Server 已并入 Plugin 模型：一个 MCP Server = 一个 plugins 行
-// （provider_type='mcp'），它提供的工具 = 若干 tools 行（binding_type='mcp'）。
-// 新代码请用 lib/data/plugins.ts + lib/data/tools.ts。
+// ⚠️ 曾于 ADR-021 被标记为「已弃用、并入 Plugin」，2026-08-07 由 ADR-023 部分回退：
+// 合并时没核对字段承接——`plugins` 表根本没有 endpoint / auth_type / auth_config，
+// 而 `mcp_servers` 同时失去了写入口。结果是 32 个已发布的 MCP Plugin **全都没有连接信息**，
+// 用户按 credentialGuide 的提示去「Plugin → MCP」填 Key，那里压根没有可填的地方。
 //
-// 本文件与 mcp_servers 表**保留而非删除**：删表不可逆，而合并的收益不依赖于
-// 「表已消失」；观察期内若发现遗漏的读取路径，表还在只是功能降级，表没了就是 500。
-// 真正 drop 放到后续单独任务，届时先确认全库无引用。
+// 现行三层分工：
+//   mcp_servers  连接层：endpoint / 认证 / 限流 / 安全等级 / 审批 / 角色·部门授权（本文件）
+//   plugins      管理层：目录、市场元数据、发布状态机（lib/data/plugins.ts）
+//   tools        调用层：binding_config = { mcp_tool_name, … }，不含 endpoint 与凭证
 //
 // 数据层（ADR-008）：唯一访问 mcp_servers 表 / my_mcp_servers 视图的地方。
-// 首参 ctx、请求级客户端（RLS 生效）。auth_config（Vault 凭据引用）绝不出现在 SELECT，不外泄。
+// 首参 ctx、请求级客户端（RLS 生效）。auth_config（凭据引用）绝不出现在 SELECT，不外泄。
 
 export type McpType = 'builtin' | 'enterprise' | 'third_party' | 'private'
 export type McpSecurityLevel = 'low' | 'medium' | 'high'
