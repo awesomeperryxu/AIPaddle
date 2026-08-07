@@ -37,24 +37,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { getAvatarBg, STATUS_PILL } from '@/lib/ui/entity-visuals';
 
-// 彩色首字 Avatar（确定性颜色 by 名称首字）
-const AVATAR_COLORS = [
-  'bg-violet-500', 'bg-blue-500', 'bg-orange-400',
-  'bg-emerald-500', 'bg-rose-500', 'bg-cyan-600', 'bg-amber-500',
-];
-function getAvatarBg(name: string): string {
-  return AVATAR_COLORS[(name.charCodeAt(0) || 0) % AVATAR_COLORS.length];
-}
-
-// 状态样式（原型设计：已发布 pill 背景，草稿纯文字）
-const statusConfig = {
-  draft:     { label: '草稿',   dotClass: 'bg-muted-foreground', pillClass: 'text-muted-foreground' },
-  pending:   { label: '待审核', dotClass: 'bg-amber-500',        pillClass: 'text-amber-600 bg-amber-50 dark:bg-amber-950/40' },
-  published: { label: '已发布', dotClass: 'bg-green-500',        pillClass: 'text-green-600 bg-green-50 dark:bg-green-950/40' },
-  offline:   { label: '已下线', dotClass: 'bg-destructive',      pillClass: 'text-destructive bg-destructive/10' },
-};
-
+// 彩色首字 Avatar 与状态样式（原型设计：已发布 pill 背景，草稿纯文字）；
+// Plugin 各 Provider 页共用同一份，见 lib/ui/entity-visuals
+const statusConfig = STATUS_PILL;
 
 export function AgentsAdminView({
   agents = [],
