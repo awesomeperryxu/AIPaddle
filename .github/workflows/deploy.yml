@@ -12,7 +12,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── OPS-2：构建搬离生产服务器（2026-08-07）────────────────────────────
+  # #201 修好了「退出码取反把构建失败谎报成部署成功」，但**构建为什么会失败**
+  # 没有解决：生产机是 4 核 7.6G，上面同时跑着 AIPaddle / interview / deskmate /
+  # Dify 全家桶 / openclaw。实测 `next build` 单独吃掉 **289% CPU + 1.86GB 内存**，
+  # 而构建开始时空闲内存只剩 236MB、swap 已用 3.0G/4.0G ——
+  # 被内核 OOM killer 杀掉（exit 137）是必然而非偶发，#187 与 #189 都栽在这；
+  # 构建期间线上 load average 冲到 200+，SSH 每条命令都要重试。
+  #
+  # runner 是空闲的 4 核 16G。构建放这里：线上零争抢、不再 OOM，
+  # 且构建失败由 Actions 原生判定，不必再依赖 ssh 脚本里的退出码捕获。
+  #
+  # ⚠️ 前置条件已核对：`NEXT_PUBLIC_*` 是**构建期烤进前端包**的，runner 上必须与
+  #    生产一致。实测三处完全吻合——生产 .env.local、代码实际引用、CI secrets
+  #    都只有 NEXT_PUBLIC_SUPABASE_URL 与 NEXT_PUBLIC_SUPABASE_ANON_KEY。
+  #    🔴 今后新增任何 NEXT_PUBLIC_* 变量，**必须同步加到本 job 的 env**，
+  #    否则线上前端会拿到空值，且构建与运行都不报错。
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 构建
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: pnpm build
+
+      - name: 打包产物（排除 cache）
+        run: |
+          # .next/cache 是构建缓存，服务器运行时用不到，却占了体积的绝大部分。
+          # 实测：含 cache 的 .next 在服务器上是 831MB，排除后打包只有 16MB。
+          tar czf next-build.tar.gz --exclude='./cache' -C .next .
+          ls -lh next-build.tar.gz | awk '{print ">> 产物大小: "$5}'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: next-build-${{ github.sha }}
+          path: next-build.tar.gz
+          retention-days: 3
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: 准备部署密钥
@@ -20,6 +70,18 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: next-build-${{ github.sha }}
+
+      - name: 上传产物到服务器
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 \
+            next-build.tar.gz "ubuntu@${DEPLOY_HOST}:/tmp/next-build.tar.gz"
+          echo ">> 产物已上传"
 
       - name: SSH 部署到服务器（原子构建切换 · BUG-87 加固）
         env:
@@ -82,43 +144,25 @@ jobs:
           # 关键：绝不在构建前删/动线上 .next。先构建到临时目录 .next.new，
           # 校验完整后再原子换成 .next；构建或校验失败则线上 .next 与运行进程纹丝不动。
           rm -rf .next.new
-          echo ">> 构建到临时目录 .next.new（线上 .next 不受影响）"
-          echo ">> 构建前内存：$(free -m | awk '/^Mem:/{print "可用 "$7"MB / 共 "$2"MB"}')，swap $(free -m | awk '/^Swap:/{print "已用 "$3"MB / 共 "$2"MB"}')"
-          # 🔴 OPS-1：构建失败时把退出码翻译成人话。
-          # 此前 OOM 的全部线索只有一行 `Killed` + exit 137，不写明是内存问题，
-          # 两次排查都往代码/依赖方向找。137 = 128+9(SIGKILL)，即内核 OOM killer。
-          # 🔴 退出码必须这样取。原写法 `if ! cmd; then RC=$?` 是**错的**：
-          # `$?` 拿到的是 `!` 取反**之后**的值——构建失败(非零)取反成 0，于是
-          #   ① 报错印成「构建失败（exit 0）」，自相矛盾、误导排查；
-          #   ② `exit "$RC"` 变成 `exit 0`，脚本以成功退出、跳过下面的产物校验，
-          #      GitHub Actions 判定**部署成功**。
-          # 后果：构建失败被谎报成功，线上停在「新源码 + 旧构建产物」的半更新态，
-          # 而所有信号（run 绿、git log 是最新 commit）都显示一切正常。
-          # 2026-08-07 实测撞上：连续两小时的合并其实都没上线，直到比对
-          # `.next/BUILD_ID` 的时间戳才发现。
-          set +e
-          NEXT_DIST_DIR=.next.new pnpm build
-          RC=$?
-          set -e
+          mkdir -p .next.new
+          echo ">> 解包 runner 构建好的产物到 .next.new（线上 .next 不受影响）"
+          echo ">> 解包前内存：$(free -m | awk '/^Mem:/{print "可用 "$7"MB / 共 "$2"MB"}')，swap $(free -m | awk '/^Swap:/{print "已用 "$3"MB / 共 "$2"MB"}')"
+          # 🔴 OPS-2：服务器不再执行 `next build`，改为解包 runner 传来的产物。
+          # #201 修好了「退出码取反把失败谎报成成功」，但**构建为什么会失败**没解决：
+          # 生产机 4 核 7.6G 同时跑着 AIPaddle / interview / deskmate / Dify 全家桶 /
+          # openclaw，实测 next build 单独吃掉 289% CPU + 1.86GB 内存，而构建开始时
+          # 空闲内存只剩 236MB、swap 已用 3.0G/4.0G —— 被 OOM killer 杀掉是必然而非偶发，
+          # 期间线上 load average 冲到 200+。搬到 runner 后这里只解包，占用接近零。
+          RC=0
+          tar xzf /tmp/next-build.tar.gz -C .next.new || RC=$?
+          rm -f /tmp/next-build.tar.gz
           if [ "$RC" -ne 0 ]; then
-            if [ "$RC" -eq 137 ]; then
-              echo "FATAL: 构建进程被内核杀死（exit 137 = SIGKILL，几乎必然是 OOM）"
-              echo "       构建后内存：$(free -m | awk '/^Mem:/{print "可用 "$7"MB"}')"
-              echo "       本机同时跑着 Dify / deskmate 等服务，构建期内存峰值会撞车。"
-              echo "       这是偶发失败：同一份代码重跑常能成功；线上未受影响（.next 未动，源码将回退）。"
-            elif [ "$RC" -eq 143 ]; then
-              echo "FATAL: 构建被 SIGTERM 终止（exit 143 = 128+15）"
-              echo "       多为并发部署互相打断，或有人取消了上一条 run。"
-              echo "       线上未受影响（.next 未动，源码将回退）；重跑即可。"
-            else
-              echo "FATAL: 构建失败（exit $RC）——非 OOM，请看上方构建日志"
-            fi
+            echo "FATAL: 产物解包失败（exit $RC）——产物损坏或磁盘空间不足"
+            df -h / | tail -1
             rm -rf .next.new
-            # 🔴 一律以非零退出：RC 万一仍是 0（信号/管道等边缘情况），
-            # exit 0 会让这次失败继续伪装成成功。宁可多报一次失败。
+            # 同 #201：一律以非零退出，别让失败再伪装成成功
             [ "$RC" -ne 0 ] && exit "$RC" || exit 1
           fi
-
           echo ">> 校验新构建完整性"
           MISSING=""
           for f in .next.new/BUILD_ID .next.new/prerender-manifest.json .next.new/required-server-files.json .next.new/routes-manifest.json; do
