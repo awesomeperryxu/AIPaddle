@@ -35,6 +35,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       description: typeof b?.description === 'string' ? b.description : undefined,
       allowedOrigins: b?.allowedOrigins,
       rateLimitPerMin: typeof b?.rateLimitPerMin === 'number' ? b.rateLimitPerMin : undefined,
+      targetId: typeof b?.targetId === 'string' ? b.targetId : undefined,
       targetVersion: b?.targetVersion === null || typeof b?.targetVersion === 'string'
         ? (b.targetVersion as string | null) : undefined,
     })

@@ -127,10 +127,13 @@ export function ExtensionsView() {
     } finally { setBusy(null) }
   }
 
+  const [editTargetId, setEditTargetId] = useState('')
+
   function openEdit(ext: Extension) {
     setEditPanel(ext)
     setEditOrigins(ext.allowedOrigins.join('\n'))
     setEditRate(String(ext.rateLimitPerMin))
+    setEditTargetId(ext.targetId)
   }
 
   async function handleEdit() {
@@ -143,6 +146,7 @@ export function ExtensionsView() {
         body: JSON.stringify({
           allowedOrigins: origins,
           rateLimitPerMin: Number(editRate) || 60,
+          ...(editTargetId !== editPanel.targetId ? { targetId: editTargetId } : {}),
         }),
       })
       toast.success('已更新')
@@ -270,7 +274,7 @@ export function ExtensionsView() {
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {agents.find((a) => a.id === ext.targetId)?.name ?? ext.targetId.slice(0, 8)}
+                        {agents.find((a) => a.id === ext.targetId)?.name ?? `未知 (${ext.targetId.slice(0, 8)}…)`}
                       </TableCell>
                       <TableCell>
                         {ext.allowedOrigins.length === 0 ? (
@@ -466,6 +470,18 @@ export function ExtensionsView() {
             <DialogDescription>修改来源白名单与限流配置。</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <Label>调用目标（仅已发布 Agent）</Label>
+              <Select value={editTargetId} onValueChange={setEditTargetId}>
+                <SelectTrigger><SelectValue placeholder="选择 Agent" /></SelectTrigger>
+                <SelectContent>
+                  {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                当前：{agents.find((a) => a.id === editTargetId)?.name ?? editTargetId.slice(0, 8)}
+              </p>
+            </div>
             <div>
               <Label>来源白名单（一行一个域名）</Label>
               <Textarea rows={4} value={editOrigins} onChange={(e) => setEditOrigins(e.target.value)}

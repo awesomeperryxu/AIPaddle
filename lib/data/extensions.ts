@@ -199,6 +199,7 @@ export async function updateExtension(
   patch: {
     name?: string; description?: string
     allowedOrigins?: unknown; rateLimitPerMin?: number
+    targetId?: string
     targetVersion?: string | null
   },
 ): Promise<Extension | null> {
@@ -217,6 +218,7 @@ export async function updateExtension(
     }
     fields.rate_limit_per_min = patch.rateLimitPerMin
   }
+  if (typeof patch.targetId === 'string' && UUID_RE.test(patch.targetId)) fields.target_id = patch.targetId
   if (patch.targetVersion !== undefined) fields.target_version = patch.targetVersion
   if (Object.keys(fields).length === 0) return getExtensionById(ctx, id)
   fields.updated_at = new Date().toISOString()
