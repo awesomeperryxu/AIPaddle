@@ -23,9 +23,11 @@ export function validateGraph(graph: WorkflowGraph): GraphError[] {
   if (!nodes.some((n) => isEntry(n.type))) {
     errors.push({ code: 'no_start', message: '缺少开始/触发节点' })
   }
-  // ② 结束节点
-  if (!nodes.some((n) => n.type === 'end')) {
-    errors.push({ code: 'no_end', message: '缺少结束节点' })
+  // ② 结束节点。answer（Chatflow 的对话回复）同样是终点——
+  // 🔴 只认 end 的话，凡是用 answer 收尾的图都会被判「缺少结束节点」，
+  // Copilot 还会因此空跑一轮修复；这与生成规则（end 或 answer 二选一）也对不上。
+  if (!nodes.some((n) => n.type === 'end' || n.type === 'answer')) {
+    errors.push({ code: 'no_end', message: '缺少结束节点（end 或 answer）' })
   }
 
   const ids = new Set(nodes.map((n) => n.id))
