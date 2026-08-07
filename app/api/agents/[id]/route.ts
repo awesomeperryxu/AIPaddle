@@ -5,6 +5,7 @@ import { AgentValidationError } from '@/lib/agents/name'
 import { AgentConfigSchema } from '@/lib/agents/config'
 import { detectBrainCycle } from '@/lib/agents/brain'
 import { requiresEnterprisePermission, type AgentOrigin } from '@/lib/agents/taxonomy'
+import { listDependentDigitalEmployees } from '@/lib/data/de-dependents'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
@@ -86,7 +87,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
 // DELETE /api/agents/[id] —— 软删除 Agent。权限：agent:delete（Admin/Developer）。
 // 跨租户 id 影响 0 行 → 404（RLS 兜底），越权删被拦。
-export async function DELETE(_req: Request, { params }: Ctx) {
+export async function DELETE(req: Request, { params }: Ctx) {
   const ctx = await getRequestContext()
   if (!ctx) {
     return Response.json({ error: { code: 'unauthenticated', message: '未登录' } }, { status: 401 })
@@ -95,6 +96,31 @@ export async function DELETE(_req: Request, { params }: Ctx) {
     return Response.json({ error: { code: 'forbidden', message: '无权限：删除 Agent' } }, { status: 403 })
   }
   const { id } = await params
+
+  // 🔴 DE-11：删除前告知会连累谁。
+  // DE-8 拦的是「下线」，删除路径此前完全没拦——而删除比下线更彻底：
+  // 下线还能重新上线，删除后上级的那个成员就永远回不来了（软删可恢复，但没人会去翻）。
+  // 形状与 DE-8 一致：先回 409 + 受影响清单，confirm 后才真删。
+  //
+  // 已发布的 Agent 本就删不掉（须先下线），所以走到这里的上级多半已被 DE-8
+  // 级联下线过；但草稿态的上级不会被级联，仍需在此提醒。
+  const deps = await listDependentDigitalEmployees(ctx, id)
+  if (deps.length > 0) {
+    const body = await req.json().catch(() => ({} as Record<string, unknown>))
+    if (body?.confirm !== true) {
+      return Response.json(
+        {
+          error: {
+            code: 'has_dependents',
+            message: `有 ${deps.length} 个数字员工正把它当下级使用，删除后它们会永久少一个成员。确认请重新提交并带 confirm=true。`,
+          },
+          affectedDigitalEmployees: deps,
+        },
+        { status: 409 },
+      )
+    }
+  }
+
   const result = await deleteAgent(ctx, id)
   if (result === 'published') {
     // 409 而非 404：Agent 确实存在，是**状态**不允许删除，前端据此提示「先下线」

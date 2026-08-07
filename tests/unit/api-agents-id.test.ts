@@ -12,6 +12,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { RequestContext } from '@/lib/context'
 
 vi.mock('@/lib/context', () => ({ getRequestContext: vi.fn() }))
+// DE-11 给 DELETE 加了依赖检查。不 mock 会走到真实 Supabase 客户端并抛
+// 「cookies called outside a request scope」。返回空数组＝无人引用，
+// 本文件原有断言语义不变；依赖检查本身由 api-agents-delete-refs.test.ts 覆盖。
+vi.mock('@/lib/data/de-dependents', () => ({ listDependentDigitalEmployees: vi.fn(async () => []) }))
 vi.mock('@/lib/data/agents', () => ({
   getAgentById: vi.fn(),
   saveAgent: vi.fn(),
