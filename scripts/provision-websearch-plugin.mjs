@@ -29,10 +29,52 @@
  * 建出来都是草稿态：需在页面提交审核并发布后才能被调用（ADR-005，AI/脚本不越过审核）。
  */
 import { createClient } from '@supabase/supabase-js'
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
 const APPLY = process.argv.includes('--apply')
+// 逃生口：已在「凭证管理」页面建好凭证时，直接复用它，跳过本脚本的加密
+const CRED_ID_ARG = (process.argv.find((a) => a.startsWith('--credential-id=')) ?? '').split('=')[1]
+
+// 🔴 凭证加密：与 lib/crypto/model-key.ts 逐行对齐（AES-256-GCM，格式 v1:iv:tag:ct，
+// 主密钥 hex64 直用、否则 sha256 派生）。**不能 import 那个模块** —— 它是 .ts 且带
+// `import 'server-only'`，node 直接跑会 MODULE_NOT_FOUND（实测踩到）。
+// 复刻的风险是「格式改了这里不知道」，所以下面加密完立刻自解密比对，对不上就中止，
+// 绝不写入一条解不开的凭证——那种凭证在页面上看着正常，一调用才失败。
+function masterKey() {
+  const raw = process.env.MODEL_KEY_ENC_SECRET
+  if (!raw) return null
+  if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, 'hex')
+  return createHash('sha256').update(raw).digest()
+}
+
+function encryptApiKey(plaintext) {
+  const key = masterKey()
+  if (!key) throw new Error('未配置 MODEL_KEY_ENC_SECRET')
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
+  return `v1:${iv.toString('base64')}:${cipher.getAuthTag().toString('base64')}:${ct.toString('base64')}`
+}
+
+function decryptApiKey(ciphertext) {
+  const key = masterKey()
+  const parts = ciphertext.split(':')
+  if (parts.length !== 4 || parts[0] !== 'v1') throw new Error('密文格式非法')
+  const d = createDecipheriv('aes-256-gcm', key, Buffer.from(parts[1], 'base64'))
+  d.setAuthTag(Buffer.from(parts[2], 'base64'))
+  return Buffer.concat([d.update(Buffer.from(parts[3], 'base64')), d.final()]).toString('utf8')
+}
+
+/** 加密并当场验证能解回原文，对不上就中止 */
+function encryptVerified(plaintext) {
+  const ct = encryptApiKey(plaintext)
+  if (decryptApiKey(ct) !== plaintext) {
+    throw new Error('凭证加密自校验失败——加密格式可能已与 lib/crypto/model-key.ts 不一致，请对齐后重试')
+  }
+  return ct
+}
 
 const envPath = path.resolve(process.cwd(), '.env.local')
 if (fs.existsSync(envPath)) {
@@ -89,16 +131,20 @@ async function main() {
 
   if (!APPLY) { log('\nDRY-RUN 结束。加 --apply 执行。'); return }
 
-  const { encryptApiKey } = await import('../lib/crypto/api-key.ts').catch(() => ({}))
-  if (!encryptApiKey) {
-    bail('无法加载加密函数——请改用应用内「凭证管理」页面创建凭证后再重跑')
+  let credId = CRED_ID_ARG
+  if (credId) {
+    const { data: found } = await admin.from('credentials')
+      .select('id,name').eq('id', credId).eq('org_id', org.id).maybeSingle()
+    if (!found) bail(`--credential-id 指定的凭证不存在或不属于该租户：${credId}`)
+    log(`复用已有凭证：${found.name}（${credId}）`)
+  } else {
+    const { data: cred, error: credErr } = await admin.from('credentials').insert({
+      org_id: org.id, name: 'Google AI API Key', kind: 'api_key',
+      secret_ciphertext: encryptVerified(API_KEY), enabled: true,
+    }).select('id').single()
+    if (credErr) bail(`建凭证失败：${credErr.message}`)
+    credId = cred.id
   }
-
-  const { data: cred, error: credErr } = await admin.from('credentials').insert({
-    org_id: org.id, name: 'Google AI API Key', kind: 'api_key',
-    secret_ciphertext: encryptApiKey(API_KEY), enabled: true,
-  }).select('id').single()
-  if (credErr) bail(`建凭证失败：${credErr.message}`)
 
   const { data: plugin, error: pErr } = await admin.from('plugins').insert({
     org_id: org.id, name: PLUGIN_NAME, provider_type: 'api',
@@ -120,7 +166,7 @@ async function main() {
   if (tErr) bail(`建 Tool 失败：${tErr.message}`)
 
   const { error: tvErr } = await admin.from('tool_versions').insert({
-    org_id: org.id, tool_id: tool.id, version: '1.0.0', credential_id: cred.id,
+    org_id: org.id, tool_id: tool.id, version: '1.0.0', credential_id: credId,
     binding_config: { handler_id: 'websearch.google', model: SEARCH_MODEL },
     // 只留一个 query：单参数时 tool-node 会直接把节点输入喂进来，不必再问一次模型
     input_schema: {
