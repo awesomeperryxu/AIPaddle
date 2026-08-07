@@ -27,6 +27,28 @@ export const AI_ACTION_KEYS = Object.keys(AI_ACTIONS)
 
 export type AiActivityObject = 'workflow' | 'agent' | 'skill' | 'plugin' | 'schedule'
 
+/**
+ * 一次 AI 操作产出的具体对象（WF-27）。
+ *
+ * 🔴 为什么不是「一条记录一个对象」：一句话往往建出不止一样东西——
+ * 建工作流的同时可能起草了 Skill、配了定时。此前列表只给一个「查看」按钮，
+ * 直接跳走，用户既不知道这次到底建了什么，也够不着旁边那些。
+ *
+ * exists=false 的对象仍然列出但不可点：审计是历史，对象可能早被删了；
+ * 列出来却点开 404 比不列更糟，所以状态要如实标出来。
+ */
+export type AiActivityTarget = {
+  object: AiActivityObject
+  id: string
+  /** 对象**当前**的名称；已删除时回落到审计里记的历史名 */
+  name: string
+  /** 对象当前状态（draft/published…），查不到则为 null */
+  status: string | null
+  exists: boolean
+  /** 是否本条记录直接创建的对象（false = 同一需求下的关联产物） */
+  primary: boolean
+}
+
 export type AiActivity = {
   id: string
   /** 对象类型，决定图标与跳转路径 */
@@ -47,6 +69,8 @@ export type AiActivity = {
   actorId: string | null
   actorName: string | null
   createdAt: string | null
+  /** 这次操作产出的对象清单（含关联产物），供「查看」列出后再打开 */
+  targets: AiActivityTarget[]
 }
 
 type Row = {
@@ -82,7 +106,61 @@ function toActivity(r: Row): AiActivity | null {
     actorId: r.actor_id,
     actorName: r.actor?.name ?? null,
     createdAt: r.created_at,
+    targets: [], // 由 listAiActivity 统一补齐（要批量查现状，逐条查会 N+1）
   }
+}
+
+/** 对象类型 → 表名与「已删除」的判定方式 */
+const OBJECT_TABLE: Record<AiActivityObject, { table: string; soft: boolean }> = {
+  workflow: { table: 'workflows', soft: true },
+  agent: { table: 'agents', soft: true },
+  skill: { table: 'skills', soft: true },
+  plugin: { table: 'mcp_servers', soft: true },
+  schedule: { table: 'agent_schedules', soft: false }, // 该表无 name/deleted_at，只判存在
+}
+
+type LiveRow = { id: string; name?: string | null; status?: string | null; deleted_at?: string | null }
+
+/**
+ * 批量查对象现状（每种类型一次查询，避免 N+1）。
+ * 查不到的一律当作已删除——审计留着历史，但用户不该被引去点一个 404。
+ */
+async function fetchLiveObjects(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  wanted: Map<AiActivityObject, Set<string>>,
+): Promise<Map<string, LiveRow>> {
+  const live = new Map<string, LiveRow>()
+  await Promise.all(
+    [...wanted.entries()].map(async ([object, ids]) => {
+      if (ids.size === 0) return
+      const { table, soft } = OBJECT_TABLE[object]
+      const cols = object === 'schedule' ? 'id' : 'id,name,status,deleted_at'
+      const { data } = await supabase.from(table).select(cols).in('id', [...ids])
+      for (const row of (data ?? []) as unknown as LiveRow[]) {
+        if (soft && row.deleted_at) continue // 软删的算不存在
+        live.set(`${object}:${row.id}`, row)
+      }
+    }),
+  )
+  return live
+}
+
+/** UUID 才可能是真实对象 id；失败记录会写 '-' 这种占位 */
+const isId = (v: string | null): v is string =>
+  !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+
+/**
+ * 把同一次需求产出的对象归到一起（WF-27）。
+ *
+ * 关联依据：同一操作人 + 同一原始需求描述 + 30 分钟内。
+ * 🔴 没有用「时间接近」单条件——那会把两次无关的操作硬凑成一组；
+ * 描述相同才是「同一件事」的可靠信号。老记录没写描述的，就只有自己这一个对象。
+ */
+const GROUP_WINDOW_MS = 30 * 60 * 1000
+
+function groupKeyOf(a: AiActivity): string | null {
+  if (!a.prompt || !a.actorId || !a.createdAt) return null
+  return `${a.actorId}::${a.prompt}`
 }
 
 /**
@@ -109,5 +187,54 @@ export async function listAiActivity(
   const list = ((data ?? []) as unknown as Row[])
     .map(toActivity)
     .filter((x): x is AiActivity => x !== null)
+
+  // ── 补齐每条记录的对象清单（WF-27）────────────────────────────────
+  const wanted = new Map<AiActivityObject, Set<string>>()
+  for (const a of list) {
+    if (!isId(a.targetId)) continue
+    if (!wanted.has(a.object)) wanted.set(a.object, new Set())
+    wanted.get(a.object)!.add(a.targetId)
+  }
+  const live = await fetchLiveObjects(supabase, wanted)
+
+  // 同一需求下的兄弟记录（用于把关联产物一并列出）
+  const groups = new Map<string, AiActivity[]>()
+  for (const a of list) {
+    const k = groupKeyOf(a)
+    if (!k) continue
+    if (!groups.has(k)) groups.set(k, [])
+    groups.get(k)!.push(a)
+  }
+
+  const toTarget = (a: AiActivity, primary: boolean): AiActivityTarget | null => {
+    if (!isId(a.targetId)) return null
+    const row = live.get(`${a.object}:${a.targetId}`)
+    return {
+      object: a.object,
+      id: a.targetId,
+      name: row?.name ?? a.name ?? '（未命名）',
+      status: row?.status ?? null,
+      exists: !!row,
+      primary,
+    }
+  }
+
+  for (const a of list) {
+    const self = toTarget(a, true)
+    const targets: AiActivityTarget[] = self ? [self] : []
+    const k = groupKeyOf(a)
+    if (k && a.createdAt) {
+      const at = new Date(a.createdAt).getTime()
+      for (const sib of groups.get(k) ?? []) {
+        if (sib.id === a.id || !sib.success || !isId(sib.targetId)) continue
+        if (Math.abs(new Date(sib.createdAt ?? 0).getTime() - at) > GROUP_WINDOW_MS) continue
+        if (targets.some((t) => t.id === sib.targetId && t.object === sib.object)) continue
+        const t = toTarget(sib, false)
+        if (t) targets.push(t)
+      }
+    }
+    a.targets = targets
+  }
+
   return opts.object ? list.filter((x) => x.object === opts.object) : list
 }

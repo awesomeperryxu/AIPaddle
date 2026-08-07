@@ -4,13 +4,21 @@ import { useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Sparkles, GitBranch, Bot, Zap, Plug, Clock,
-  CheckCircle2, XCircle, AlertTriangle, ExternalLink, RefreshCw, Loader2,
+  CheckCircle2, XCircle, AlertTriangle, ExternalLink, RefreshCw, Loader2, ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { apiFetch } from '@/lib/api/client'
 import { cn } from '@/lib/utils'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { AiActivity, AiActivityObject } from '@/lib/data/ai-activity'
 
 // AI 操作记录（WF-16）：对话里由系统自动创建了什么，一页看全。
@@ -177,15 +185,46 @@ export function AiActivityView({ initial, canViewAll }: { initial: AiActivity[];
                 )}
                 {a.reason && <p className="mt-1.5 text-xs text-destructive">{a.reason}</p>}
               </div>
-              {a.success && a.targetId && a.targetId !== '-' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 shrink-0 text-xs"
-                  onClick={() => router.push(meta.href(a.targetId!))}
-                >
-                  查看 <ExternalLink className="ml-1 h-3 w-3" />
-                </Button>
+              {/* 一次操作可能建出不止一样东西（WF-27）：先列出这次创建了什么，
+                  用户选中再打开。已删除的照样列出但不可点——审计是历史，
+                  引着用户去点一个 404 比不列更糟。 */}
+              {a.success && a.targets.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-7 shrink-0 text-xs">
+                      查看
+                      {a.targets.length > 1 && (
+                        <span className="ml-1 rounded bg-muted px-1 text-[10px]">{a.targets.length}</span>
+                      )}
+                      <ChevronDown className="ml-1 h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+                      本次创建的对象（选择后打开）
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {a.targets.map((t) => {
+                      const tm = OBJECT_META[t.object]
+                      const TIcon = tm.icon
+                      return (
+                        <DropdownMenuItem
+                          key={`${t.object}-${t.id}`}
+                          disabled={!t.exists}
+                          onClick={() => t.exists && router.push(tm.href(t.id))}
+                          className="gap-2 text-xs"
+                        >
+                          <TIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {!t.exists ? '已删除' : (t.status ?? tm.label)}
+                          </span>
+                          {t.exists && <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />}
+                        </DropdownMenuItem>
+                      )
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           )
