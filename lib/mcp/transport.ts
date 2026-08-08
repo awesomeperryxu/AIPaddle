@@ -10,7 +10,26 @@ import 'server-only'
 // 8 个已配置真实端点里 7 个含 /mcp 路径，即这条路径几乎全错。
 // 协议细节只允许有一个实现，否则修好一边不代表另一边是对的。
 
-export type McpAuth = { authType?: string; secret?: string }
+/**
+ * 认证方案。各家 MCP Server 的 Authorization 头格式并不统一——
+ * 2026-08-08 逐家查证官方文档的结论：
+ *   bearer        Linear / Stripe / Cloudflare / GitHub(PAT) / Atlassian(服务账号)
+ *   sentry_bearer Sentry —— 刻意用 `Sentry-Bearer` 而非 `Bearer`，
+ *                 因为 `Bearer` 被它保留给 MCP OAuth token，用错前缀会被当成 OAuth 令牌拒掉
+ *   basic         Atlassian 个人 API token —— base64(email:token)
+ * 写死 Bearer 会让后两类**永远认证失败**，且报错只是一句 401，看不出是格式问题。
+ */
+export type McpAuthScheme = 'bearer' | 'sentry_bearer' | 'basic'
+
+export const MCP_AUTH_SCHEMES: readonly McpAuthScheme[] = ['bearer', 'sentry_bearer', 'basic'] as const
+
+export type McpAuth = {
+  authType?: string
+  secret?: string
+  scheme?: McpAuthScheme
+  /** basic 方案需要：与 secret 组成 base64(username:secret) */
+  username?: string
+}
 
 /** SSRF 防护：endpoint 由用户填写，等同任意 URL 输入，不能成为探测内网的入口。 */
 const PRIVATE_HOST_RE =
@@ -44,9 +63,20 @@ export function parseRpcBody(text: string): Record<string, unknown> | null {
   return null
 }
 
-function authHeaders(auth: McpAuth): Record<string, string> {
-  // MCP 远程服务普遍走 Bearer；api_key 型也多用 Authorization 头承载
-  return auth.secret ? { Authorization: `Bearer ${auth.secret}` } : {}
+export function buildAuthHeader(auth: McpAuth): Record<string, string> {
+  if (!auth.secret) return {}
+  switch (auth.scheme) {
+    case 'sentry_bearer':
+      return { Authorization: `Sentry-Bearer ${auth.secret}` }
+    case 'basic': {
+      // 无 username 时按裸 token 处理——总比拼出 base64(":token") 这种一定认证失败的值好
+      if (!auth.username) return { Authorization: `Basic ${Buffer.from(auth.secret).toString('base64')}` }
+      return { Authorization: `Basic ${Buffer.from(`${auth.username}:${auth.secret}`).toString('base64')}` }
+    }
+    case 'bearer':
+    default:
+      return { Authorization: `Bearer ${auth.secret}` }
+  }
 }
 
 function rpcBody(method: string, params: Record<string, unknown> | undefined, id: number) {
@@ -85,7 +115,7 @@ export async function openMcpSession(
     'content-type': 'application/json',
     // Streamable HTTP 与 SSE 两种传输都声明接受，由 Server 选
     accept: 'application/json, text/event-stream',
-    ...authHeaders(auth),
+    ...buildAuthHeader(auth),
   }
 
   let nextId = 1

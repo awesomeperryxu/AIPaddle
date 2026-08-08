@@ -81,12 +81,35 @@ describe('凭证绑定的写入语义', () => {
 })
 
 describe('读取时不外泄密文', () => {
-  it('查询列里没有 auth_config', async () => {
-    // auth_config 是 jsonb 明文列，一旦进 SELECT 就可能顺着响应流到前端
+  // auth_config 现在承载**非敏感**的认证方案（scheme/username）——各家 Authorization
+  // 格式不统一，写死 Bearer 会让 Sentry / Atlassian 永远 401。这正是 0002 建表时
+  // 给该列的定位。它因此进了 SELECT，所以保护重心从「不查这列」转为
+  // 「这列里不许出现密钥」——后者是更强的约束，下面两条守住写入白名单。
+  it('查询列含 credential_id 与 auth_config', async () => {
     const src = (await import('node:fs')).readFileSync('lib/data/mcp-servers.ts', 'utf8')
     const cols = src.match(/const COLS =\s*\n?\s*'([^']+)'/)?.[1] ?? ''
-    expect(cols).not.toContain('auth_config')
     expect(cols).toContain('credential_id')
+    expect(cols).toContain('auth_config')
+  })
+
+  it.each([
+    ['创建', () => createMcpServer(ctx, {
+      name: 'N', endpoint: 'https://x/mcp', authScheme: 'basic', authUsername: 'a@b.com',
+      // 就算调用方多塞了密钥字段，也不该落进 auth_config
+      ...({ secret: 'sk-leak', api_key: 'sk-leak2' } as unknown as Record<string, never>),
+    }), () => insertSpy],
+    ['更新', () => updateMcpServer(ctx, ID, {
+      authScheme: 'basic', authUsername: 'a@b.com',
+      ...({ secret: 'sk-leak', api_key: 'sk-leak2' } as unknown as Record<string, never>),
+    }), () => updateSpy],
+  ])('%s 时 auth_config 只含 scheme/username 白名单', async (_n, run, spy) => {
+    await run()
+    const fields = spy().mock.calls[0][0] as Record<string, unknown>
+    const cfg = (fields.auth_config ?? {}) as Record<string, unknown>
+
+    expect(Object.keys(cfg).sort()).toEqual(['scheme', 'username'])
+    // 🔴 密钥一律走 credentials 表加密存储，绝不落这张没有加密列的表
+    expect(JSON.stringify(fields)).not.toContain('sk-leak')
   })
 
   it('映射结果带 credentialId 供前端显示已配/未配', async () => {

@@ -14,7 +14,7 @@ import 'server-only'
 // 协议细节统一在 lib/mcp/transport.ts，与 lib/mcp/discover.ts 共用同一实现——
 // 此前两套各写各的，正是上述分歧的来源。
 
-import { openMcpSession } from './transport'
+import { openMcpSession, type McpAuthScheme } from './transport'
 import { normalizeTools, type McpTool } from './discover'
 
 export type { McpTool }
@@ -33,8 +33,9 @@ export async function listMcpTools(
   endpoint: string,
   authType: string,
   secret?: string,
+  opts: { scheme?: McpAuthScheme; username?: string } = {},
 ): Promise<McpTool[]> {
-  const session = await openMcpSession(endpoint, { authType, secret })
+  const session = await openMcpSession(endpoint, { authType, secret, ...opts })
   if (!session.ok) throw new Error(`MCP 连接失败：${session.message}`)
 
   const listed = await session.call('tools/list')
@@ -50,8 +51,9 @@ export async function callMcpTool(
   secret: string | undefined,
   toolName: string,
   args: Record<string, unknown>,
+  opts: { scheme?: McpAuthScheme; username?: string } = {},
 ): Promise<string> {
-  const session = await openMcpSession(endpoint, { authType, secret })
+  const session = await openMcpSession(endpoint, { authType, secret, ...opts })
   if (!session.ok) throw new Error(`MCP 连接失败：${session.message}`)
 
   const called = await session.call('tools/call', { name: toolName, arguments: args })

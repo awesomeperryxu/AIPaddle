@@ -42,7 +42,12 @@ export async function GET(_req: Request, { params }: Ctx) {
     secret = (await getCredentialPlaintext(ctx, server.credentialId)) ?? undefined
   }
 
-  const result = await discoverMcpTools(server.endpoint, { authType: server.authType, secret })
+  // 认证方案随 Server 走：各家 Authorization 格式不统一（Sentry 用 Sentry-Bearer、
+  // Atlassian 个人 token 用 Basic），写死 Bearer 会让它们永远 401 且看不出原因。
+  const result = await discoverMcpTools(server.endpoint, {
+    authType: server.authType, secret,
+    scheme: server.authScheme, username: server.authUsername ?? undefined,
+  })
 
   if (!result.ok) {
     // 连不上是事实，如实返回而非 500——用户要看到「为什么连不上」。

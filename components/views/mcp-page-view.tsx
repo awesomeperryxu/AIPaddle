@@ -27,6 +27,7 @@ type McpServer = {
   status: McpStatus; securityLevel: string; allowedRoles: string[]; allowedDepartments: string[];
   /** 凭证引用；密文永远不下发到前端，这里只用来显示「已配/未配」 */
   credentialId: string | null; authType?: string;
+  authScheme?: 'bearer' | 'sentry_bearer' | 'basic'; authUsername?: string | null;
 };
 type McpTool = { name: string; description: string; inputSchema?: Record<string, unknown> };
 
@@ -64,6 +65,8 @@ export function McpPageView() {
   // 凭证配置：密钥只上行、不下行——保存后前端不再持有明文，也无接口能取回
   const [credFor, setCredFor] = useState<McpServer | null>(null);
   const [credSecret, setCredSecret] = useState('');
+  const [credScheme, setCredScheme] = useState<'bearer' | 'sentry_bearer' | 'basic'>('bearer');
+  const [credUsername, setCredUsername] = useState('');
   const [credSaving, setCredSaving] = useState(false);
   const [credError, setCredError] = useState<string | null>(null);
 
@@ -126,13 +129,17 @@ export function McpPageView() {
 
       await apiFetch(`/api/mcp-servers/${target.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ credentialId, authType: 'api_key' }),
+        body: JSON.stringify({
+          credentialId, authType: 'api_key',
+          authScheme: credScheme,
+          authUsername: credScheme === 'basic' ? credUsername.trim() : null,
+        }),
       });
 
       setCredSecret(''); setCredFor(null);
       await reload();
       // 立刻回验：配完就拉一次，让用户当场看到工具清单而不是自己再点一遍
-      await loadTools({ ...target, credentialId });
+      await loadTools({ ...target, credentialId, authScheme: credScheme, authUsername: credUsername.trim() || null });
     } catch (e) {
       setCredError(e instanceof Error ? e.message : '保存失败');
     } finally {
@@ -302,7 +309,11 @@ export function McpPageView() {
                         <p className="text-xs text-destructive">{toolsState.error}</p>
                         {s.endpoint && (
                           <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
-                            onClick={() => { setCredFor(s); setCredSecret(''); setCredError(null); }}>
+                            onClick={() => {
+                              setCredFor(s); setCredSecret(''); setCredError(null);
+                              setCredScheme(s.authScheme ?? 'bearer');
+                              setCredUsername(s.authUsername ?? '');
+                            }}>
                             <KeyRound className="h-3 w-3" />{s.credentialId ? '更换凭证' : '配置凭证'}
                           </Button>
                         )}
@@ -338,6 +349,29 @@ export function McpPageView() {
           </DialogHeader>
           <div className="space-y-3">
             <div>
+              <Label htmlFor="mcp-scheme">认证方式</Label>
+              {/* 🔴 各家 Authorization 格式不统一，2026-08-08 逐家查证官方文档：
+                  写死 Bearer 会让 Sentry 与 Atlassian 个人 token 永远 401，
+                  而报错只有一句 401，看不出是 header 格式问题。 */}
+              <select id="mcp-scheme" value={credScheme}
+                onChange={(e) => setCredScheme(e.target.value as 'bearer' | 'sentry_bearer' | 'basic')}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm">
+                <option value="bearer">Bearer（Linear / Stripe / Cloudflare / GitHub PAT）</option>
+                <option value="sentry_bearer">Sentry-Bearer（Sentry 专用）</option>
+                <option value="basic">Basic（Atlassian 个人 API token）</option>
+              </select>
+            </div>
+            {credScheme === 'basic' && (
+              <div>
+                <Label htmlFor="mcp-username">账号邮箱</Label>
+                <Input id="mcp-username" value={credUsername} placeholder="me@company.com"
+                  onChange={(e) => setCredUsername(e.target.value)} />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  与 Token 组成 base64(邮箱:Token) 发送。
+                </p>
+              </div>
+            )}
+            <div>
               <Label htmlFor="mcp-secret">API Key / Token</Label>
               <Input id="mcp-secret" type="password" autoComplete="off" value={credSecret}
                 placeholder="粘贴该服务签发的密钥"
@@ -350,7 +384,7 @@ export function McpPageView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCredFor(null)} disabled={credSaving}>取消</Button>
-            <Button onClick={saveCredential} disabled={credSaving || !credSecret.trim()}>
+            <Button onClick={saveCredential} disabled={credSaving || !credSecret.trim() || (credScheme === 'basic' && !credUsername.trim())}>
               {credSaving ? '保存中…' : '保存并重新连接'}
             </Button>
           </DialogFooter>
