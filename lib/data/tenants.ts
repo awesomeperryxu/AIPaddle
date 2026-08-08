@@ -279,7 +279,11 @@ export async function getTenantDetail(id: string): Promise<TenantDetail | null> 
   const [members, agents, logs, docs] = await Promise.all([
     // 🔴 机器用户（Extension 身份）不是成员：不占席位、不计费、不出现在成员列表（ADR-020 §3）。
     // 漏掉这个过滤会让租户看到「2 个成员」却只找得到 1 个人。
-    admin.from('users').select('id', { count: 'exact', head: true }).eq('org_id', id).is('deleted_at', null).eq('is_service_account', false),
+    // 🔴 ADR-025：成员 = **归属**该组织的人（user_orgs），不再只看 users.org_id（主组织）。
+    // 否则 perry/zhangdd 归属了「北京品器」却因主组织在别处，让品器显示 0 成员。
+    // 迁移 0039 已为每人回填一条 (id, org_id)，单组织用户的口径不变。
+    admin.from('user_orgs').select('user_id,users!inner(id)', { count: 'exact', head: true })
+      .eq('org_id', id).is('users.deleted_at', null).eq('users.is_service_account', false),
     admin.from('agents').select('id', { count: 'exact', head: true }).eq('org_id', id).is('deleted_at', null),
     admin.from('call_logs').select('tokens_in,tokens_out').eq('org_id', id).is('deleted_at', null).gte('created_at', since),
     admin.from('documents').select('size_bytes').eq('org_id', id).is('deleted_at', null),
