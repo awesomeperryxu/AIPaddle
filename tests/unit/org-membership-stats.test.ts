@@ -70,3 +70,24 @@ describe('展示文案', () => {
     expect(formatMemberTotal({ distinct: 12, overlapping: 0 })).toBe('12')
   })
 })
+
+describe('🔴 为什么不能各租户相加', () => {
+  it('相加会重复计数，去重数才是真实人数', async () => {
+    const s = await getOrgMemberStats()
+    const naiveSum = Object.values(s.byOrg).reduce((a, b) => a + b, 0)
+    expect(naiveSum).toBe(5)      // 平台3 + 品器2 —— 页面上原来显示的就是这个
+    expect(s.distinct).toBe(3)    // 实际只有三个自然人
+    expect(naiveSum - s.distinct).toBe(s.overlapping) // 差额恰好是跨组织人数
+  })
+
+  it('无人跨组织时，相加与去重一致（口径改动不影响单组织平台）', async () => {
+    db.user_orgs = [
+      { user_id: 'a', org_id: 'org-1' },
+      { user_id: 'b', org_id: 'org-2' },
+    ]
+    db.users = [{ id: 'a' }, { id: 'b' }]
+    const s = await getOrgMemberStats()
+    expect(Object.values(s.byOrg).reduce((x, y) => x + y, 0)).toBe(s.distinct)
+    expect(s.overlapping).toBe(0)
+  })
+})
