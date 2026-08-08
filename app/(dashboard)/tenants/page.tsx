@@ -3,6 +3,7 @@ import { getRequestContext } from '@/lib/context'
 import { isPlatformAdmin } from '@/lib/auth/platform'
 import { listAllTenants } from '@/lib/data/tenants'
 import { getTenantUsage } from '@/lib/data/platform-dashboard'
+import { getOrgMemberStats } from '@/lib/data/org-membership-stats'
 import { TenantsView } from '@/components/views/tenants-view'
 
 export default async function Page() {
@@ -21,6 +22,10 @@ export default async function Page() {
     )
   }
 
-  const [tenants, initialUsage] = await Promise.all([listAllTenants(), getTenantUsage()])
-  return <TenantsView tenants={tenants} canManage initialUsage={initialUsage} />
+  // 🔴 总用户数不能用各租户成员数相加：跨组织的人会被算两遍。
+  // 去重人数与重叠人数由 getOrgMemberStats 单独给（ADR-025）。
+  const [tenants, initialUsage, memberStats] = await Promise.all([
+    listAllTenants(), getTenantUsage(), getOrgMemberStats(),
+  ])
+  return <TenantsView tenants={tenants} canManage initialUsage={initialUsage} memberStats={memberStats} />
 }

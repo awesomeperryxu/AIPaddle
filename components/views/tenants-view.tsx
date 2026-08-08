@@ -104,10 +104,13 @@ export function TenantsView({
   tenants = [],
   canManage = false,
   initialUsage,
+  memberStats,
 }: {
   tenants?: PlatformTenant[];
   canManage?: boolean;
   initialUsage?: Record<string, { members: number; agents: number; tokens30d: number; calls30d: number; estCost30d: number }>;
+  /** 去重后的平台用户数与其中跨组织人数（ADR-025）——不能靠各租户成员数相加得出 */
+  memberStats?: { distinct: number; overlapping: number };
 }) {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
@@ -336,15 +339,18 @@ export function TenantsView({
     } finally { setBusy(false); }
   }
 
-  // 平台真实聚合：总用户 / 本月 Token / 本月收入（估算）
+  // 平台真实聚合：本月 Token / 本月收入（估算）。
+  // 🔴 总用户**不能**在这里相加：一个人归属多个租户时会被算多遍（ADR-025）。
+  // 去重人数与重叠人数由服务端 getOrgMemberStats 给出。
   const totals = Object.values(usage).reduce(
     (a, u) => ({
-      members: a.members + u.members,
       tokens30d: a.tokens30d + u.tokens30d,
       estCost30d: a.estCost30d + u.estCost30d,
     }),
-    { members: 0, tokens30d: 0, estCost30d: 0 },
+    { tokens30d: 0, estCost30d: 0 },
   );
+  const distinctMembers = memberStats?.distinct ?? 0;
+  const overlappingMembers = memberStats?.overlapping ?? 0;
 
   return (
     <div className="space-y-6">
@@ -375,8 +381,14 @@ export function TenantsView({
                 <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">{totals.members.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">总用户 · 查看明细</p>
+                <p className="text-lg font-semibold text-foreground">{distinctMembers.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">
+                  总用户（去重）
+                  {overlappingMembers > 0 && (
+                    <span className="ml-1 text-primary/80">· 含 {overlappingMembers} 人跨组织</span>
+                  )}
+                  {' · 查看明细'}
+                </p>
               </div>
             </div>
           </CardContent>
