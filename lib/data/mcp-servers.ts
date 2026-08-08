@@ -2,6 +2,7 @@ import 'server-only'
 import type { RequestContext } from '@/lib/context'
 import { createClient } from '@/lib/supabase/server'
 import { TRANSITIONS, type McpTransitionAction, type McpStatus } from '@/lib/mcp/status'
+import { MCP_AUTH_SCHEMES, type McpAuthScheme } from '@/lib/mcp/transport'
 
 // MCP 连接层（ADR-004 + ADR-023）。
 //
@@ -28,8 +29,12 @@ export type McpServer = {
   type: McpType
   endpoint: string
   authType: string
-  /** 引用 credentials 表的凭证 id；密文只在服务端解密，绝不外泄（0039） */
+  /** 引用 credentials 表的凭证 id；密文只在服务端解密，绝不外泄（0040） */
   credentialId: string | null
+  /** Authorization 头格式：各家不统一，见 lib/mcp/transport.ts 的 McpAuthScheme */
+  authScheme: McpAuthScheme
+  /** basic 方案的用户名部分（如 Atlassian 的账号邮箱）。非敏感，故可外泄 */
+  authUsername: string | null
   scope: string
   status: McpStatus
   securityLevel: McpSecurityLevel
@@ -47,6 +52,9 @@ type Row = {
   endpoint: string
   auth_type: string
   credential_id: string | null
+  // 🔴 auth_config 只放**非敏感**辅助字段（认证方案、用户名）——
+  // 这正是 0002 建表时给它的定位；密钥一律走 credentials 表加密存储。
+  auth_config: { scheme?: string; username?: string } | null
   scope: string | null
   status: McpStatus
   security_level: McpSecurityLevel
@@ -60,7 +68,7 @@ type Row = {
 // credential_id 只是**引用**，不是密文——前端要靠它显示「已配/未配凭证」，故可查。
 // 密文本体在 credentials 表，只有 getCredentialPlaintext 能在服务端解开。
 const COLS =
-  'id,name,description,type,endpoint,auth_type,credential_id,scope,status,security_level,allowed_roles,allowed_departments,created_at,updated_at'
+  'id,name,description,type,endpoint,auth_type,credential_id,auth_config,scope,status,security_level,allowed_roles,allowed_departments,created_at,updated_at'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function mapRow(r: Row): McpServer {
@@ -72,6 +80,9 @@ function mapRow(r: Row): McpServer {
     endpoint: r.endpoint,
     authType: r.auth_type,
     credentialId: r.credential_id ?? null,
+    authScheme: (MCP_AUTH_SCHEMES as readonly string[]).includes(r.auth_config?.scheme ?? '')
+      ? (r.auth_config!.scheme as McpAuthScheme) : 'bearer',
+    authUsername: r.auth_config?.username ?? null,
     scope: r.scope ?? '',
     status: r.status,
     securityLevel: r.security_level,
@@ -131,6 +142,8 @@ export async function createMcpServer(
     authType?: string
     /** 引用 credentials 表；密文不经此处，只传 id */
     credentialId?: string | null
+    authScheme?: McpAuthScheme
+    authUsername?: string | null
     securityLevel?: McpSecurityLevel
     allowedRoles?: string[]
     allowedDepartments?: string[]
@@ -149,6 +162,10 @@ export async function createMcpServer(
       scope: input.scope ?? null,
       auth_type: input.authType ?? 'api_key',
       credential_id: input.credentialId ?? null,
+      auth_config: {
+        ...(input.authScheme ? { scheme: input.authScheme } : {}),
+        ...(input.authUsername ? { username: input.authUsername } : {}),
+      },
       security_level: input.securityLevel ?? 'medium',
       allowed_roles: input.allowedRoles ?? ['Admin'],
       allowed_departments: input.allowedDepartments ?? [],
@@ -171,6 +188,8 @@ export async function updateMcpServer(
     authType?: string
     /** null = 显式解绑凭证；undefined = 不改动 */
     credentialId?: string | null
+    authScheme?: McpAuthScheme
+    authUsername?: string | null
     securityLevel?: McpSecurityLevel
     allowedRoles?: string[]
     allowedDepartments?: string[]
@@ -186,6 +205,13 @@ export async function updateMcpServer(
   // 🔴 用 undefined 判定而非真值判定：null 是「解绑凭证」的合法意图，
   // 写成 if (patch.credentialId) 会让解绑操作被静默忽略。
   if (patch.credentialId !== undefined) fields.credential_id = patch.credentialId
+  // auth_config 整体覆写（只承载非敏感的 scheme/username，无需保留旧值）
+  if (patch.authScheme !== undefined || patch.authUsername !== undefined) {
+    fields.auth_config = {
+      ...(patch.authScheme ? { scheme: patch.authScheme } : {}),
+      ...(patch.authUsername ? { username: patch.authUsername } : {}),
+    }
+  }
   if (patch.securityLevel) fields.security_level = patch.securityLevel
   if (Array.isArray(patch.allowedRoles)) fields.allowed_roles = patch.allowedRoles
   if (Array.isArray(patch.allowedDepartments)) fields.allowed_departments = patch.allowedDepartments

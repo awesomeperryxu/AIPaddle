@@ -174,3 +174,52 @@ describe('失败要给出可行动的原因', () => {
     await expect(callMcpTool('https://mcp.example.com/mcp', 'none', {}, 'x', {})).resolves.toBe('第一段\n第二段')
   })
 })
+
+describe('各家认证方案的 Authorization 格式', () => {
+  // 🔴 2026-08-08 逐家查证官方文档的结论。此前写死 `Bearer`，
+  // 意味着 Sentry 与 Atlassian 个人 token **永远认证失败**，
+  // 而报错只是一句 401，完全看不出是 header 格式的问题。
+  const authHeaderOf = (i: number) =>
+    ((vi.mocked(fetch).mock.calls[i][1] as RequestInit).headers as Record<string, string>).Authorization
+
+  it('bearer：Linear / Stripe / Cloudflare / GitHub(PAT)', async () => {
+    mockSeq([{ body: JSON.stringify(okInit) }, { body: JSON.stringify(okList) }])
+    await listMcpTools('https://mcp.linear.app/mcp', 'api_key', 'lin_api_x', { scheme: 'bearer' })
+    expect(authHeaderOf(0)).toBe('Bearer lin_api_x')
+  })
+
+  it('sentry_bearer：Sentry 刻意区别于 Bearer（Bearer 被它保留给 OAuth token）', async () => {
+    mockSeq([{ body: JSON.stringify(okInit) }, { body: JSON.stringify(okList) }])
+    await listMcpTools('https://mcp.sentry.dev/mcp', 'api_key', 'sntrys_x', { scheme: 'sentry_bearer' })
+    expect(authHeaderOf(0)).toBe('Sentry-Bearer sntrys_x')
+    // 用错前缀会被当成 OAuth 令牌直接拒掉
+    expect(authHeaderOf(0)).not.toMatch(/^Bearer /)
+  })
+
+  it('basic：Atlassian 个人 API token 是 base64(email:token)', async () => {
+    mockSeq([{ body: JSON.stringify(okInit) }, { body: JSON.stringify(okList) }])
+    await listMcpTools('https://mcp.atlassian.com/v1/mcp/authv2', 'api_key', 'atl_tok', {
+      scheme: 'basic', username: 'me@corp.com',
+    })
+    expect(authHeaderOf(0)).toBe(`Basic ${Buffer.from('me@corp.com:atl_tok').toString('base64')}`)
+  })
+
+  it('basic 缺 username → 退化为裸 token 的 base64，而非拼出必然失败的 ":token"', async () => {
+    mockSeq([{ body: JSON.stringify(okInit) }, { body: JSON.stringify(okList) }])
+    await listMcpTools('https://x.example.com/mcp', 'api_key', 'tok', { scheme: 'basic' })
+    expect(authHeaderOf(0)).toBe(`Basic ${Buffer.from('tok').toString('base64')}`)
+  })
+
+  it('未指定 scheme 时默认 bearer（多数 Server 适用）', async () => {
+    mockSeq([{ body: JSON.stringify(okInit) }, { body: JSON.stringify(okList) }])
+    await listMcpTools('https://x.example.com/mcp', 'api_key', 'tok')
+    expect(authHeaderOf(0)).toBe('Bearer tok')
+  })
+
+  it('tools/call 也按同一 scheme 发送', async () => {
+    mockSeq([{ body: JSON.stringify(okInit) }, { body: JSON.stringify(okCall) }])
+    await callMcpTool('https://mcp.sentry.dev/mcp', 'api_key', 'sntrys_y', 'search', {}, { scheme: 'sentry_bearer' })
+    expect(authHeaderOf(0)).toBe('Sentry-Bearer sntrys_y')
+    expect(authHeaderOf(1)).toBe('Sentry-Bearer sntrys_y')
+  })
+})

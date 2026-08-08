@@ -17,6 +17,7 @@ import { listAgentTools, runToolVersion, type RunnableTool } from '@/lib/tools/r
 import { createClient } from '@/lib/supabase/server'
 import { listMcpTools, callMcpTool } from '@/lib/mcp/client'
 import { getCredentialPlaintext } from '@/lib/data/credentials'
+import { MCP_AUTH_SCHEMES, type McpAuthScheme } from '@/lib/mcp/transport'
 
 // Next.js 16：动态段 params 为 Promise，必须 await。
 type Ctx = { params: Promise<{ id: string }> }
@@ -30,8 +31,24 @@ type McpServerRecord = {
   auth_type: string
   /** 引用 credentials（AES-256-GCM）；明文只在服务端解密后放进 secret，绝不外泄 */
   credential_id: string | null
+  /** 非敏感辅助字段：认证方案与用户名（各家 Authorization 格式不统一） */
+  auth_config: { scheme?: string; username?: string } | null
   /** 运行期填充：解密后的凭证明文。不进响应、不进日志（AC-15） */
   secret?: string
+}
+
+/**
+ * 从 Server 记录取出认证方案。各家 Authorization 头格式不统一
+ * （Sentry 用 `Sentry-Bearer`、Atlassian 个人 token 用 `Basic`），
+ * 写死 Bearer 会让这些 Server 永远 401，且报错看不出是格式问题。
+ */
+function authOptsOf(s: McpServerRecord) {
+  const scheme = s.auth_config?.scheme
+  return {
+    scheme: (MCP_AUTH_SCHEMES as readonly string[]).includes(scheme ?? '')
+      ? (scheme as McpAuthScheme) : undefined,
+    username: s.auth_config?.username,
+  }
 }
 
 /**
@@ -174,7 +191,7 @@ export async function POST(req: Request, { params }: Ctx) {
       const supabase = await createClient()
       const { data } = await supabase
         .from('mcp_servers')
-        .select('id,name,endpoint,auth_type,credential_id')
+        .select('id,name,endpoint,auth_type,credential_id,auth_config')
         .in('id', resources.mcpServerIds)
         .eq('status', 'approved')
         .is('deleted_at', null)
@@ -215,7 +232,7 @@ export async function POST(req: Request, { params }: Ctx) {
 
     for (const server of mcpServers) {
       try {
-        const mcpTools = await listMcpTools(server.endpoint, server.auth_type, server.secret)
+        const mcpTools = await listMcpTools(server.endpoint, server.auth_type, server.secret, authOptsOf(server))
         for (const t of mcpTools) {
           // 工具名格式：{serverId_前6位}__{toolName}，确保唯一性
           const qualifiedName = `${server.id.slice(0, 6)}__${t.name}`
@@ -264,6 +281,7 @@ export async function POST(req: Request, { params }: Ctx) {
           mapping.server.secret,
           mapping.originalName,
           args,
+          authOptsOf(mapping.server),
         )
       }
 

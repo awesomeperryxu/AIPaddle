@@ -15,7 +15,7 @@
 -- 凭证本体复用 credentials 表（0030）：AES-256-GCM 密文、读接口只返回脱敏值、
 -- 未配 MODEL_KEY_ENC_SECRET 时拒绝保存。与 tool_versions.credential_id 同一套模型。
 --
--- 回滚见 0039_mcp_server_credential_rollback.sql。
+-- 回滚见 0040_mcp_server_credential_rollback.sql。
 
 alter table public.mcp_servers
   add column if not exists credential_id uuid references public.credentials(id);

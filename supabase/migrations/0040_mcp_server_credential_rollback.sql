@@ -1,4 +1,4 @@
--- 0039 回滚：移除 mcp_servers.credential_id。
+-- 0040 回滚：移除 mcp_servers.credential_id。
 -- 🔴 先查存量：已有 Server 绑定凭证时直接删列会丢掉绑定关系。
 --    宁可报错让人工确认，也不静默丢数据。
 
