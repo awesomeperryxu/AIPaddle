@@ -1,8 +1,8 @@
 /**
- * 契约测试 · 视图列必须跟基表同步（0040 的防回归）
+ * 契约测试 · 视图列必须跟基表同步（0041 的防回归）
  *
  * 🔴 这条守卫的由来是一次真实的排查弯路：
- * 0039 给 mcp_servers 加了 credential_id，忘了 my_mcp_servers 视图。
+ * 0040 给 mcp_servers 加了 credential_id，忘了 my_mcp_servers 视图。
  * 视图定义写的是 `select m.*`——看起来「自动包含所有列」，
  * 但 Postgres 在**创建视图时就把 `*` 展开并固化列清单**，加列不会跟着变。
  *

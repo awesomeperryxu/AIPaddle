@@ -1,9 +1,9 @@
--- 修 0039 的疏漏：视图 my_mcp_servers 没跟着表加列。
+-- 修 0040 的疏漏：视图 my_mcp_servers 没跟着表加列。
 --
 -- 🔴 根因（Postgres 既定行为，很容易踩）：
 -- 视图定义写的是 `select m.*`，但 Postgres 在**创建视图时就把 `*` 展开成
 -- 当时的具体列清单并固化**。此后给基表 ALTER TABLE ADD COLUMN，视图**不会**跟着变。
--- 于是 0039 给 mcp_servers 加了 credential_id 之后：
+-- 于是 0040 给 mcp_servers 加了 credential_id 之后：
 --   · listMcpServers 查表   → 正常（MCP 页没事，看不出问题）
 --   · listMyMcpServers 查视图 → `column my_mcp_servers.credential_id does not exist`
 -- 数据层拿到 error 直接 throw，而 /skill-hub 是 Server Component，
