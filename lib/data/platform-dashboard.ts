@@ -171,7 +171,9 @@ export async function getTenantUsage(): Promise<Record<string, TenantUsage>> {
   const [usersRes, agentsRes, logsRes, provRes] = await Promise.all([
     // 🔴 BUG：之前没过滤 is_service_account，成员数包含了 Extension 机器用户，
     // 而成员详情列表用了 is_service_account=false 过滤——两边口径不一致。
-    admin.from('users').select('org_id').eq('is_service_account', false).is('deleted_at', null),
+    // 🔴 ADR-025：各租户成员数改按**归属**（user_orgs）统计，不再只看主组织 org_id——
+    // 否则跨组织的人只会计入主组织，客户租户看起来「没有成员」。
+    admin.from('user_orgs').select('user_id,org_id,users!inner(id,is_service_account,deleted_at)'),
     admin.from('agents').select('org_id').is('deleted_at', null),
     admin.from('call_logs').select('org_id,tokens_in,tokens_out,key_source,provider,model,created_at').is('deleted_at', null).gte('created_at', since30),
     // 4.8.17b：当前是否自带 Key，取「配置态」而非历史日志——刚配好还没调用过的租户也要正确显示 BYO
@@ -190,7 +192,16 @@ export async function getTenantUsage(): Promise<Record<string, TenantUsage>> {
     platformTokens30d: 0, byoTokens30d: 0, unknownTokens30d: 0, unpricedCalls30d: 0, keyMode: 'platform',
   })
 
-  for (const u of (usersRes.data as { org_id: string }[] | null) ?? []) ensure(u.org_id).members++
+  // 机器用户不算成员（与成员详情列表口径一致）；同一人归属多组织时，各组织各计一次，
+  // 全平台去重人数由 getOrgMemberStats 单独给，两者语义不同、不能互相顶替
+  // PostgREST 的内联关联返回数组（即便是多对一），故取首元素
+  type JoinedUser = { is_service_account: boolean; deleted_at: string | null }
+  type MembershipRow = { user_id: string; org_id: string; users: JoinedUser | JoinedUser[] | null }
+  for (const m of (usersRes.data as unknown as MembershipRow[] | null) ?? []) {
+    const u = Array.isArray(m.users) ? m.users[0] : m.users
+    if (!u || u.is_service_account || u.deleted_at) continue
+    ensure(m.org_id).members++
+  }
   for (const a of (agentsRes.data as { org_id: string }[] | null) ?? []) ensure(a.org_id).agents++
 
   type LogRow = {

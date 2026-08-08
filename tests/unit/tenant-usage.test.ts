@@ -1,6 +1,7 @@
 /**
  * L2 单元测试 · 4.8.x 租户管理去 mock · 每租户用量聚合
  * 验证 getTenantUsage 按 org_id 聚合 members/agents/tokens30d/estCost30d，
+ * 其中 members 自 ADR-025 起按 user_orgs 归属统计（跨组织的人在每个归属组织各计一次）。
  * getPlatformRevenueTrend 输出近 6 月估算收入（末月落桶）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -42,7 +43,12 @@ describe('getTenantUsage（每租户真实用量聚合）', () => {
   it('按 org_id 聚合成员/Agent/Token/估算成本', async () => {
     mockCreate.mockReturnValue(
       fakeAdmin({
-        users: [{ org_id: 'a' }, { org_id: 'a' }, { org_id: 'b' }],
+        // ADR-025：成员改按**归属**统计（user_orgs 内联 users 过滤机器用户/软删）
+        user_orgs: [
+          { user_id: 'u1', org_id: 'a', users: { is_service_account: false, deleted_at: null } },
+          { user_id: 'u2', org_id: 'a', users: { is_service_account: false, deleted_at: null } },
+          { user_id: 'u3', org_id: 'b', users: { is_service_account: false, deleted_at: null } },
+        ],
         agents: [{ org_id: 'a' }],
         call_logs: [
           { org_id: 'a', tokens_in: 1000, tokens_out: 1000, key_source: 'platform', provider: 'platform-env', model: 'qwen-plus', created_at: new Date().toISOString() },

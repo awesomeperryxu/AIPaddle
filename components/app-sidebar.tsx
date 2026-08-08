@@ -246,7 +246,68 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—', userName
         </div>
       </div>
 
-      {/* Tenant Selector */}
+      <nav className="flex-1 overflow-y-auto py-2 px-2">
+        {navSections.map((section) => {
+          const isOpen = openSections.includes(section.title);
+          const hasActiveItem = section.items.some(item => item.href === activeView);
+          
+          return (
+            <div key={section.title} className="mb-1">
+              <button
+                onClick={() => toggleSection(section.title)}
+                className={cn(
+                  'w-full flex items-center justify-between px-2 py-1.5 text-[11px] font-medium uppercase tracking-wider rounded transition-colors',
+                  hasActiveItem 
+                    ? 'text-primary' 
+                    : 'text-sidebar-foreground/50 hover:text-sidebar-foreground/70'
+                )}
+              >
+                <span>{section.title}</span>
+                <ChevronRight className={cn(
+                  'h-3 w-3 transition-transform',
+                  isOpen && 'rotate-90'
+                )} />
+              </button>
+              
+              {isOpen && (
+                <ul className="mt-0.5 space-y-0.5">
+                  {section.items.map((item) => (
+                    <li key={item.href}>
+                      <button
+                        onClick={() => onViewChange(item.href)}
+                        className={cn(
+                          'w-full flex items-center justify-between px-2.5 py-2 rounded-md text-sm transition-all',
+                          activeView === item.href
+                            ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm'
+                            : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          {item.icon}
+                          <span className="text-[13px]">{item.title}</span>
+                        </div>
+                        {item.badge && (
+                          <span className={cn(
+                            'px-1.5 py-0.5 text-[10px] font-medium rounded-full',
+                            activeView === item.href
+                              ? 'bg-sidebar-primary-foreground/20 text-sidebar-primary-foreground'
+                              : 'bg-primary/10 text-primary'
+                          )}>
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+
+      {/* 组织切换器（ADR-025）。放左下角紧邻用户菜单：它和「我是谁」是同一类信息，
+          且切换会影响全站数据视图，不该混在功能导航里。 */}
       <div className="px-3 py-2.5 border-b border-sidebar-border">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -327,65 +388,6 @@ export function AppSidebar({ activeView, onViewChange, orgName = '—', userName
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2">
-        {navSections.map((section) => {
-          const isOpen = openSections.includes(section.title);
-          const hasActiveItem = section.items.some(item => item.href === activeView);
-          
-          return (
-            <div key={section.title} className="mb-1">
-              <button
-                onClick={() => toggleSection(section.title)}
-                className={cn(
-                  'w-full flex items-center justify-between px-2 py-1.5 text-[11px] font-medium uppercase tracking-wider rounded transition-colors',
-                  hasActiveItem 
-                    ? 'text-primary' 
-                    : 'text-sidebar-foreground/50 hover:text-sidebar-foreground/70'
-                )}
-              >
-                <span>{section.title}</span>
-                <ChevronRight className={cn(
-                  'h-3 w-3 transition-transform',
-                  isOpen && 'rotate-90'
-                )} />
-              </button>
-              
-              {isOpen && (
-                <ul className="mt-0.5 space-y-0.5">
-                  {section.items.map((item) => (
-                    <li key={item.href}>
-                      <button
-                        onClick={() => onViewChange(item.href)}
-                        className={cn(
-                          'w-full flex items-center justify-between px-2.5 py-2 rounded-md text-sm transition-all',
-                          activeView === item.href
-                            ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm'
-                            : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
-                        )}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          {item.icon}
-                          <span className="text-[13px]">{item.title}</span>
-                        </div>
-                        {item.badge && (
-                          <span className={cn(
-                            'px-1.5 py-0.5 text-[10px] font-medium rounded-full',
-                            activeView === item.href
-                              ? 'bg-sidebar-primary-foreground/20 text-sidebar-primary-foreground'
-                              : 'bg-primary/10 text-primary'
-                          )}>
-                            {item.badge}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
-      </nav>
 
       {/* User Profile */}
       <div className="p-3 border-t border-sidebar-border">
