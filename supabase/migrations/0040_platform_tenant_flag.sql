@@ -18,5 +18,9 @@ update public.tenants set is_platform = true where code = 'aipaddle-demo';
 
 -- 🔴 有且只应有一个平台运营租户：多于一个等于开了多个后门，
 -- 且 isPlatformAdmin 的语义会变得含糊（在哪个才算数？）
+--
+-- 🔴 必须带 `deleted_at is null`：tenants 上任何不认软删的唯一索引，都会让
+-- 「注销后重建」撞约束（soft-delete-constraints 契约测试专门守这条）。
+-- 少了它，平台运营租户一旦注销就再也建不出新的。
 create unique index if not exists uq_tenants_single_platform
-  on public.tenants ((true)) where is_platform;
+  on public.tenants ((true)) where is_platform and deleted_at is null;
