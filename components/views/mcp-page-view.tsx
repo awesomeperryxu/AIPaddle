@@ -9,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getSetupGuide } from '@/lib/mcp/setup-guides';
 import { apiFetch } from '@/lib/api/client';
 import {
   Plus, Server, CheckCircle2, Clock, XCircle, Ban, KeyRound, Wrench,
@@ -291,6 +292,81 @@ export function McpPageView() {
 
                 {open && (
                   <div className="border-t border-border bg-muted/20 px-4 py-3">
+                    {/* 接入配置指引：平台统一注册 Server，凭证由各租户 Admin 自行配置，
+                        所以这里必须当场说清「要什么、去哪拿、勾哪些权限」——
+                        否则就退化成之前那种只有一句 401、只能反复换 Key 试的体验。 */}
+                    {(() => {
+                      const g = getSetupGuide(s.endpoint);
+                      const configured = !!s.credentialId;
+                      return (
+                        <div className="mb-3 rounded-md border border-border bg-background p-3">
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2">
+                              <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="text-xs font-medium text-foreground">接入配置</span>
+                              <Badge variant="outline" className={`text-[10px] ${configured ? 'text-green-600 border-green-500/30' : 'text-amber-600 border-amber-500/30'}`}>
+                                {configured ? '本租户已配置' : '待本租户配置'}
+                              </Badge>
+                            </div>
+                            {s.endpoint && !g.oauthOnly && (
+                              <Button size="sm" variant={configured ? 'outline' : 'default'} className="h-7 text-xs gap-1"
+                                onClick={() => {
+                                  setCredFor(s); setCredSecret(''); setCredError(null);
+                                  setCredScheme(s.authScheme ?? g.authScheme);
+                                  setCredUsername(s.authUsername ?? '');
+                                }}>
+                                <KeyRound className="h-3 w-3" />{configured ? '更换凭证' : 'API Key 授权配置'}
+                              </Button>
+                            )}
+                          </div>
+
+                          <dl className="space-y-1.5 text-[11px]">
+                            <div className="flex gap-2">
+                              <dt className="text-muted-foreground shrink-0 w-16">需要填写</dt>
+                              <dd className="text-foreground">{g.credentialLabel}</dd>
+                            </div>
+                            {g.consoleUrl ? (
+                              <div className="flex gap-2">
+                                <dt className="text-muted-foreground shrink-0 w-16">去哪获取</dt>
+                                <dd>
+                                  <a href={g.consoleUrl} target="_blank" rel="noreferrer"
+                                    className="text-primary hover:underline break-all">{g.consoleLabel}</a>
+                                </dd>
+                              </div>
+                            ) : (
+                              <div className="flex gap-2">
+                                <dt className="text-muted-foreground shrink-0 w-16">去哪获取</dt>
+                                <dd className="text-foreground">{g.consoleLabel}</dd>
+                              </div>
+                            )}
+                            {g.scopes.length > 0 && (
+                              <div className="flex gap-2">
+                                <dt className="text-muted-foreground shrink-0 w-16">所需权限</dt>
+                                <dd className="text-foreground">
+                                  <ul className="space-y-0.5">
+                                    {g.scopes.map((sc) => <li key={sc}>· {sc}</li>)}
+                                  </ul>
+                                </dd>
+                              </div>
+                            )}
+                            {g.extraFields.length > 0 && (
+                              <div className="flex gap-2">
+                                <dt className="text-muted-foreground shrink-0 w-16">额外信息</dt>
+                                <dd className="text-foreground">{g.extraFields.map((f) => f.label).join('、')}</dd>
+                              </div>
+                            )}
+                          </dl>
+
+                          {g.prerequisites.map((t) => (
+                            <p key={t} className="mt-2 text-[11px] text-amber-600">⚠️ {t}</p>
+                          ))}
+                          {g.notes.map((t) => (
+                            <p key={t} className="mt-1 text-[11px] text-muted-foreground">{t}</p>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
                     <div className="flex items-center gap-2 mb-2">
                       <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-xs font-medium text-foreground">该 Server 提供的工具</span>
@@ -343,11 +419,30 @@ export function McpPageView() {
           <DialogHeader>
             <DialogTitle>配置凭证 · {credFor?.name}</DialogTitle>
             <DialogDescription>
-              官方远程 MCP（Notion / Linear / Stripe / GitHub 等）多数强制鉴权，未配凭证时连接会返回 401。
               密钥经 AES-256-GCM 加密存储，保存后无法再被读取或回显——只能更换，不能查看。
+              该凭证仅本租户可用，不会共享给其他租户。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {credFor && (() => {
+              const g = getSetupGuide(credFor.endpoint);
+              return (
+                <div className="rounded-md border border-border bg-muted/30 p-2.5 text-[11px] space-y-1">
+                  <p className="text-foreground"><span className="text-muted-foreground">需要填写：</span>{g.credentialLabel}</p>
+                  {g.consoleUrl && (
+                    <p><span className="text-muted-foreground">去哪获取：</span>
+                      <a href={g.consoleUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all">{g.consoleLabel}</a>
+                    </p>
+                  )}
+                  {g.scopes.length > 0 && (
+                    <div><span className="text-muted-foreground">所需权限：</span>
+                      <ul className="mt-0.5 space-y-0.5 text-foreground">{g.scopes.map((sc) => <li key={sc}>· {sc}</li>)}</ul>
+                    </div>
+                  )}
+                  {g.prerequisites.map((t) => <p key={t} className="text-amber-600">⚠️ {t}</p>)}
+                </div>
+              );
+            })()}
             <div>
               <Label htmlFor="mcp-scheme">认证方式</Label>
               {/* 🔴 各家 Authorization 格式不统一，2026-08-08 逐家查证官方文档：
