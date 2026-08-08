@@ -26,7 +26,7 @@ if (!PASSWORD) throw new Error('缺少 SEED_PASSWORD')
 const admin = createClient(SB_URL, KEY, { auth: { autoRefreshToken: false, persistSession: false } })
 
 const TENANTS = {
-  orgA: { name: 'AIPaddle Demo', code: 'aipaddle-demo', plan: 'pro' },
+  orgA: { name: '平台管理团队', code: 'aipaddle-demo', plan: 'pro' },
   orgB: { name: 'Acme Corp', code: 'acme-corp', plan: 'standard' },
 }
 const USERS = [
@@ -51,9 +51,13 @@ async function upsertTenant(t) {
   if (qErr) throw new Error(`tenant ${t.code}: ${qErr.message}`)
 
   if (found) {
+    // 🔴 不更新 name：租户显示名是**业务数据**，用户会在后台改（2026-08-08 把
+    // 「AIPaddle Demo」改成「平台管理团队」后，一次 E2E seed 就把它冲回去了）。
+    // seed 的职责是保证测试租户/账号存在，不是强制统一显示名。
+    // plan_type 仍对齐——它影响用例里的额度断言，属于测试前置条件。
     const { error } = await admin
       .from('tenants')
-      .update({ name: t.name, plan_type: t.plan })
+      .update({ plan_type: t.plan })
       .eq('id', found.id)
     if (error) throw new Error(`tenant ${t.code}: ${error.message}`)
     return found.id

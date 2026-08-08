@@ -10,7 +10,7 @@
 
 // ─── 租户（与 seed 一致：aipaddle-demo / acme-corp）────────────
 export const TENANTS = {
-  orgA: { name: 'AIPaddle Demo', code: 'aipaddle-demo', plan: 'pro' },
+  orgA: { name: '平台管理团队', code: 'aipaddle-demo', plan: 'pro' },
   orgB: { name: 'Acme Corp',     code: 'acme-corp',     plan: 'standard' },
 } as const;
 
